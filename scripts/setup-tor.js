@@ -117,6 +117,17 @@ function startTor() {
     console.log('Tor started successfully.');
 }
 
+// In CI environment, only download Tor, don't start it
+if (process.env.CI) {
+    console.log('CI environment detected. Downloading Tor binary only...');
+    if (!fs.existsSync(TOR_EXECUTABLE)) {
+        downloadTor();
+    } else {
+        console.log('Tor executable already exists.');
+    }
+    process.exit(0);
+}
+
 // Check if Tor is already running
 try {
     const platform = os.platform();
