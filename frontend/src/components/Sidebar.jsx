@@ -74,9 +74,12 @@ const Sidebar = ({
         }
     };
 
-    const getDocIcon = (type) => {
-        switch (type) {
+    const getDocIcon = (doc) => {
+        // Use custom icon if set, otherwise default based on type
+        if (doc.icon) return doc.icon;
+        switch (doc.type) {
             case 'kanban': return '📋';
+            case 'sheet': return '📊';
             default: return '📄';
         }
     };
@@ -260,7 +263,12 @@ const Sidebar = ({
                                     e.dataTransfer.effectAllowed = 'move';
                                 }}
                             >
-                                <span className="doc-icon">{getDocIcon(doc.type)}</span>
+                                <span 
+                                    className="doc-icon"
+                                    style={doc.color ? { color: doc.color } : undefined}
+                                >
+                                    {getDocIcon(doc)}
+                                </span>
                                 <div className="doc-info">
                                     <span className="doc-name">{doc.name}</span>
                                     {collabs.length > 0 && (
