@@ -107,11 +107,14 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
     // Try legacy nightjar:// format (may have bootstrap peers embedded)
     try {
       const parsed = parseShareLink(value);
+      const hasHyperswarmPeers = parsed.hyperswarmPeers?.length > 0;
+      const hasBootstrapPeers = parsed.bootstrapPeers?.length > 0;
       setParsedLink({ 
         ...parsed, 
         isNewStyle: false,
-        isP2P: parsed.bootstrapPeers?.length > 0,
-        hasBootstrapPeers: parsed.bootstrapPeers?.length > 0
+        isP2P: hasHyperswarmPeers || hasBootstrapPeers,
+        hasBootstrapPeers,
+        hasHyperswarmPeers,
       });
       // If link contains embedded password, pre-fill it
       if (parsed.embeddedPassword) {
@@ -185,6 +188,9 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
     console.log(`[CreateWorkspace] parsedLink:`, parsedLink);
     console.log(`[CreateWorkspace] isP2P:`, parsedLink.isP2P);
     console.log(`[CreateWorkspace] hasBootstrapPeers:`, parsedLink.hasBootstrapPeers);
+    console.log(`[CreateWorkspace] hasHyperswarmPeers:`, parsedLink.hasHyperswarmPeers);
+    console.log(`[CreateWorkspace] hyperswarmPeers:`, parsedLink.hyperswarmPeers);
+    console.log(`[CreateWorkspace] topicHash:`, parsedLink.topic);
     console.log(`[CreateWorkspace] isNewStyle:`, parsedLink.isNewStyle);
     console.log(`[CreateWorkspace] entityId:`, parsedLink.entityId);
     console.log(`[CreateWorkspace] hasPassword:`, !!parsedLink.embeddedPassword || !!joinPassword);
@@ -195,8 +201,8 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
     setIsJoining(true);
     
     try {
-      // Handle P2P links with bootstrap peers
-      if (parsedLink.isP2P && parsedLink.hasBootstrapPeers) {
+      // Handle P2P links (either Hyperswarm peers or legacy WebSocket peers)
+      if (parsedLink.isP2P) {
         const password = parsedLink.embeddedPassword || joinPassword;
         // Allow join if we have password OR encryption key
         if (!password && !parsedLink.encryptionKey) {
@@ -211,7 +217,8 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
           password: password || null,
           encryptionKey: parsedLink.encryptionKey || null,
           permission: parsedLink.permission || 'editor',
-          bootstrapPeers: parsedLink.bootstrapPeers,
+          bootstrapPeers: parsedLink.hyperswarmPeers || parsedLink.bootstrapPeers || [], // Prefer hyperswarm peers
+          topicHash: parsedLink.topic || null, // Include topic hash for DHT
           serverUrl: parsedLink.serverUrl || null, // For cross-platform workspace sync
           onConnectionProgress: (progress) => {
             setConnectionProgress(progress);

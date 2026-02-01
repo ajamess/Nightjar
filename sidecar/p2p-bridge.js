@@ -5,6 +5,7 @@
  * - Hyperswarm topic joining/leaving
  * - P2P message routing
  * - mDNS discovery integration
+ * - Mesh peer sharing (peers share their peer lists)
  */
 
 const { HyperswarmManager, generateTopic } = require('./hyperswarm');
@@ -70,6 +71,9 @@ class P2PBridge extends EventEmitter {
         peerId: data.peerId,
         info: data.identity || {},
       });
+      
+      // Mesh: share our peer list with the new peer
+      this.broadcastPeerList(data.topic);
     });
 
     this.hyperswarm.on('peer-left', (data) => {
@@ -84,6 +88,16 @@ class P2PBridge extends EventEmitter {
         type: 'p2p-message',
         fromPeerId: data.peerId,
         payload: data.message,
+      });
+    });
+
+    // Handle peer list from mesh sharing
+    this.hyperswarm.on('peer-list-received', (data) => {
+      console.log(`[P2PBridge] Received peer list for topic ${data.topic?.slice(0, 16)}...: ${data.peers?.length || 0} peers`);
+      // Notify frontend about new peers discovered
+      this._broadcastToTopic(data.topic, {
+        type: 'p2p-peers-discovered',
+        peers: (data.peers || []).map(pk => ({ peerId: pk })),
       });
     });
   }
@@ -468,6 +482,71 @@ class P2PBridge extends EventEmitter {
     this.clients.clear();
     this.topics.clear();
     this.peerIdToSocket.clear();
+  }
+
+  // --- Public API for sidecar use ---
+
+  /**
+   * Join a Hyperswarm topic directly (for auto-rejoin)
+   * @param {string} topicHex - 64-char hex topic hash
+   */
+  async joinTopic(topicHex) {
+    if (!this.hyperswarm || !this.isInitialized) {
+      throw new Error('P2PBridge not initialized');
+    }
+    await this.hyperswarm.joinTopic(topicHex);
+  }
+
+  /**
+   * Connect directly to a peer by public key
+   * @param {string} peerPublicKeyHex - 64-char hex public key
+   */
+  async connectToPeer(peerPublicKeyHex) {
+    if (!this.hyperswarm || !this.isInitialized) {
+      throw new Error('P2PBridge not initialized');
+    }
+    await this.hyperswarm.connectToPeer(peerPublicKeyHex);
+  }
+
+  /**
+   * Get our own Hyperswarm public key
+   * @returns {string|null} 64-char hex public key
+   */
+  getOwnPublicKey() {
+    if (!this.hyperswarm || !this.isInitialized) return null;
+    return this.hyperswarm.getOwnPublicKey();
+  }
+
+  /**
+   * Get all connected peer public keys
+   * @returns {string[]} Array of hex public keys
+   */
+  getConnectedPeers() {
+    if (!this.hyperswarm) return [];
+    return this.hyperswarm.getConnectedPeerKeys();
+  }
+
+  /**
+   * Broadcast peer list to all connected peers on a topic (mesh sharing)
+   * @param {string} topicHex - Topic to broadcast on
+   */
+  broadcastPeerList(topicHex) {
+    if (!this.hyperswarm) return;
+    
+    const peers = this.hyperswarm.getConnectedPeerKeys();
+    const ownKey = this.getOwnPublicKey();
+    
+    // Send peer list to all connected hyperswarm peers on this topic
+    for (const peerId of peers) {
+      const otherPeers = peers.filter(p => p !== peerId);
+      if (ownKey) otherPeers.push(ownKey);
+      
+      this.hyperswarm.sendToPeer(peerId, {
+        type: 'peer-list',
+        topic: topicHex,
+        peers: otherPeers,
+      });
+    }
   }
 }
 

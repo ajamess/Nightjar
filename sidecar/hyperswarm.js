@@ -181,6 +181,21 @@ class HyperswarmManager extends EventEmitter {
           this.emit('awareness-update', { peerId, topic: message.topic, state: message.state });
           break;
 
+        case 'peer-list':
+          // Mesh peer discovery: connect to peers we don't already know
+          this.emit('peer-list-received', { peerId, topic: message.topic, peers: message.peers });
+          // Auto-connect to new peers
+          if (Array.isArray(message.peers)) {
+            for (const peerKey of message.peers) {
+              if (!this.connections.has(peerKey) && peerKey !== this.swarm?.keyPair?.publicKey?.toString('hex')) {
+                this.connectToPeer(peerKey).catch(() => {
+                  // Peer may be unreachable, ignore
+                });
+              }
+            }
+          }
+          break;
+
         default:
           this.emit('message', { peerId, message });
       }
@@ -339,6 +354,60 @@ class HyperswarmManager extends EventEmitter {
    */
   getConnectionCount() {
     return this.connections.size;
+  }
+
+  /**
+   * Get our own Hyperswarm public key
+   * @returns {string|null} Hex-encoded 32-byte public key
+   */
+  getOwnPublicKey() {
+    if (!this.isInitialized || !this.swarm) return null;
+    return this.swarm.keyPair.publicKey.toString('hex');
+  }
+
+  /**
+   * Connect directly to a peer by their public key
+   * @param {string} peerPublicKeyHex - 64-char hex public key
+   * @returns {Promise<void>}
+   */
+  async connectToPeer(peerPublicKeyHex) {
+    if (!this.isInitialized) {
+      throw new Error('Hyperswarm not initialized');
+    }
+
+    try {
+      const publicKey = b4a.from(peerPublicKeyHex, 'hex');
+      console.log('[Hyperswarm] Connecting to peer:', peerPublicKeyHex.slice(0, 16) + '...');
+      
+      // joinPeer initiates a direct connection to a known peer
+      await this.swarm.joinPeer(publicKey);
+      console.log('[Hyperswarm] Peer connection initiated');
+    } catch (err) {
+      console.error('[Hyperswarm] Failed to connect to peer:', err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Get all connected peer public keys
+   * @returns {string[]} Array of hex-encoded peer public keys
+   */
+  getConnectedPeerKeys() {
+    return Array.from(this.connections.keys());
+  }
+
+  /**
+   * Send a message to a specific peer
+   * @param {string} peerId - Hex-encoded peer public key
+   * @param {Object} message - Message to send
+   * @returns {boolean} Whether message was sent
+   */
+  sendToPeer(peerId, message) {
+    const conn = this.connections.get(peerId);
+    if (!conn) return false;
+    
+    this._sendMessage(conn.socket, message);
+    return true;
   }
 
   /**
