@@ -141,7 +141,7 @@ function createWindow() {
 function handleProtocolLink(url) {
     console.log('[Protocol] Received link:', url);
     // Parse the nightjar:// URL and send to renderer
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('protocol-link', url);
         // Bring window to front
         if (mainWindow.isMinimized()) mainWindow.restore();
@@ -152,7 +152,7 @@ function handleProtocolLink(url) {
 // Windows: Handle protocol links when app is already running
 app.on('second-instance', (event, commandLine) => {
     // Someone tried to run a second instance, focus our window
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
         if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.focus();
     }
