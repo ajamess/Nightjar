@@ -12,7 +12,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useWorkspaces } from '../contexts/WorkspaceContext';
 import { usePermissions } from '../contexts/PermissionContext';
 import { useIdentity } from '../contexts/IdentityContext';
-import { generateShareLink, generateShareMessage, compressShareLink, generateSignedInviteLink } from '../utils/sharing';
+import { generateShareLink, generateShareMessage, compressShareLink, generateSignedInviteLink, generateTopicHash } from '../utils/sharing';
 import { getStoredKeyChain } from '../utils/keyDerivation';
 import { signData, uint8ToBase62 } from '../utils/identity';
 import { isElectron } from '../hooks/useEnvironment';
@@ -55,7 +55,7 @@ export default function WorkspaceSettings({
   onKickMember,
   onTransferOwnership,
 }) {
-  const { updateWorkspace, deleteWorkspace, leaveWorkspace, workspaces } = useWorkspaces();
+  const { updateWorkspace, deleteWorkspace, leaveWorkspace, workspaces, getP2PInfo } = useWorkspaces();
   const { isOwner, canEditWorkspace, getAvailableShareLevels } = usePermissions();
   const { identity: userIdentity } = useIdentity();
   
@@ -143,6 +143,29 @@ export default function WorkspaceSettings({
       serverUrl = window.location.origin;
     }
     
+    // Get P2P info for true serverless sharing (Electron only)
+    let hyperswarmPeers = [];
+    let topicHash = null;
+    
+    if (isElectron()) {
+      try {
+        const p2pInfo = await getP2PInfo();
+        if (p2pInfo.initialized && p2pInfo.ownPublicKey) {
+          // Include our public key so receivers can connect directly
+          hyperswarmPeers = [p2pInfo.ownPublicKey];
+          // Also include connected peers for mesh discovery
+          if (p2pInfo.connectedPeers && p2pInfo.connectedPeers.length > 0) {
+            hyperswarmPeers = [...hyperswarmPeers, ...p2pInfo.connectedPeers.slice(0, 2)];
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to get P2P info:', e);
+      }
+      
+      // Generate topic hash for DHT discovery
+      topicHash = generateTopicHash(workspace.id, keyChain?.password || '');
+    }
+    
     // If we have owner identity, use signed invite with expiry
     if (isOwner && userIdentity?.privateKey && encryptionKey) {
       try {
@@ -161,7 +184,7 @@ export default function WorkspaceSettings({
       }
     }
     
-    // Fallback to legacy link format
+    // Fallback to legacy link format with P2P info
     const link = generateShareLink({
       entityType: 'workspace',
       entityId: workspace.id,
@@ -170,6 +193,8 @@ export default function WorkspaceSettings({
       password: null,
       encryptionKey,
       bootstrapPeers: [],
+      hyperswarmPeers, // NEW: Include Hyperswarm peer public keys
+      topicHash, // NEW: Include topic hash for DHT discovery
       serverUrl,
     });
     
@@ -183,7 +208,7 @@ export default function WorkspaceSettings({
     }
     
     return link;
-  }, [workspace.id, shareLevel, expiryMinutes, customServerUrl, isOwner, userIdentity]);
+  }, [workspace.id, shareLevel, expiryMinutes, customServerUrl, isOwner, userIdentity, getP2PInfo]);
 
   // Copy different share formats
   const handleCopyFormat = async (format) => {

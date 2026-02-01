@@ -8,9 +8,13 @@ const { Level } = require('level');
 const TorControl = require('tor-control');
 const EventEmitter = require('events');
 const { P2PBridge } = require('./p2p-bridge');
+const { loadIdentity, hasIdentity } = require('./identity');
 
 // Initialize P2P Bridge for unified P2P layer
 const p2pBridge = new P2PBridge();
+
+// Track if P2P is initialized with identity
+let p2pInitialized = false;
 
 // Dynamically import uint8arrays to handle ES module
 let uint8ArrayFromString = null;
@@ -680,6 +684,74 @@ console.log(`[Sidecar] Yjs WebSocket server listening on ws://localhost:${YJS_WE
 
 // Server 2: Handles metadata and commands
 const metaWss = new WebSocket.Server({ port: METADATA_WEBSOCKET_PORT });
+console.log(`[Sidecar] Metadata WebSocket server listening on ws://localhost:${METADATA_WEBSOCKET_PORT}`);
+
+// --- P2P Initialization ---
+// Initialize P2PBridge with identity if available (enables Hyperswarm DHT)
+async function initializeP2P() {
+    if (p2pInitialized) return;
+    
+    try {
+        if (hasIdentity()) {
+            const identity = loadIdentity();
+            if (identity) {
+                const p2pIdentity = {
+                    publicKey: Buffer.from(identity.publicKey).toString('hex'),
+                    secretKey: Buffer.from(identity.privateKey).toString('hex'),
+                    displayName: identity.handle || 'Anonymous',
+                    color: identity.color || '#6366f1',
+                };
+                
+                await p2pBridge.initialize(p2pIdentity);
+                p2pInitialized = true;
+                console.log('[Sidecar] P2P initialized with identity:', identity.handle);
+                
+                // Auto-rejoin saved workspaces
+                await autoRejoinWorkspaces();
+            }
+        } else {
+            console.log('[Sidecar] No identity found, P2P will initialize when identity is created');
+        }
+    } catch (err) {
+        console.error('[Sidecar] Failed to initialize P2P:', err);
+    }
+}
+
+// Auto-rejoin workspaces that have topic hashes saved
+async function autoRejoinWorkspaces() {
+    try {
+        const workspaces = await loadWorkspaceList();
+        for (const ws of workspaces) {
+            if (ws.topicHash && p2pBridge.isInitialized) {
+                try {
+                    await p2pBridge.joinTopic(ws.topicHash);
+                    console.log(`[Sidecar] Auto-rejoined workspace topic: ${ws.topicHash.slice(0, 16)}...`);
+                    
+                    // Try to connect to last known peers
+                    if (ws.lastKnownPeers && Array.isArray(ws.lastKnownPeers)) {
+                        for (const peer of ws.lastKnownPeers) {
+                            if (peer.publicKey) {
+                                try {
+                                    await p2pBridge.connectToPeer(peer.publicKey);
+                                } catch (e) {
+                                    // Peer may be offline, continue
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Sidecar] Failed to rejoin workspace ${ws.id}:`, e.message);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[Sidecar] Auto-rejoin failed:', err);
+    }
+}
+
+// Initialize P2P after a short delay to let everything start up
+setTimeout(initializeP2P, 1000);
+
 metaWss.on('connection', (ws, req) => {
     console.log('[Sidecar] Metadata client connected.');
     
@@ -1074,6 +1146,29 @@ metaWss.on('connection', (ws, req) => {
                     }
                     break;
                 
+                // --- P2P Info ---
+                case 'get-p2p-info':
+                    // Get our Hyperswarm public key and connected peers
+                    try {
+                        const ownPublicKey = p2pBridge.getOwnPublicKey();
+                        const connectedPeers = p2pBridge.getConnectedPeers();
+                        ws.send(JSON.stringify({
+                            type: 'p2p-info',
+                            initialized: p2pInitialized,
+                            ownPublicKey,
+                            connectedPeers,
+                        }));
+                    } catch (err) {
+                        ws.send(JSON.stringify({
+                            type: 'p2p-info',
+                            initialized: false,
+                            ownPublicKey: null,
+                            connectedPeers: [],
+                            error: err.message,
+                        }));
+                    }
+                    break;
+                
                 // --- Workspace Management ---
                 case 'list-workspaces':
                     try {
@@ -1206,6 +1301,21 @@ metaWss.on('connection', (ws, req) => {
                                     needsUpdate = true;
                                 }
                                 
+                                // Update topicHash if provided
+                                if (joinWsData.topicHash && joinWsData.topicHash !== existing.topicHash) {
+                                    updates.topicHash = joinWsData.topicHash;
+                                    needsUpdate = true;
+                                }
+                                
+                                // Update bootstrapPeers if provided
+                                if (joinWsData.bootstrapPeers && Array.isArray(joinWsData.bootstrapPeers)) {
+                                    updates.lastKnownPeers = joinWsData.bootstrapPeers.map(pk => ({
+                                        publicKey: pk,
+                                        lastSeen: Date.now()
+                                    }));
+                                    needsUpdate = true;
+                                }
+                                
                                 // Upgrade permission if new one is higher
                                 if (newLevel > existingLevel) {
                                     updates.myPermission = joinWsData.myPermission;
@@ -1219,9 +1329,43 @@ metaWss.on('connection', (ws, req) => {
                                     ws.send(JSON.stringify({ type: 'workspace-joined', workspace: existing, upgraded: false }));
                                 }
                             } else {
-                                // New workspace
-                                await saveWorkspaceMetadata(joinWsData.id, joinWsData);
-                                ws.send(JSON.stringify({ type: 'workspace-joined', workspace: joinWsData, upgraded: false }));
+                                // New workspace - save with P2P info
+                                const wsToSave = { ...joinWsData };
+                                if (joinWsData.bootstrapPeers && Array.isArray(joinWsData.bootstrapPeers)) {
+                                    wsToSave.lastKnownPeers = joinWsData.bootstrapPeers.map(pk => ({
+                                        publicKey: pk,
+                                        lastSeen: Date.now()
+                                    }));
+                                }
+                                await saveWorkspaceMetadata(joinWsData.id, wsToSave);
+                                ws.send(JSON.stringify({ type: 'workspace-joined', workspace: wsToSave, upgraded: false }));
+                            }
+                            
+                            // --- P2P Connection ---
+                            // Join Hyperswarm topic and connect to bootstrap peers
+                            if (p2pInitialized && p2pBridge.isInitialized) {
+                                const topicHash = joinWsData.topicHash;
+                                const bootstrapPeers = joinWsData.bootstrapPeers;
+                                
+                                if (topicHash) {
+                                    try {
+                                        await p2pBridge.joinTopic(topicHash);
+                                        console.log(`[Sidecar] Joined P2P topic: ${topicHash.slice(0, 16)}...`);
+                                    } catch (e) {
+                                        console.warn('[Sidecar] Failed to join P2P topic:', e.message);
+                                    }
+                                }
+                                
+                                if (bootstrapPeers && Array.isArray(bootstrapPeers)) {
+                                    for (const peerKey of bootstrapPeers) {
+                                        try {
+                                            await p2pBridge.connectToPeer(peerKey);
+                                            console.log(`[Sidecar] Connecting to bootstrap peer: ${peerKey.slice(0, 16)}...`);
+                                        } catch (e) {
+                                            console.warn(`[Sidecar] Failed to connect to peer ${peerKey.slice(0, 16)}:`, e.message);
+                                        }
+                                    }
+                                }
                             }
                         } catch (err) {
                             console.error('[Sidecar] Failed to join workspace:', err);
