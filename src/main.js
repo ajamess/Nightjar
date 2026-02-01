@@ -58,6 +58,38 @@ let sessionKey = null;
 const ydocs = new Map();
 const db = new Level(path.join(app.getPath('userData'), 'storage'), { valueEncoding: 'binary' });
 
+// Helper to safely check if mainWindow is usable
+function isWindowUsable() {
+    try {
+        return mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Helper to safely send IPC message to mainWindow
+function safeSend(channel, ...args) {
+    try {
+        if (isWindowUsable()) {
+            mainWindow.webContents.send(channel, ...args);
+        }
+    } catch (e) {
+        console.error(`[Main] Failed to send ${channel}:`, e.message);
+    }
+}
+
+// Helper to safely focus mainWindow
+function safeFocusWindow() {
+    try {
+        if (isWindowUsable()) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+    } catch (e) {
+        console.error('[Main] Failed to focus window:', e.message);
+    }
+}
+
 // Central awareness object for the backend
 const awareness = new awarenessProtocol.Awareness(new Y.Doc());
 
@@ -141,21 +173,14 @@ function createWindow() {
 function handleProtocolLink(url) {
     console.log('[Protocol] Received link:', url);
     // Parse the nightjar:// URL and send to renderer
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('protocol-link', url);
-        // Bring window to front
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-    }
+    safeSend('protocol-link', url);
+    safeFocusWindow();
 }
 
 // Windows: Handle protocol links when app is already running
 app.on('second-instance', (event, commandLine) => {
     // Someone tried to run a second instance, focus our window
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-    }
+    safeFocusWindow();
     // Protocol link is in commandLine on Windows
     const protocolLink = commandLine.find(arg => arg.startsWith('nightjar://'));
     if (protocolLink) {
@@ -184,7 +209,7 @@ app.on('ready', async () => {
     
     // Handle protocol link if app was opened with one (Windows)
     const protocolLink = process.argv.find(arg => arg.startsWith('nightjar://'));
-    if (protocolLink) {
+    if (protocolLink && isWindowUsable()) {
         // Wait for window to be ready
         mainWindow.webContents.once('did-finish-load', () => {
             handleProtocolLink(protocolLink);
@@ -408,13 +433,15 @@ async function startBackendWithLoadingScreen() {
                     createWindow();
                     
                     // Send connection info once window is ready
-                    mainWindow.webContents.once('did-finish-load', () => {
-                        mainWindow.webContents.send('connection-info', {
-                            onionAddress: 'localhost',
-                            peerId: 'local-peer-id',
-                            multiaddr: '/ip4/127.0.0.1/tcp/8080'
+                    if (mainWindow) {
+                        mainWindow.webContents.once('did-finish-load', () => {
+                            safeSend('connection-info', {
+                                onionAddress: 'localhost',
+                                peerId: 'local-peer-id',
+                                multiaddr: '/ip4/127.0.0.1/tcp/8080'
+                            });
                         });
-                    });
+                    }
                     
                     resolve();
                 }, 300); // Brief delay to show "Ready!" message
@@ -515,9 +542,7 @@ awareness.on('update', (changes, origin) => {
         if (p2pNode) p2pNode.services.pubsub.publish(AWARENESS_PUBSUB_TOPIC, update);
     }
     if (origin !== 'ipc') {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('awareness-update', update);
-        }
+        safeSend('awareness-update', update);
     }
 });
 
@@ -630,40 +655,30 @@ const swarmManager = hyperswarm.getInstance();
 
 // Forward Hyperswarm events to the renderer
 swarmManager.on('peer-joined', (data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('hyperswarm:peer-joined', data);
-    }
+    safeSend('hyperswarm:peer-joined', data);
 });
 
 swarmManager.on('peer-left', (data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('hyperswarm:peer-left', data);
-    }
+    safeSend('hyperswarm:peer-left', data);
 });
 
 swarmManager.on('peer-identity', (data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('hyperswarm:peer-identity', data);
-    }
+    safeSend('hyperswarm:peer-identity', data);
 });
 
 swarmManager.on('sync-message', (data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        // Apply sync to local Yjs doc
-        const doc = getDoc('p2p-editor-room');
-        const updateBuffer = Buffer.from(data.data, 'base64');
-        Y.applyUpdate(doc, updateBuffer, 'p2p');
-        
-        // Forward to renderer
-        mainWindow.webContents.send('hyperswarm:sync-message', data);
-        mainWindow.webContents.send('yjs-update', updateBuffer);
-    }
+    // Apply sync to local Yjs doc
+    const doc = getDoc('p2p-editor-room');
+    const updateBuffer = Buffer.from(data.data, 'base64');
+    Y.applyUpdate(doc, updateBuffer, 'p2p');
+    
+    // Forward to renderer
+    safeSend('hyperswarm:sync-message', data);
+    safeSend('yjs-update', updateBuffer);
 });
 
 swarmManager.on('awareness-update', (data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('hyperswarm:awareness-update', data);
-    }
+    safeSend('hyperswarm:awareness-update', data);
 });
 
 ipcMain.handle('hyperswarm:initialize', async (event, identityData) => {
@@ -736,21 +751,15 @@ ipcMain.handle('tor:start', async (event, mode = 'bundled') => {
         
         // Forward events to renderer
         torManager.on('bootstrap', (progress) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('tor:bootstrap', progress);
-            }
+            safeSend('tor:bootstrap', progress);
         });
         
         torManager.on('ready', () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('tor:ready');
-            }
+            safeSend('tor:ready');
         });
         
         torManager.on('error', (err) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('tor:error', err.message);
-            }
+            safeSend('tor:error', err.message);
         });
         
         await torManager.start();
