@@ -9,15 +9,15 @@ const hyperswarm = require('../sidecar/hyperswarm');
 const Y = require('yjs');
 const awarenessProtocol = require('y-protocols/awareness');
 
-// Register Nightjar:// as the default protocol handler for this app
+// Register nightjar:// as the default protocol handler for this app
 if (process.defaultApp) {
     // Development mode - need to pass app path
     if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient('Nightjar', process.execPath, [path.resolve(process.argv[1])]);
+        app.setAsDefaultProtocolClient('nightjar', process.execPath, [path.resolve(process.argv[1])]);
     }
 } else {
     // Production mode
-    app.setAsDefaultProtocolClient('Nightjar');
+    app.setAsDefaultProtocolClient('nightjar');
 }
 
 // Disable GPU acceleration BEFORE any app initialization
@@ -137,10 +137,10 @@ function createWindow() {
     }
 }
 
-// Handle Nightjar:// protocol links
+// Handle nightjar:// protocol links
 function handleProtocolLink(url) {
     console.log('[Protocol] Received link:', url);
-    // Parse the Nightjar:// URL and send to renderer
+    // Parse the nightjar:// URL and send to renderer
     if (mainWindow) {
         mainWindow.webContents.send('protocol-link', url);
         // Bring window to front
@@ -157,7 +157,7 @@ app.on('second-instance', (event, commandLine) => {
         mainWindow.focus();
     }
     // Protocol link is in commandLine on Windows
-    const protocolLink = commandLine.find(arg => arg.startsWith('Nightjar://'));
+    const protocolLink = commandLine.find(arg => arg.startsWith('nightjar://'));
     if (protocolLink) {
         handleProtocolLink(protocolLink);
     }
@@ -183,7 +183,7 @@ app.on('ready', async () => {
     await startBackendWithLoadingScreen();
     
     // Handle protocol link if app was opened with one (Windows)
-    const protocolLink = process.argv.find(arg => arg.startsWith('Nightjar://'));
+    const protocolLink = process.argv.find(arg => arg.startsWith('nightjar://'));
     if (protocolLink) {
         // Wait for window to be ready
         mainWindow.webContents.once('did-finish-load', () => {
@@ -515,7 +515,9 @@ awareness.on('update', (changes, origin) => {
         if (p2pNode) p2pNode.services.pubsub.publish(AWARENESS_PUBSUB_TOPIC, update);
     }
     if (origin !== 'ipc') {
-        mainWindow.webContents.send('awareness-update', update);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('awareness-update', update);
+        }
     }
 });
 
