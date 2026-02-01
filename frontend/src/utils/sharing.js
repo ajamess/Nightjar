@@ -191,7 +191,10 @@ const ENTITY_TYPES = {
 };
 
 // Maximum peers to embed in a link (to keep URLs manageable)
-const MAX_EMBEDDED_PEERS = 3;
+const MAX_EMBEDDED_PEERS = 5;
+
+// Maximum Hyperswarm peer public keys to embed
+const MAX_HYPERSWARM_PEERS = 3;
 
 const CODE_TO_ENTITY = {
   w: 'workspace',
@@ -225,7 +228,10 @@ const LEGACY_LINK_PREFIX = 'nightjar://d/';
  * @param {boolean} options.hasPassword - Whether to use password mode (Option B)
  * @param {string} options.password - Password for key derivation (Option B)
  * @param {Uint8Array} options.encryptionKey - Direct encryption key (Option A)
- * @param {Array<string>} options.bootstrapPeers - Array of peer addresses (ip:port or host:port)
+ * @param {Array<string>} options.bootstrapPeers - Array of peer addresses (ip:port or host:port) - legacy WebSocket
+ * @param {Array<string>} options.hyperswarmPeers - Array of Hyperswarm public keys (64-char hex)
+ * @param {string} options.topicHash - Full 64-char hex Hyperswarm topic hash
+ * @param {string} options.serverUrl - Sync server URL for fallback
  * @returns {string} Shareable link
  */
 export function generateShareLink(options) {
@@ -237,6 +243,8 @@ export function generateShareLink(options) {
     password = null,
     encryptionKey = null,
     bootstrapPeers = [],
+    hyperswarmPeers = [], // NEW: Hyperswarm peer public keys
+    topicHash = null, // NEW: Full topic hash for DHT discovery
     serverUrl = null, // Sync server URL for cross-platform sharing
     // Legacy support
     documentId,
@@ -291,11 +299,18 @@ export function generateShareLink(options) {
   const permCode = PERMISSION_CODES[permission] || 'e';
   fragmentParts.push('perm:' + permCode);
   
-  // Add bootstrap peers (limit to MAX_EMBEDDED_PEERS)
+  // Add bootstrap peers (limit to MAX_EMBEDDED_PEERS) - legacy WebSocket format
   if (bootstrapPeers && bootstrapPeers.length > 0) {
     const peersToEmbed = bootstrapPeers.slice(0, MAX_EMBEDDED_PEERS);
     const peersEncoded = encodePeerList(peersToEmbed);
     fragmentParts.push('peers:' + peersEncoded);
+  }
+  
+  // Add Hyperswarm peer public keys (for true P2P without server)
+  if (hyperswarmPeers && hyperswarmPeers.length > 0) {
+    const hpeersToEmbed = hyperswarmPeers.slice(0, MAX_HYPERSWARM_PEERS);
+    // Encode as comma-separated hex keys
+    fragmentParts.push('hpeer:' + hpeersToEmbed.join(','));
   }
   
   // Add sync server URL for cross-platform sharing
@@ -305,13 +320,14 @@ export function generateShareLink(options) {
   }
   
   // Add Hyperswarm topic for P2P discovery
-  // Topic is SHA256(workspaceId) - allows peers to find each other via DHT
-  // TODO: Make more secure by using SHA256(password + workspaceId)
   if (entityType === 'workspace') {
-    // Generate topic synchronously using simple hash
-    // Full SHA256 topic is generated client-side during join
-    const topicHint = entityId; // Use entityId as topic hint
-    fragmentParts.push('topic:' + topicHint);
+    if (topicHash) {
+      // Use provided topic hash (full 64-char hex)
+      fragmentParts.push('topic:' + topicHash);
+    } else {
+      // Fallback: use entityId as topic hint (peers will derive full topic)
+      fragmentParts.push('topic:' + entityId);
+    }
   }
   
   if (fragmentParts.length > 0) {
@@ -406,6 +422,7 @@ export function parseShareLink(link) {
   let embeddedPassword = null;
   let permission = 'editor'; // Default permission
   let bootstrapPeers = [];
+  let hyperswarmPeers = []; // Hyperswarm peer public keys
   let serverUrl = null; // Remote sync server URL (for Electron joining web workspaces)
   let topic = null; // Hyperswarm topic for P2P discovery
   
@@ -425,13 +442,16 @@ export function parseShareLink(link) {
         permission = CODE_TO_PERMISSION[permCode];
       }
     } else if (param.startsWith('peers:')) {
-      // Bootstrap peers for P2P connection
+      // Bootstrap peers for P2P connection (legacy WebSocket format)
       bootstrapPeers = decodePeerList(param.slice(6));
+    } else if (param.startsWith('hpeer:')) {
+      // Hyperswarm peer public keys (comma-separated hex)
+      hyperswarmPeers = param.slice(6).split(',').filter(p => p.length === 64);
     } else if (param.startsWith('srv:')) {
       // Sync server URL (for cross-platform workspace joining)
       serverUrl = decodeURIComponent(param.slice(4));
     } else if (param.startsWith('topic:')) {
-      // Hyperswarm topic hint for P2P discovery
+      // Hyperswarm topic for P2P discovery
       // This is used to find peers via DHT
       topic = param.slice(6);
     }
@@ -454,7 +474,8 @@ export function parseShareLink(link) {
     encryptionKey,
     embeddedPassword,
     permission,
-    bootstrapPeers,
+    bootstrapPeers, // Legacy WebSocket peers
+    hyperswarmPeers, // Hyperswarm peer public keys
     serverUrl, // Sync server URL for remote workspaces
     topic, // Hyperswarm topic for P2P discovery
     raw: encoded
@@ -615,6 +636,18 @@ export function generateTopicFromEntityId(entityType, entityId, password = '') {
  */
 export function generateTopicFromDocId(documentId, password = '') {
   const data = password ? `${documentId}:${password}` : documentId;
+  return sha256(data);
+}
+
+/**
+ * Generate topic hash for Hyperswarm DHT discovery
+ * @param {string} workspaceId - Workspace ID (hex)
+ * @param {string} password - Optional password for additional security
+ * @returns {string} 64-char hex topic hash
+ */
+export function generateTopicHash(workspaceId, password = '') {
+  // Use SHA256 of workspaceId + password for DHT topic
+  const data = password ? `workspace:${workspaceId}:${password}` : `workspace:${workspaceId}`;
   return sha256(data);
 }
 
