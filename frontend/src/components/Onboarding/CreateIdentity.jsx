@@ -52,6 +52,14 @@ export default function CreateIdentity({ onComplete, onBack }) {
             identity.icon = selectedEmoji;
             identity.color = selectedColor;
             
+            // Also set user profile to match
+            const profileData = {
+                name: handle.trim(),
+                icon: selectedEmoji,
+                color: selectedColor
+            };
+            localStorage.setItem('nahma-user-profile', JSON.stringify(profileData));
+            
             onComplete(identity);
         } catch (e) {
             console.error('Failed to create identity:', e);

@@ -922,6 +922,8 @@ function App() {
                             onProfileChange={setUserProfile}
                             isFullscreen={isFullscreen}
                             onToggleFullscreen={toggleFullscreen}
+                            documents={documents}
+                            folders={folders}
                         />
                     ) : (
                         <div className="header-bar-minimal">

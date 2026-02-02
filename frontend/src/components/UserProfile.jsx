@@ -4,6 +4,7 @@ import { useConfirmDialog } from './common/ConfirmDialog';
 import { useEnvironment } from '../hooks/useEnvironment';
 import RecoveryCodeModal from './RecoveryCodeModal';
 import { createBackup, downloadBackup } from '../utils/backup';
+import { copyDiagnosticReportToClipboard } from '../utils/diagnostics';
 import './UserProfile.css';
 
 // Preset emoji icons
@@ -63,7 +64,7 @@ const loadUserProfile = () => {
     }
     
     try {
-        const saved = localStorage.getItem('Nightjar-user-profile');
+        const saved = localStorage.getItem('nahma-user-profile');
         if (saved) {
             return JSON.parse(saved);
         }
@@ -80,7 +81,7 @@ const loadUserProfile = () => {
 // Save user profile to localStorage
 const saveUserProfile = (profile) => {
     try {
-        localStorage.setItem('Nightjar-user-profile', JSON.stringify(profile));
+        localStorage.setItem('nahma-user-profile', JSON.stringify(profile));
     } catch (e) {
         console.error('Failed to save user profile:', e);
     }
@@ -94,7 +95,7 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
     } catch (e) {
         // IdentityContext not available, use defaults
     }
-    const { identity, publicIdentity, deleteIdentity } = identityContext;
+    const { identity, publicIdentity, deleteIdentity, updateIdentity } = identityContext;
     
     // Try to get confirm dialog, but don't fail if not available
     let confirmDialog = { confirm: null, ConfirmDialogComponent: null };
@@ -107,14 +108,21 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
     
     const { isElectron } = useEnvironment();
 
-    const [profile, setProfile] = useState(() => userProfile || initialProfile || loadUserProfile());
+    const [profile, setProfile] = useState(() => {
+        const loadedProfile = userProfile || initialProfile || loadUserProfile();
+        // Sync with identity handle if it exists
+        if (identity?.handle) {
+            loadedProfile.name = identity.handle;
+        }
+        return loadedProfile;
+    });
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('appearance');
     const [showRecoveryModal, setShowRecoveryModal] = useState(false);
     const [success, setSuccess] = useState(null);
     const [preferences, setPreferences] = useState(() => {
         try {
-            const saved = localStorage.getItem('Nightjar_preferences');
+            const saved = localStorage.getItem('nahma_preferences');
             return saved ? JSON.parse(saved) : {
                 showCursor: true,
                 showSelection: true,
@@ -128,6 +136,13 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
         }
     });
     const panelRef = useRef(null);
+
+    // Sync profile name with identity handle
+    useEffect(() => {
+        if (identity?.handle && profile.name !== identity.handle) {
+            setProfile(prev => ({ ...prev, name: identity.handle }));
+        }
+    }, [identity?.handle]);
 
     // Sync with external profile changes
     useEffect(() => {
@@ -171,6 +186,12 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
 
     const updateProfile = (updates) => {
         setProfile(prev => ({ ...prev, ...updates }));
+        // Sync name changes to identity handle
+        if (updates.name && identity && updateIdentity) {
+            updateIdentity({ handle: updates.name }).catch(e => {
+                console.error('[UserProfile] Failed to sync name to identity:', e);
+            });
+        }
     };
 
     const handleDeleteIdentity = useCallback(async () => {
@@ -194,7 +215,7 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
         setPreferences(prev => {
             const updated = { ...prev, [key]: value };
             try {
-                localStorage.setItem('Nightjar_preferences', JSON.stringify(updated));
+                localStorage.setItem('nahma_preferences', JSON.stringify(updated));
             } catch (e) {
                 console.error('Failed to save preferences:', e);
             }
@@ -206,7 +227,7 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
         if (!identity) return;
         try {
             // Get workspaces from localStorage for backup
-            const workspacesData = localStorage.getItem('Nightjar-workspaces');
+            const workspacesData = localStorage.getItem('nahma-workspaces');
             const workspaces = workspacesData ? JSON.parse(workspacesData) : [];
             const backup = createBackup(identity, workspaces);
             downloadBackup(backup);
@@ -278,6 +299,12 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
                             onClick={() => setActiveTab('preferences')}
                         >
                             ⚙️ Preferences
+                        </button>
+                        <button 
+                            className={`tab ${activeTab === 'support' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('support')}
+                        >
+                            🐛 Support
                         </button>
                     </div>
 
@@ -466,6 +493,42 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile }) => {
                                         />
                                         <span className="toggle-slider"></span>
                                     </label>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'support' && (
+                        <div className="tab-content support-tab">
+                            <div className="section">
+                                <label className="section-label">Report an Issue</label>
+                                <p className="section-hint">
+                                    Copy comprehensive diagnostic information to your clipboard for debugging.
+                                    This includes console logs, system info, and P2P status.
+                                </p>
+                                <button 
+                                    className="btn-secondary" 
+                                    onClick={async () => {
+                                        const result = await copyDiagnosticReportToClipboard();
+                                        if (result.success) {
+                                            setSuccess(`✓ Copied ${(result.size / 1024).toFixed(1)}KB of diagnostic data to clipboard`);
+                                            setTimeout(() => setSuccess(null), 3000);
+                                        } else {
+                                            setSuccess(`✗ Failed to copy: ${result.error}`);
+                                            setTimeout(() => setSuccess(null), 5000);
+                                        }
+                                    }}
+                                >
+                                    📋 Copy Diagnostic Report
+                                </button>
+                            </div>
+
+                            <div className="section">
+                                <label className="section-label">About</label>
+                                <div className="about-info">
+                                    <p><strong>Nightjar</strong></p>
+                                    <p className="section-hint">Secure P2P Collaborative Text Editor</p>
+                                    <p className="section-hint">Version: {isElectron ? window.electron?.appVersion || '1.0.0' : 'Web'}</p>
                                 </div>
                             </div>
                         </div>

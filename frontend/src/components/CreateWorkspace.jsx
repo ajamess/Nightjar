@@ -17,7 +17,24 @@ import {
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import './CreateWorkspace.css';
 
-const EMOJI_OPTIONS = ['📁', '💼', '📚', '🏠', '🎨', '💻', '📝', '🔬', '🎵', '📸', '🌟', '🚀'];
+const EMOJI_OPTIONS = [
+  // General workspace & organization
+  '📁', '💼', '📚', '🗂️', '📦', '🏢', '🏠', '📋',
+  // Creative & design
+  '🎨', '🎬', '🎭', '🖼️', '✏️', '🖌️', '🎵', '📸',
+  // Technical & development
+  '💻', '⚙️', '🔧', '🛠️', '💡', '🔬', '🧪', '📡',
+  // Team & collaboration
+  '👥', '🤝', '💬', '📢', '🎯', '🎓', '📝', '📌',
+  // Planning & productivity
+  '📅', '⏰', '✅', '📈', '📊', '💰', '🚀', '🌟'
+];
+
+const COLOR_PRESETS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
+  '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
+  '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
+];
 
 export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSuccess }) {
   const { createWorkspace, joinWorkspace } = useWorkspaces();
@@ -31,6 +48,7 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
   // Create workspace state
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('📁');
+  const [color, setColor] = useState('#6366f1');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -158,7 +176,8 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
       const workspace = await createWorkspace({
         name: name.trim(),
         password: password || null, // null if no password
-        icon
+        icon,
+        color
       });
       onSuccess?.(workspace);
       onClose?.();
@@ -368,6 +387,22 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
                     >
                       {emoji}
                     </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="create-workspace__color-section">
+                <label className="create-workspace__label">Choose a color</label>
+                <div className="create-workspace__color-grid">
+                  {COLOR_PRESETS.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`create-workspace__color-option ${color === c ? 'create-workspace__color-option--selected' : ''}`}
+                      style={{ backgroundColor: c }}
+                      onClick={() => setColor(c)}
+                      aria-label={`Select color ${c}`}
+                    />
                   ))}
                 </div>
               </div>

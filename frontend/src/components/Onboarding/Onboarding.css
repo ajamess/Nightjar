@@ -31,7 +31,7 @@
 .onboarding-step {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
 .onboarding-step h1,
@@ -234,21 +234,21 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    padding: 24px;
+    gap: 10px;
+    padding: 20px;
     background: rgba(255, 255, 255, 0.05);
     border-radius: 16px;
     border: 2px solid transparent;
 }
 
 .avatar-large {
-    width: 80px;
-    height: 80px;
+    width: 70px;
+    height: 70px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2.5rem;
+    font-size: 2.2rem;
     cursor: pointer;
     transition: transform 0.2s;
 }
@@ -293,11 +293,11 @@
 .emoji-picker {
     display: grid;
     grid-template-columns: repeat(10, 1fr);
-    gap: 4px;
-    padding: 12px;
+    gap: 3px;
+    padding: 10px;
     background: rgba(0, 0, 0, 0.3);
     border-radius: 12px;
-    max-height: 200px;
+    max-height: 150px;
     overflow-y: auto;
 }
 
@@ -306,12 +306,12 @@
 }
 
 .emoji-option {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border: none;
     background: transparent;
     border-radius: 8px;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     cursor: pointer;
     transition: all 0.15s;
 }
@@ -334,13 +334,14 @@
 /* Color picker */
 .color-picker {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: wrap;
+    justify-content: center;
 }
 
 .color-option {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     border: 2px solid transparent;
     cursor: pointer;

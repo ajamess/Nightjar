@@ -80,6 +80,11 @@ export default function WorkspaceSwitcher({ onOpenSettings, onCreateWorkspace, o
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
+        style={{
+          background: currentWorkspace?.color 
+            ? `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), ${currentWorkspace.color}`
+            : undefined
+        }}
       >
         <div className="workspace-switcher__current">
           <span className="workspace-switcher__icon">
@@ -135,6 +140,11 @@ export default function WorkspaceSwitcher({ onOpenSettings, onCreateWorkspace, o
                 }}
                 role="option"
                 aria-selected={workspace.id === currentWorkspace?.id}
+                style={{
+                  background: workspace.color 
+                    ? `linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), ${workspace.color}`
+                    : undefined
+                }}
               >
                 <span className="workspace-switcher__item-icon">
                   {workspace.icon || '📁'}
