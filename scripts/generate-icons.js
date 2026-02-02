@@ -2,7 +2,8 @@ const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
 
-const inputImage = path.join(__dirname, '..', 'nightjar.png');
+// Use nightjar-crop.png as the source - it has proper transparent background
+const inputImage = path.join(__dirname, '..', 'assets', 'icons', 'nightjar-crop.png');
 const assetsDir = path.join(__dirname, '..', 'assets');
 const iconsDir = path.join(assetsDir, 'icons');
 const buildDir = path.join(__dirname, '..', 'build');
@@ -48,6 +49,21 @@ async function createSquareIcon(size, outputPath) {
   console.log(`Created ${path.basename(outputPath)} (${size}x${size} square)`);
 }
 
+async function generateIcoFile(inputPng, outputIco) {
+  // Use png2icons to generate .ico file with multiple sizes
+  const png2icons = require('png2icons');
+  
+  const input = fs.readFileSync(inputPng);
+  const output = png2icons.createICO(input, png2icons.HERMITE, 0, true, true);
+  
+  if (output) {
+    fs.writeFileSync(outputIco, output);
+    console.log(`Created ${path.basename(outputIco)} (Windows icon)`);
+  } else {
+    console.error('Failed to create ICO file');
+  }
+}
+
 async function generateIcons() {
   console.log('Generating Nightjar icons...\n');
   
@@ -70,11 +86,10 @@ async function generateIcons() {
   // Generate build icons
   await createCircularIcon(512, path.join(buildDir, 'icon.png'));
   
+  // Generate Windows .ico file
+  await generateIcoFile(path.join(buildDir, 'icon.png'), path.join(buildDir, 'icon.ico'));
+  
   console.log('\n✓ All icons generated successfully!');
-  console.log('\nNext steps:');
-  console.log('1. Use an icon converter tool to create icon.icns (Mac)');
-  console.log('2. Use an icon converter tool to create icon.ico (Windows)');
-  console.log('   Or use online tools like https://iconverticons.com/');
 }
 
 generateIcons().catch(err => {
