@@ -109,8 +109,8 @@
 
 .create-workspace__icon-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
   margin-top: 8px;
 }
 
@@ -120,7 +120,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 20px;
   background: var(--bg-secondary, #f3f4f6);
   border: 2px solid transparent;
   border-radius: 8px;
@@ -140,6 +140,42 @@
 .create-workspace__icon-option--selected {
   border-color: var(--accent-color, #3b82f6);
   background: var(--accent-color-alpha, rgba(59, 130, 246, 0.1));
+}
+
+/* Color section */
+.create-workspace__color-section {
+  margin-bottom: 4px;
+}
+
+.create-workspace__color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.create-workspace__color-option {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.create-workspace__color-option:hover {
+  transform: scale(1.1);
+}
+
+.create-workspace__color-option:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+}
+
+.create-workspace__color-option--selected {
+  border-color: var(--text-primary, #111827);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+  transform: scale(1.1);
 }
 
 /* Form fields */

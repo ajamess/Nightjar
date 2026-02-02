@@ -135,12 +135,15 @@
 
 .profile-tabs {
     display: flex;
+    flex-wrap: wrap;
     border-bottom: 1px solid var(--border-color);
+    gap: 4px;
 }
 
 .tab {
-    flex: 1;
-    padding: 10px;
+    flex: 1 1 auto;
+    min-width: 80px;
+    padding: 8px 12px;
     background: none;
     border: none;
     color: var(--text-secondary);
@@ -281,7 +284,7 @@
 /* Larger panel variant */
 .profile-panel--large {
     width: 380px;
-    max-height: 500px;
+    max-height: 85vh;
     overflow-y: auto;
 }
 

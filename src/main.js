@@ -133,8 +133,8 @@ const getDoc = (roomName) => {
 // --- Main Application Lifecycle ---
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
+        width: 1600,
+        height: 1000,
         backgroundColor: '#242424',
         show: false, // Don't show until ready
         webPreferences: {
