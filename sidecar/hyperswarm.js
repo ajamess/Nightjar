@@ -556,14 +556,31 @@ class HyperswarmManager extends EventEmitter {
     const dataStr = Buffer.isBuffer(data) ? data.toString('base64') : 
                     data instanceof Uint8Array ? Buffer.from(data).toString('base64') : data;
 
+    console.log(`[Hyperswarm] broadcastSync called - topic: ${topicHex.slice(0, 8)}...`);
+    console.log(`[Hyperswarm] Data type: ${typeof data}, size: ${dataStr.length}`);
+    
+    let sentCount = 0;
     for (const [peerId, conn] of this.connections) {
       if (conn.topics.has(topicHex)) {
+        console.log(`[Hyperswarm] → Sending to peer ${peerId.slice(0, 8)}... (${conn.identity?.displayName || 'unknown'})`);
         this._sendMessage(conn.socket, {
           type: 'sync',
           topic: topicHex,
           data: dataStr
         });
+        sentCount++;
       }
+    }
+    
+    console.log(`[Hyperswarm] broadcastSync complete - sent to ${sentCount} peer(s)`);
+    
+    if (sentCount === 0) {
+      console.warn(`[Hyperswarm] ⚠ No peers on topic ${topicHex.slice(0, 8)}... to receive broadcast!`);
+      const topicsWithPeers = [];
+      for (const [peerId, conn] of this.connections) {
+        topicsWithPeers.push(...Array.from(conn.topics).map(t => t.slice(0, 8)));
+      }
+      console.warn(`[Hyperswarm] Peers are on topics: ${topicsWithPeers.join(', ') || 'none'}`);
     }
   }
 
