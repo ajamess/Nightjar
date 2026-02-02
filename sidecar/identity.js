@@ -236,6 +236,29 @@ function updateIdentity(updates) {
 }
 
 /**
+ * Validate that a recovery phrase matches the stored identity
+ * @param {string} mnemonic - The recovery phrase to validate
+ * @returns {boolean} True if the phrase matches the stored identity
+ */
+function validateRecoveryPhrase(mnemonic) {
+    const identity = loadIdentity();
+    if (!identity) {
+        return false;
+    }
+    
+    try {
+        // The stored identity has the mnemonic encrypted
+        const storedMnemonic = identity.mnemonic;
+        
+        // Simple comparison
+        return mnemonic.trim() === storedMnemonic.trim();
+    } catch (e) {
+        console.error('[Identity] Failed to validate recovery phrase:', e);
+        return false;
+    }
+}
+
+/**
  * Simple mnemonic encryption using machine-specific key
  * For production, use OS keychain instead
  */
@@ -443,6 +466,7 @@ module.exports = {
     hasIdentity,
     deleteIdentity,
     updateIdentity,
+    validateRecoveryPhrase,
     exportIdentity,
     importIdentity,
     // Path helpers

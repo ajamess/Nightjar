@@ -26,6 +26,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    sourcemap: false,  // Disable source maps in production for faster builds
     commonjsOptions: {
       include: [/node_modules/],
     },

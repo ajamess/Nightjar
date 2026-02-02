@@ -10,14 +10,15 @@ const COLOR_PRESETS = [
     '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
 ];
 
-export default function RestoreIdentity({ onComplete, onBack }) {
+export default function RestoreIdentity({ hasExistingIdentity, onComplete, onBack }) {
     const [words, setWords] = useState(Array(12).fill(''));
     const [handle, setHandle] = useState('');
     const [selectedEmoji, setSelectedEmoji] = useState(EMOJI_OPTIONS[0]);
     const [selectedColor, setSelectedColor] = useState(COLOR_PRESETS[0]);
-    const [step, setStep] = useState('phrase'); // 'phrase' or 'profile'
+    const [step, setStep] = useState('phrase'); // 'phrase', 'profile', or 'success'
     const [restoring, setRestoring] = useState(false);
     const [error, setError] = useState(null);
+    const [hadLocalData, setHadLocalData] = useState(false);
     
     const handleWordChange = (index, value) => {
         const newWords = [...words];
@@ -37,7 +38,7 @@ export default function RestoreIdentity({ onComplete, onBack }) {
         setError(null);
     };
     
-    const handleValidatePhrase = () => {
+    const handleValidatePhrase = async () => {
         const mnemonic = words.join(' ').trim();
         
         if (words.some(w => !w)) {
@@ -50,7 +51,41 @@ export default function RestoreIdentity({ onComplete, onBack }) {
             return;
         }
         
-        setStep('profile');
+        setRestoring(true);
+        setError(null);
+        
+        try {
+            // If identity exists, validate the phrase matches
+            if (hasExistingIdentity && window.electronAPI?.identity) {
+                const isValid = await window.electronAPI.identity.validate(mnemonic);
+                if (!isValid) {
+                    setError('Recovery phrase does not match the identity on this device.');
+                    setRestoring(false);
+                    return;
+                }
+                
+                // Phrase matches - unlock existing identity
+                const identity = restoreIdentityFromMnemonic(mnemonic);
+                setHadLocalData(true);
+                setRestoring(false);
+                
+                // Show success screen
+                setStep('success');
+                
+                // Auto-complete after showing success message
+                setTimeout(() => {
+                    onComplete(identity, true);
+                }, 2000);
+            } else {
+                // No existing identity - proceed to profile setup
+                setRestoring(false);
+                setStep('profile');
+            }
+        } catch (e) {
+            console.error('Failed to validate phrase:', e);
+            setError('Failed to validate: ' + e.message);
+            setRestoring(false);
+        }
     };
     
     const handleRestore = async () => {
@@ -69,7 +104,14 @@ export default function RestoreIdentity({ onComplete, onBack }) {
             identity.icon = selectedEmoji;
             identity.color = selectedColor;
             
-            onComplete(identity);
+            // Show success screen for new device
+            setHadLocalData(false);
+            setStep('success');
+            
+            // Auto-complete after showing success message
+            setTimeout(() => {
+                onComplete(identity, false);
+            }, 3000);
         } catch (e) {
             console.error('Failed to restore identity:', e);
             setError('Failed to restore: ' + e.message);
@@ -148,6 +190,41 @@ export default function RestoreIdentity({ onComplete, onBack }) {
                 >
                     {restoring ? 'Restoring...' : 'Restore Identity'}
                 </button>
+            </div>
+        );
+    }
+    
+    if (step === 'success') {
+        return (
+            <div className="onboarding-step success-step">
+                <div className="success-icon">
+                    {hadLocalData ? '🔓' : '🔑'}
+                </div>
+                <h2>
+                    {hadLocalData ? 'Identity Unlocked!' : 'Identity Recreated!'}
+                </h2>
+                <p className="onboarding-subtitle">
+                    {hadLocalData 
+                        ? 'Your workspace data has been unlocked and is now loading...'
+                        : 'Your identity has been restored successfully.'
+                    }
+                </p>
+                
+                {!hadLocalData && (
+                    <div className="info-box">
+                        <p><strong>📂 No local workspaces found</strong></p>
+                        <p>To recover your workspaces:</p>
+                        <ul style={{ textAlign: 'left', marginTop: '0.5rem' }}>
+                            <li>Ask collaborators to send you workspace invite links</li>
+                            <li>Your edits and ownership will still be linked to you</li>
+                            <li>Workspaces will sync when you rejoin</li>
+                        </ul>
+                    </div>
+                )}
+                
+                <div className="loading-dots">
+                    <span></span><span></span><span></span>
+                </div>
             </div>
         );
     }

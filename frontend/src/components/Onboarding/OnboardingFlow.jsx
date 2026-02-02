@@ -4,21 +4,21 @@
 import React, { useState } from 'react';
 import CreateIdentity from './CreateIdentity';
 import RestoreIdentity from './RestoreIdentity';
-import ScanIdentity from './ScanIdentity';
 import { generateIdentity } from '../../utils/identity';
+import { useIdentity } from '../../contexts/IdentityContext';
 import './Onboarding.css';
 
 const STEPS = {
     WELCOME: 'welcome',
     CREATE: 'create',
     RESTORE: 'restore',
-    SCAN: 'scan',
     SHOW_RECOVERY: 'show_recovery'
 };
 
 export default function OnboardingFlow({ onComplete }) {
     const [step, setStep] = useState(STEPS.WELCOME);
     const [createdIdentity, setCreatedIdentity] = useState(null);
+    const { hasExistingIdentity } = useIdentity();
     
     const handleIdentityCreated = (identity) => {
         setCreatedIdentity(identity);
@@ -29,18 +29,8 @@ export default function OnboardingFlow({ onComplete }) {
         onComplete(createdIdentity);
     };
     
-    const handleRestoreComplete = (identity) => {
-        onComplete(identity);
-    };
-    
-    // Handle skip - create default identity
-    const handleSkip = () => {
-        const defaultIdentity = generateIdentity();
-        // Auto-generate anonymous name with random number
-        defaultIdentity.handle = 'User' + Math.floor(Math.random() * 10000);
-        defaultIdentity.icon = '😊';
-        defaultIdentity.color = '#6366f1';
-        onComplete(defaultIdentity);
+    const handleRestoreComplete = (identity, hadLocalData) => {
+        onComplete(identity, hadLocalData);
     };
     
     return (
@@ -48,15 +38,15 @@ export default function OnboardingFlow({ onComplete }) {
             <div className="onboarding-container">
                 {step === STEPS.WELCOME && (
                     <WelcomeStep 
+                        hasExistingIdentity={hasExistingIdentity}
                         onCreateNew={() => setStep(STEPS.CREATE)}
                         onRestore={() => setStep(STEPS.RESTORE)}
-                        onScan={() => setStep(STEPS.SCAN)}
-                        onSkip={handleSkip}
                     />
                 )}
                 
                 {step === STEPS.CREATE && (
                     <CreateIdentity 
+                        hasExistingIdentity={hasExistingIdentity}
                         onComplete={handleIdentityCreated}
                         onBack={() => setStep(STEPS.WELCOME)}
                     />
@@ -64,13 +54,7 @@ export default function OnboardingFlow({ onComplete }) {
                 
                 {step === STEPS.RESTORE && (
                     <RestoreIdentity 
-                        onComplete={handleRestoreComplete}
-                        onBack={() => setStep(STEPS.WELCOME)}
-                    />
-                )}
-                
-                {step === STEPS.SCAN && (
-                    <ScanIdentity 
+                        hasExistingIdentity={hasExistingIdentity}
                         onComplete={handleRestoreComplete}
                         onBack={() => setStep(STEPS.WELCOME)}
                     />
@@ -87,7 +71,7 @@ export default function OnboardingFlow({ onComplete }) {
     );
 }
 
-function WelcomeStep({ onCreateNew, onRestore, onScan, onSkip }) {
+function WelcomeStep({ hasExistingIdentity, onCreateNew, onRestore }) {
     return (
         <div className="onboarding-step welcome-step">
             <div className="onboarding-logo">
@@ -100,8 +84,10 @@ function WelcomeStep({ onCreateNew, onRestore, onScan, onSkip }) {
             
             <div className="welcome-description">
                 <p>
-                    Create your identity to start collaborating. Your identity is stored locally 
-                    and never sent to any server.
+                    {hasExistingIdentity 
+                        ? 'An identity exists on this device. Please choose an option:'
+                        : 'Create your identity to start collaborating. Your identity is stored locally and never sent to any server.'
+                    }
                 </p>
             </div>
             
@@ -110,13 +96,7 @@ function WelcomeStep({ onCreateNew, onRestore, onScan, onSkip }) {
                     Create New Identity
                 </button>
                 <button className="btn-secondary" onClick={onRestore}>
-                    Restore with Recovery Phrase
-                </button>
-                <button className="btn-secondary" onClick={onScan}>
-                    📷 Scan QR from Another Device
-                </button>
-                <button className="btn-text" onClick={onSkip}>
-                    Skip for now (use defaults)
+                    I Have a Recovery Phrase
                 </button>
             </div>
         </div>

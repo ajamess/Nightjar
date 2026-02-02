@@ -42,18 +42,6 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 // Dynamically import electron-is-dev and uint8arrays to handle ES modules
 let isDev = false; // Default to prod mode (safer)
 let uint8ArrayFromString;
-let initPromise = (async () => {
-    try {
-        const electronIsDev = await import('electron-is-dev');
-        isDev = electronIsDev.default;
-    } catch (e) {
-        // If electron-is-dev fails, check manually
-        isDev = !app.isPackaged;
-    }
-    
-    const uint8arrays = await import('uint8arrays');
-    uint8ArrayFromString = uint8arrays.fromString;
-})();
 
 // --- Global State ---
 let mainWindow;
@@ -68,6 +56,15 @@ const db = new Level(path.join(userDataPath, 'storage'), { valueEncoding: 'binar
 // and enables migration from the legacy ~/.Nightjar path
 identity.setBasePath(userDataPath);
 identity.migrateIdentityIfNeeded();
+
+// Add global error handlers to prevent unexpected exits
+process.on('uncaughtException', (error) => {
+    console.error('[Main] Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Main] Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 // Helper to safely check if mainWindow is usable
 function isWindowUsable() {
@@ -148,6 +145,7 @@ function createWindow() {
 
     // Show window when ready to prevent white flash
     mainWindow.once('ready-to-show', () => {
+        console.log('[Main] Window ready-to-show event fired');
         mainWindow.show();
     });
 
@@ -155,20 +153,22 @@ function createWindow() {
     // In production, load from the bundled frontend/dist folder
     const url = isDev ? 'http://127.0.0.1:5174' : `file://${path.join(__dirname, '../frontend/dist/index.html')}`;
     
+    console.log(`[Main] Loading URL: ${url} (isDev: ${isDev})`);
+    
     // Retry loading URL if it fails (race condition with Vite startup)
     const loadWithRetry = (retries = 10, delay = 1500) => {
         mainWindow.loadURL(url).then(() => {
-            console.log('Successfully loaded:', url);
+            console.log('[Main] Successfully loaded:', url);
         }).catch(err => {
-            console.error('Error loading URL:', err.message);
+            console.error('[Main] Error loading URL:', err.message);
             if (retries > 0) {
-                console.log(`Retrying in ${delay/1000}s... (${retries} attempts left)`);
+                console.log(`[Main] Retrying in ${delay/1000}s... (${retries} attempts left)`);
                 setTimeout(() => loadWithRetry(retries - 1, delay), delay);
             } else {
-                console.error('Failed to load after all retries. Please restart the app.');
+                console.error('[Main] Failed to load after all retries. Showing error page.');
                 // Show a fallback page
                 mainWindow.loadURL(`data:text/html,<html><body style="background:#242424;color:white;font-family:sans-serif;padding:2em;"><h1>Failed to load application</h1><p>The Vite dev server at ${url} is not responding.</p><p>Please ensure the dev server is running and restart the application.</p></body></html>`);
-                mainWindow.show();
+                mainWindow.show(); // Force show on error
             }
         });
     };
@@ -212,11 +212,50 @@ if (!gotTheLock) {
 }
 
 app.on('ready', async () => {
-    // Wait for imports to complete before creating window
-    await initPromise;
+    console.log('[Main] App ready event fired');
+    
+    // Load required modules
+    console.log('[Main] Loading modules...');
+    try {
+        const electronIsDev = await import('electron-is-dev');
+        isDev = electronIsDev.default;
+        console.log('[Main] electron-is-dev loaded, isDev:', isDev);
+    } catch (e) {
+        console.error('[Main] Failed to import electron-is-dev:', e.message);
+        isDev = !app.isPackaged;
+        console.log('[Main] Using fallback isDev check:', isDev);
+    }
+    
+    try {
+        const uint8arrays = await import('uint8arrays');
+        uint8ArrayFromString = uint8arrays.fromString;
+        console.log('[Main] uint8arrays loaded');
+    } catch (e) {
+        console.error('[Main] Failed to import uint8arrays:', e.message);
+        // This is critical, so we'll try to continue without it
+    }
+    
+    console.log('[Main] Modules loaded, starting backend...');
+    
+    // Add a timeout fallback to ensure a window is always created
+    const fallbackTimer = setTimeout(() => {
+        console.warn('[Main] Backend startup timeout, creating window anyway...');
+        if (!mainWindow) {
+            createWindow();
+        }
+    }, 15000); // 15 second fallback
     
     // Start sidecar first with loading screen, then create main window
-    await startBackendWithLoadingScreen();
+    try {
+        await startBackendWithLoadingScreen();
+        console.log('[Main] Backend startup complete');
+        clearTimeout(fallbackTimer);
+    } catch (err) {
+        console.error('[Main] Backend startup failed:', err);
+        clearTimeout(fallbackTimer);
+        // Create window anyway to show error
+        createWindow();
+    }
     
     // Handle protocol link if app was opened with one (Windows)
     const protocolLink = process.argv.find(arg => arg.startsWith('nightjar://'));
@@ -439,7 +478,9 @@ function restartSidecar(nodeExecutable, nodeArgs, sidecarCwd, spawnEnv) {
 }
 
 async function startBackendWithLoadingScreen() {
+    console.log('[Main] startBackendWithLoadingScreen() called');
     return new Promise((resolve, reject) => {
+        console.log('[Main] Creating loading window...');
         // Create loading window
         loadingWindow = new BrowserWindow({
             width: 500,
@@ -455,8 +496,12 @@ async function startBackendWithLoadingScreen() {
             },
         });
 
+        console.log('[Main] Loading window created, loading content...');
         loadingWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getLoadingScreenHtml(0))}`);
-        loadingWindow.once('ready-to-show', () => loadingWindow.show());
+        loadingWindow.once('ready-to-show', () => {
+            console.log('[Main] Loading window ready-to-show');
+            loadingWindow.show();
+        });
 
         let currentStep = 0;
         const updateProgress = (step, customFunny = null, customReal = null) => {
@@ -513,12 +558,15 @@ async function startBackendWithLoadingScreen() {
         
         console.log(`[Backend] Starting sidecar: ${nodeExecutable} ${nodeArgs.join(' ')}`);
         console.log(`[Backend] Sidecar cwd: ${sidecarCwd}`);
+        console.log(`[Backend] Sidecar env ELECTRON_RUN_AS_NODE: ${spawnEnv.ELECTRON_RUN_AS_NODE}`);
         
         sidecarProcess = spawn(nodeExecutable, nodeArgs, {
             stdio: ['ignore', 'pipe', 'pipe'],
             cwd: sidecarCwd,
             env: spawnEnv,
         });
+
+        console.log('[Backend] Sidecar process spawned, PID:', sidecarProcess.pid);
 
         let wsReady = false;
         let metaWsReady = false;
@@ -527,22 +575,40 @@ async function startBackendWithLoadingScreen() {
             if (wsReady && metaWsReady) {
                 updateProgress(7); // Complete
                 setTimeout(() => {
-                    // Close loading window and open main window
-                    if (loadingWindow && !loadingWindow.isDestroyed()) {
-                        loadingWindow.close();
-                        loadingWindow = null;
-                    }
+                    console.log('[Main] Backend ready, creating main window...');
+                    
+                    // Create main window FIRST, before closing loading window
                     createWindow();
                     
-                    // Send connection info once window is ready
+                    // Send connection info once window is ready and ENSURE main window is shown
                     if (mainWindow) {
                         mainWindow.webContents.once('did-finish-load', () => {
+                            console.log('[Main] Main window loaded, sending connection info');
                             safeSend('connection-info', {
                                 onionAddress: 'localhost',
                                 peerId: 'local-peer-id',
                                 multiaddr: '/ip4/127.0.0.1/tcp/8080'
                             });
                         });
+                        
+                        // Ensure main window is shown before closing loading window
+                        mainWindow.once('ready-to-show', () => {
+                            console.log('[Main] Main window shown, closing loading window');
+                            // Close loading window AFTER main window is shown
+                            if (loadingWindow && !loadingWindow.isDestroyed()) {
+                                console.log('[Main] Closing loading window');
+                                loadingWindow.close();
+                                loadingWindow = null;
+                            }
+                        });
+                        
+                        // Fallback: force show after timeout to prevent app exit
+                        setTimeout(() => {
+                            if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+                                console.log('[Main] Forcing main window to show (fallback)');
+                                mainWindow.show();
+                            }
+                        }, 2000);
                     }
                     
                     resolve();
@@ -732,6 +798,15 @@ ipcMain.handle('identity:delete', async () => {
 
 ipcMain.handle('identity:has', async () => {
     return identity.hasIdentity();
+});
+
+ipcMain.handle('identity:validate', async (event, mnemonic) => {
+    try {
+        return identity.validateRecoveryPhrase(mnemonic);
+    } catch (err) {
+        console.error('[Identity] Validation error:', err);
+        return false;
+    }
 });
 
 ipcMain.handle('identity:export', async (event, password) => {

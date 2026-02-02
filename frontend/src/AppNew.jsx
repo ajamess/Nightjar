@@ -228,13 +228,25 @@ function App() {
     }, []);
 
     // --- Onboarding Handler ---
-    const handleOnboardingComplete = useCallback(async (identity) => {
+    const handleOnboardingComplete = useCallback(async (identity, hadLocalData = false) => {
         try {
             console.log('[App] Creating identity from onboarding:', identity.handle);
             const success = await createIdentity(identity);
             if (success) {
                 console.log('[App] Identity created successfully');
-                showToast(`Welcome, ${identity.handle}! 👋`, 'success');
+                
+                if (hadLocalData) {
+                    showToast(`Welcome back, ${identity.handle}! 🔓`, 'success');
+                } else {
+                    showToast(`Welcome, ${identity.handle}! 👋`, 'success');
+                }
+                
+                // Update user profile state with the onboarding selections
+                setUserProfile({
+                    name: identity.handle,
+                    icon: identity.icon || '😊',
+                    color: identity.color || '#6366f1',
+                });
                 // Identity context will reload automatically
             } else {
                 console.error('[App] Failed to create identity');
@@ -894,7 +906,6 @@ function App() {
                     onCreateFolder={createFolder}
                     onDeleteFolder={deleteFolder}
                     onRenameFolder={renameFolder}
-                    onRenameDocument={renameDocument}
                 />
             )}
 
