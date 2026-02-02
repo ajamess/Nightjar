@@ -253,6 +253,25 @@ let torEnabled = false; // Whether Tor should be enabled (default OFF)
 
 // --- 1. Persistence Layer ---
 const db = new Level(DB_PATH, { valueEncoding: 'binary' });
+
+// Initialize/open the database
+(async () => {
+    try {
+        await db.open();
+        console.log(`[Sidecar] LevelDB opened successfully at ${DB_PATH}`);
+    } catch (e) {
+        // Database might already be open, or error opening
+        if (e.code === 'LEVEL_DATABASE_NOT_OPEN') {
+            console.warn('[Sidecar] LevelDB was not open, attempting to open...');
+            await db.open();
+        } else if (e.code !== 'LEVEL_DATABASE_ALREADY_OPEN') {
+            console.error('[Sidecar] Failed to open LevelDB:', e);
+        } else {
+            console.log(`[Sidecar] LevelDB already open at ${DB_PATH}`);
+        }
+    }
+})();
+
 console.log(`[Sidecar] Initialized LevelDB at ${DB_PATH}`);
 
 // --- P2P Message Protocol ---
@@ -1683,10 +1702,16 @@ metaWss.on('connection', (ws, req) => {
                                 await initializeP2P(true);
                             }
                             
+                            console.log('[Sidecar] join-workspace: P2P initialized:', p2pInitialized, ', P2P Bridge initialized:', p2pBridge.isInitialized);
+                            
                             if (p2pInitialized && p2pBridge.isInitialized) {
                                 const topicHash = joinWsData.topicHash;
                                 const bootstrapPeers = joinWsData.bootstrapPeers;
                                 const peerDirectAddress = joinWsData.directAddress;
+                                
+                                console.log('[Sidecar] join-workspace: topicHash:', topicHash ? topicHash.slice(0, 16) + '...' : 'MISSING');
+                                console.log('[Sidecar] join-workspace: bootstrapPeers:', bootstrapPeers);
+                                console.log('[Sidecar] join-workspace: directAddress:', peerDirectAddress);
                                 
                                 // Log direct address if available (for debugging and potential future direct connections)
                                 if (peerDirectAddress) {
@@ -1695,26 +1720,38 @@ metaWss.on('connection', (ws, req) => {
                                 
                                 if (topicHash) {
                                     try {
+                                        console.log(`[Sidecar] Attempting to join P2P topic: ${topicHash.slice(0, 16)}...`);
                                         await p2pBridge.joinTopic(topicHash);
-                                        console.log(`[Sidecar] Joined P2P topic: ${topicHash.slice(0, 16)}...`);
+                                        console.log(`[Sidecar] ✓ Successfully joined P2P topic: ${topicHash.slice(0, 16)}...`);
                                         
                                         // Register for Yjs P2P bridging
                                         registerWorkspaceTopic(joinWsData.id, topicHash);
+                                        console.log(`[Sidecar] ✓ Registered workspace topic for P2P bridging`);
                                     } catch (e) {
-                                        console.warn('[Sidecar] Failed to join P2P topic:', e.message);
+                                        console.error('[Sidecar] ✗ Failed to join P2P topic:', e.message, e.stack);
                                     }
+                                } else {
+                                    console.warn('[Sidecar] ⚠ No topicHash provided - P2P sync will not work!');
                                 }
                                 
                                 if (bootstrapPeers && Array.isArray(bootstrapPeers)) {
+                                    console.log(`[Sidecar] Connecting to ${bootstrapPeers.length} bootstrap peer(s)...`);
                                     for (const peerKey of bootstrapPeers) {
                                         try {
+                                            console.log(`[Sidecar] Attempting to connect to peer: ${peerKey.slice(0, 16)}...`);
                                             await p2pBridge.connectToPeer(peerKey);
-                                            console.log(`[Sidecar] Connecting to bootstrap peer: ${peerKey.slice(0, 16)}...`);
+                                            console.log(`[Sidecar] ✓ Connected to bootstrap peer: ${peerKey.slice(0, 16)}...`);
                                         } catch (e) {
-                                            console.warn(`[Sidecar] Failed to connect to peer ${peerKey.slice(0, 16)}:`, e.message);
+                                            console.error(`[Sidecar] ✗ Failed to connect to peer ${peerKey.slice(0, 16)}:`, e.message);
                                         }
                                     }
+                                } else {
+                                    console.warn('[Sidecar] ⚠ No bootstrap peers provided');
                                 }
+                            } else {
+                                console.error('[Sidecar] ✗ Cannot join P2P: P2P not initialized or bridge not ready');
+                                console.error('[Sidecar] p2pInitialized:', p2pInitialized);
+                                console.error('[Sidecar] p2pBridge.isInitialized:', p2pBridge.isInitialized);
                             }
                         } catch (err) {
                             console.error('[Sidecar] Failed to join workspace:', err);
