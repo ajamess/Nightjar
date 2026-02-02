@@ -816,13 +816,21 @@ function setupYjsP2PBridge() {
 
 // Handle incoming sync message from a P2P peer
 function handleP2PSyncMessage(peerId, topicHex, data) {
+    console.log(`[P2P-SYNC] ========== INCOMING MESSAGE ==========`);
+    console.log(`[P2P-SYNC] From peer: ${peerId?.slice(0, 16)}...`);
+    console.log(`[P2P-SYNC] Topic: ${topicHex?.slice(0, 16)}...`);
+    console.log(`[P2P-SYNC] Data length: ${data?.length || 'unknown'}`);
+    
     try {
         // Find the workspace ID for this topic
         const workspaceId = topicToWorkspace.get(topicHex);
         if (!workspaceId) {
-            console.warn(`[Sidecar] Received sync for unknown topic: ${topicHex?.slice(0, 16)}...`);
+            console.warn(`[P2P-SYNC] ✗ Unknown topic - not registered`);
+            console.warn(`[P2P-SYNC] Known topics: ${Array.from(topicToWorkspace.keys()).map(t => t.slice(0, 8)).join(', ')}`);
             return;
         }
+        
+        console.log(`[P2P-SYNC] ✓ Topic maps to workspace: ${workspaceId.slice(0, 16)}...`);
         
         // Parse the message (new format includes roomName + update)
         let roomName, updateData;
@@ -830,32 +838,50 @@ function handleP2PSyncMessage(peerId, topicHex, data) {
             const message = JSON.parse(data);
             roomName = message.roomName;
             updateData = Buffer.from(message.update, 'base64');
+            console.log(`[P2P-SYNC] ✓ Parsed new format - room: ${roomName}`);
         } catch (e) {
             // Fallback to old format (just base64 update for workspace-meta)
             roomName = `workspace-meta:${workspaceId}`;
             updateData = typeof data === 'string' ? Buffer.from(data, 'base64') : data;
+            console.log(`[P2P-SYNC] ⚠ Using fallback format - room: ${roomName}`);
         }
+        
+        console.log(`[P2P-SYNC] Update size: ${updateData?.length} bytes`);
         
         // Get or create the Yjs doc for the specified room
         let doc = docs.get(roomName);
         if (!doc) {
             doc = new Y.Doc();
             docs.set(roomName, doc);
-            console.log(`[Sidecar] Created Yjs doc for room: ${roomName} (from P2P)`);
+            console.log(`[P2P-SYNC] ✓ Created new Yjs doc for: ${roomName}`);
+        } else {
+            console.log(`[P2P-SYNC] ✓ Found existing Yjs doc for: ${roomName}`);
         }
         
         // Apply the update with 'p2p' origin to prevent re-broadcasting
         Y.applyUpdate(doc, updateData, 'p2p');
         
-        console.log(`[Sidecar] Applied P2P sync from peer ${peerId?.slice(0, 8)}... to ${roomName}`);
+        console.log(`[P2P-SYNC] ✓ Successfully applied update to ${roomName}`);
+        console.log(`[P2P-SYNC] ==========================================`);
     } catch (err) {
-        console.error('[Sidecar] Failed to handle P2P sync message:', err);
+        console.error('[P2P-SYNC] ✗ Error handling sync:', err.message);
+        console.error('[P2P-SYNC] Stack:', err.stack);
+        console.log(`[P2P-SYNC] ==========================================`);
     }
 }
 
 // Broadcast a Yjs update to all P2P peers for a workspace
 function broadcastYjsUpdate(workspaceId, topicHex, update, roomName) {
-    if (!p2pInitialized || !p2pBridge.hyperswarm) return;
+    if (!p2pInitialized || !p2pBridge.hyperswarm) {
+        console.log(`[P2P-BROADCAST] ✗ Skipped - P2P not initialized`);
+        return;
+    }
+    
+    console.log(`[P2P-BROADCAST] ========== OUTGOING MESSAGE ==========`);
+    console.log(`[P2P-BROADCAST] Workspace: ${workspaceId?.slice(0, 16)}...`);
+    console.log(`[P2P-BROADCAST] Topic: ${topicHex?.slice(0, 16)}...`);
+    console.log(`[P2P-BROADCAST] Room: ${roomName || 'workspace-meta'}`);
+    console.log(`[P2P-BROADCAST] Update size: ${update?.length} bytes`);
     
     try {
         // Create a message that includes both the update and the room name
@@ -863,9 +889,19 @@ function broadcastYjsUpdate(workspaceId, topicHex, update, roomName) {
             roomName: roomName || `workspace-meta:${workspaceId}`,
             update: Buffer.from(update).toString('base64')
         };
-        p2pBridge.hyperswarm.broadcastSync(topicHex, JSON.stringify(message));
+        
+        const messageStr = JSON.stringify(message);
+        console.log(`[P2P-BROADCAST] Message size: ${messageStr.length} bytes`);
+        
+        const connectedPeers = p2pBridge.hyperswarm.getConnectedPeerKeys();
+        console.log(`[P2P-BROADCAST] Connected peers: ${connectedPeers.length}`);
+        
+        p2pBridge.hyperswarm.broadcastSync(topicHex, messageStr);
+        console.log(`[P2P-BROADCAST] ✓ Broadcast complete`);
+        console.log(`[P2P-BROADCAST] ==========================================`);
     } catch (err) {
-        console.error('[Sidecar] Failed to broadcast Yjs update:', err);
+        console.error('[P2P-BROADCAST] ✗ Error:', err.message);
+        console.log(`[P2P-BROADCAST] ==========================================`);
     }
 }
 
