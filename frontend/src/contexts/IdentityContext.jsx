@@ -24,10 +24,38 @@ export function IdentityProvider({ children }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [needsOnboarding, setNeedsOnboarding] = useState(false);
+    const [hasExistingIdentity, setHasExistingIdentity] = useState(false);
     
-    // Load identity on mount
+    // Load identity on mount - but DON'T auto-load if it exists
     useEffect(() => {
-        loadIdentity();
+        checkIdentityExists();
+    }, []);
+    
+    const checkIdentityExists = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        
+        try {
+            // Check if running in Electron with IPC
+            if (window.electronAPI?.identity) {
+                const exists = await window.electronAPI.identity.has();
+                setHasExistingIdentity(exists);
+                setNeedsOnboarding(true); // Always require onboarding for security
+            } else {
+                // Fallback for dev: use encrypted secure storage
+                secureStorage.migrate(LEGACY_KEY, IDENTITY_KEY);
+                
+                const stored = secureStorage.get(IDENTITY_KEY);
+                setHasExistingIdentity(!!stored);
+                setNeedsOnboarding(true); // Always require onboarding for security
+            }
+        } catch (e) {
+            secureError('[Identity] Failed to check:', e);
+            setError(e.message);
+            setNeedsOnboarding(true);
+        } finally {
+            setLoading(false);
+        }
     }, []);
     
     const loadIdentity = useCallback(async () => {
@@ -48,9 +76,6 @@ export function IdentityProvider({ children }) {
                 }
             } else {
                 // Fallback for dev: use encrypted secure storage
-                // First try to migrate legacy unencrypted data
-                secureStorage.migrate(LEGACY_KEY, IDENTITY_KEY);
-                
                 const stored = secureStorage.get(IDENTITY_KEY);
                 if (stored) {
                     setIdentity(stored);

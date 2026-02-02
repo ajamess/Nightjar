@@ -10,13 +10,15 @@ const COLOR_PRESETS = [
     '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
 ];
 
-export default function CreateIdentity({ onComplete, onBack }) {
+export default function CreateIdentity({ hasExistingIdentity, onComplete, onBack }) {
     const [handle, setHandle] = useState('');
     const [selectedEmoji, setSelectedEmoji] = useState('');
     const [selectedColor, setSelectedColor] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState(null);
+    const [showDeleteWarning, setShowDeleteWarning] = useState(false);
+    const [deleteConfirmation, setDeleteConfirmation] = useState('');
     
     // Initialize with random values
     useEffect(() => {
@@ -25,6 +27,30 @@ export default function CreateIdentity({ onComplete, onBack }) {
         setSelectedEmoji(randomEmoji);
         setSelectedColor(randomColor);
     }, []);
+    
+    const handleCreateClick = () => {
+        if (hasExistingIdentity) {
+            setShowDeleteWarning(true);
+        } else {
+            handleCreate();
+        }
+    };
+    
+    const handleConfirmDelete = async () => {
+        if (deleteConfirmation !== 'DELETE') {
+            setError('Please type DELETE to confirm');
+            return;
+        }
+        
+        // Delete existing identity
+        if (window.electronAPI?.identity) {
+            await window.electronAPI.identity.delete();
+        }
+        
+        // Proceed with creation
+        setShowDeleteWarning(false);
+        handleCreate();
+    };
     
     const handleCreate = async () => {
         if (!handle.trim()) {
@@ -67,6 +93,64 @@ export default function CreateIdentity({ onComplete, onBack }) {
             setCreating(false);
         }
     };
+    
+    if (showDeleteWarning) {
+        return (
+            <div className="onboarding-step create-step">
+                <div className="warning-box">
+                    <div className="warning-icon">⚠️</div>
+                    <h2>Warning: Existing Data Will Be Deleted</h2>
+                    <p>
+                        An identity already exists on this device. Creating a new identity will
+                        <strong> permanently delete</strong>:
+                    </p>
+                    <ul style={{ textAlign: 'left', marginTop: '1rem' }}>
+                        <li>Your current identity and recovery phrase</li>
+                        <li>All workspace data</li>
+                        <li>All documents and folders</li>
+                        <li>All collaboration history</li>
+                    </ul>
+                    <p style={{ marginTop: '1rem' }}>
+                        <strong>This cannot be undone</strong> unless you have your recovery phrase saved.
+                    </p>
+                    
+                    <div className="form-group" style={{ marginTop: '2rem' }}>
+                        <label htmlFor="delete-confirm">Type <code>DELETE</code> to confirm:</label>
+                        <input
+                            id="delete-confirm"
+                            type="text"
+                            value={deleteConfirmation}
+                            onChange={(e) => setDeleteConfirmation(e.target.value)}
+                            placeholder="DELETE"
+                            autoFocus
+                        />
+                    </div>
+                    
+                    {error && <div className="error-message">{error}</div>}
+                    
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                        <button 
+                            className="btn-secondary" 
+                            onClick={() => {
+                                setShowDeleteWarning(false);
+                                setDeleteConfirmation('');
+                                setError(null);
+                            }}
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            className="btn-danger" 
+                            onClick={handleConfirmDelete}
+                            disabled={deleteConfirmation !== 'DELETE'}
+                        >
+                            Delete and Create New
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
     
     return (
         <div className="onboarding-step create-step">
@@ -152,7 +236,7 @@ export default function CreateIdentity({ onComplete, onBack }) {
             
             <button 
                 className="btn-primary" 
-                onClick={handleCreate}
+                onClick={handleCreateClick}
                 disabled={creating}
             >
                 {creating ? 'Creating...' : 'Create Identity'}
