@@ -1,6 +1,6 @@
 {
   "name": "nightjar",
-  "version": "1.0.39",
+  "version": "1.0.40",
   "description": "Nightjar - Secure P2P Collaboration",
   "main": "src/main.js",
   "author": {
