@@ -379,6 +379,9 @@ const HierarchicalSidebar = ({
     // Permission context
     const { canCreate, canDelete } = usePermissions();
     
+    // Folder context - for updating folder properties
+    const { updateFolder } = useFolders();
+    
     // Check if user can create/delete in current workspace
     const canCreateInWorkspace = currentWorkspace ? canCreate('workspace', currentWorkspace.id) : false;
     const canDeleteInWorkspace = currentWorkspace ? canDelete('workspace', currentWorkspace.id) : false;
