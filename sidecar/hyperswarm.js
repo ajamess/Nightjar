@@ -435,6 +435,13 @@ class HyperswarmManager extends EventEmitter {
             return;
           }
           
+          // Reject stale identity messages (replay attack protection)
+          const messageAge = Date.now() - (message.timestamp || 0);
+          if (messageAge > 60000 || messageAge < -30000) { // Allow 1 minute old, 30s future (clock skew)
+            console.warn('[Hyperswarm] Rejecting stale identity from peer:', peerId.slice(0, 16));
+            return;
+          }
+          
           conn.authenticated = true;
           conn.identity = {
             publicKey: message.publicKey,

@@ -83,6 +83,8 @@ export default function JoinWithLink({ isOpen, onClose, onJoin }) {
       setLink(text);
     } catch (err) {
       console.error('Failed to read clipboard:', err);
+      // Set an error message the user can see
+      setJoinError('Unable to paste. Please paste manually with Ctrl+V.');
     }
   }, []);
 

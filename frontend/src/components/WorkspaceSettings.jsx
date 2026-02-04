@@ -282,8 +282,8 @@ export default function WorkspaceSettings({
         console.warn('[WorkspaceSettings] Failed to get P2P info:', e);
       }
       
-      // Generate topic hash for DHT discovery
-      topicHash = generateTopicHash(workspace.id, keyChain?.password || '');
+      // Generate topic hash for DHT discovery (now async)
+      topicHash = await generateTopicHash(workspace.id, keyChain?.password || '');
     }
     
     // If we have owner identity, use signed invite with expiry
