@@ -89,7 +89,7 @@ export function EntityShareDialog({
     if (isOpen && entityId && password) {
       generateLink();
     }
-  }, [isOpen, entityId, selectedPermission, includePassword, password]);
+  }, [isOpen, entityId, selectedPermission, includePassword, password, generateLink]);
   
   const generateLink = useCallback(async () => {
     if (!entityId || !password) return;
@@ -199,7 +199,14 @@ export function EntityShareDialog({
                 Password: <code>{password}</code>
                 <button 
                   className="entity-share__copy-pwd"
-                  onClick={() => navigator.clipboard.writeText(password)}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(password);
+                    } catch (err) {
+                      console.error('Failed to copy password:', err);
+                      // Fallback: select password text if available
+                    }
+                  }}
                 >
                   Copy
                 </button>

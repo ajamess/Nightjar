@@ -79,12 +79,32 @@ const test = base.extend({
 
   sidecarClient2: async ({ electronSidecar2 }, use) => {
     console.log('[Fixture] Creating sidecarClient2 for', electronSidecar2.metaUrl);
-    // Add a small delay before connecting to ensure the server is fully ready
-    await new Promise(r => setTimeout(r, 2000));
+    // Add a delay before connecting to ensure the server is fully ready
+    await new Promise(r => setTimeout(r, 5000));
+    
     const client = new SidecarClient(electronSidecar2.metaUrl, 'client2');
+    
+    // Retry connection up to 3 times
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await client.connect();
+        console.log('[Fixture] sidecarClient2 connected on attempt', attempt);
+        break;
+      } catch (err) {
+        lastError = err;
+        console.log(`[Fixture] sidecarClient2 connection attempt ${attempt} failed:`, err.message);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+    }
+    
+    if (!client.isConnected()) {
+      throw lastError || new Error('sidecarClient2 failed to connect after 3 attempts');
+    }
+    
     try {
-      await client.connect();
-      console.log('[Fixture] sidecarClient2 connected');
       await use(client);
     } finally {
       console.log('[Fixture] sidecarClient2 disconnecting');

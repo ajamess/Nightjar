@@ -64,6 +64,10 @@ class SidecarClient {
     }
   }
 
+  isConnected() {
+    return this.connected;
+  }
+
   send(message) {
     if (!this.connected) {
       this.log('ERROR: Attempted to send while not connected');

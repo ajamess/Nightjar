@@ -119,7 +119,7 @@ function decryptUpdate(packed, key) {
         }
         
         // Ensure packed is a proper Uint8Array (convert from Buffer if needed)
-        if (!(packed instanceof Uint8Array) || packed.constructor.name === 'Buffer') {
+        if (Buffer.isBuffer(packed) || !(packed instanceof Uint8Array)) {
             packed = new Uint8Array(packed);
         }
         
