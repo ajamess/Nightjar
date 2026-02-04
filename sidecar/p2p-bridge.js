@@ -137,6 +137,12 @@ class P2PBridge extends EventEmitter {
     const client = this.clients.get(ws);
     if (!client) return;
 
+    // Validate message format
+    if (!message || typeof message.type !== 'string') {
+      console.warn('[P2PBridge] Invalid message format, missing type');
+      return;
+    }
+
     try {
       switch (message.type) {
         case 'p2p-identity':

@@ -109,13 +109,18 @@ function WelcomeStep({ hasExistingIdentity, onCreateNew, onRestore }) {
 
 function ShowRecoveryStep({ mnemonic, onConfirm }) {
     const [confirmed, setConfirmed] = useState(false);
+    const [copyStatus, setCopyStatus] = useState(null); // null | 'success' | 'error'
     const words = mnemonic.split(' ');
     
     const copyToClipboard = async () => {
         try {
             await navigator.clipboard.writeText(mnemonic);
+            setCopyStatus('success');
+            setTimeout(() => setCopyStatus(null), 2000);
         } catch (e) {
             console.error('Failed to copy:', e);
+            setCopyStatus('error');
+            setTimeout(() => setCopyStatus(null), 3000);
         }
     };
     
@@ -137,7 +142,7 @@ function ShowRecoveryStep({ mnemonic, onConfirm }) {
             </div>
             
             <button className="btn-copy" onClick={copyToClipboard} data-testid="copy-recovery-btn">
-                📋 Copy to Clipboard
+                {copyStatus === 'success' ? '✓ Copied!' : copyStatus === 'error' ? '✗ Copy failed - please copy manually' : '📋 Copy to Clipboard'}
             </button>
             
             <div className="recovery-warning">

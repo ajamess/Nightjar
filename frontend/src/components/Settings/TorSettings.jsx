@@ -86,20 +86,28 @@ export function TorSettings({ isOpen, onClose }) {
     
     try {
       if (window.electronAPI?.tor) {
-        // Listen for bootstrap progress
+        // Listen for bootstrap progress with mount check
         window.electronAPI.tor.onBootstrap((progress) => {
-          setBootstrapProgress(progress);
+          if (isMountedRef.current) {
+            setBootstrapProgress(progress);
+          }
         });
         
         await window.electronAPI.tor.start(torMode);
-        await checkTorStatus();
+        if (isMountedRef.current) {
+          await checkTorStatus();
+        }
       } else {
         setError('Tor is only available on desktop');
       }
     } catch (err) {
-      setError(err.message || 'Failed to start Tor');
+      if (isMountedRef.current) {
+        setError(err.message || 'Failed to start Tor');
+      }
     } finally {
-      setIsStarting(false);
+      if (isMountedRef.current) {
+        setIsStarting(false);
+      }
     }
   };
   

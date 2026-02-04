@@ -678,7 +678,7 @@ export function WorkspaceProvider({ children }) {
       // Use directly provided encryption key (from key-embedded link)
       workspaceKey = encryptionKey;
       // For key-embedded links, derive topic from entityId (matches sidecar formula)
-      if (!topic) topic = generateTopicHash(entityId);
+      if (!topic) topic = await generateTopicHash(entityId);
       
       // Store key chain
       storeKeyChain(entityId, {
@@ -692,7 +692,7 @@ export function WorkspaceProvider({ children }) {
       workspaceKey = await deriveWorkspaceKey(password, entityId);
       // Topic is NOT derived from password - use the standard workspace topic
       // This matches sidecar/mesh-constants.js getWorkspaceTopic()
-      if (!topic) topic = generateTopicHash(entityId);
+      if (!topic) topic = await generateTopicHash(entityId);
       
       // Store key chain
       storeKeyChain(entityId, {
@@ -703,7 +703,7 @@ export function WorkspaceProvider({ children }) {
       });
     } else {
       // No password or key - derive topic from entityId (matches sidecar formula)
-      if (!topic) topic = generateTopicHash(entityId);
+      if (!topic) topic = await generateTopicHash(entityId);
     }
     
     // Get user identity (prefer context, fallback to IPC)

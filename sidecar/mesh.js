@@ -182,12 +182,20 @@ class MeshParticipant extends EventEmitter {
     
     this.meshConnections.set(remoteKey, conn);
 
-    // Set up message handling
+    // Set up message handling with buffer overflow protection
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB max buffer
     let buffer = Buffer.alloc(0);
     
     conn.on('data', (data) => {
       // Accumulate data (messages may be fragmented)
       buffer = Buffer.concat([buffer, data]);
+      
+      // Prevent buffer overflow attacks
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        console.error(`[Mesh] Buffer overflow from ${remoteKey.slice(0, 16)}..., closing connection`);
+        conn.destroy();
+        return;
+      }
       
       // Try to parse complete messages (newline-delimited JSON)
       const lines = buffer.toString().split('\n');

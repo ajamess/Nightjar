@@ -589,9 +589,9 @@ export function generateShareMessage(options) {
 /**
  * Generate a new document ID and corresponding share link
  * @param {Object} options - Link options
- * @returns {Object} { documentId, shareLink, topic }
+ * @returns {Promise<Object>} { documentId, shareLink, topic }
  */
-export function createNewDocument(options = {}) {
+export async function createNewDocument(options = {}) {
   // Generate random 16-byte document ID
   const docIdBytes = new Uint8Array(16);
   crypto.getRandomValues(docIdBytes);
@@ -605,7 +605,7 @@ export function createNewDocument(options = {}) {
   });
   
   // Generate topic hash for P2P discovery
-  const topic = generateTopicFromDocId(documentId, options.password);
+  const topic = await generateTopicFromDocId(documentId, options.password);
   
   return {
     documentId,
@@ -676,11 +676,11 @@ export function generateTopicFromEntityId(entityType, entityId, password = '') {
  * Generate topic hash from document ID
  * @param {string} documentId - Document ID (hex)
  * @param {string} password - Optional password
- * @returns {string} Topic hash (hex)
+ * @returns {Promise<string>} Topic hash (hex)
  */
-export function generateTopicFromDocId(documentId, password = '') {
+export async function generateTopicFromDocId(documentId, password = '') {
   const data = password ? `${documentId}:${password}` : documentId;
-  return sha256(data);
+  return await sha256Async(data);
 }
 
 /**
@@ -689,11 +689,12 @@ export function generateTopicFromDocId(documentId, password = '') {
  * Password is NOT used for topic generation - only for encryption
  * @param {string} workspaceId - Workspace ID (hex)
  * @param {string} password - Ignored (kept for API compatibility)
- * @returns {string} 64-char hex topic hash
+ * @returns {Promise<string>} 64-char hex topic hash
  */
-export function generateTopicHash(workspaceId, password = '') {
+export async function generateTopicHash(workspaceId, password = '') {
   // Use the same formula as sidecar/mesh-constants.js
-  return sha256(WORKSPACE_TOPIC_PREFIX + workspaceId);
+  // Must use sha256Async for correct output (the sync sha256 has a padding bug)
+  return await sha256Async(WORKSPACE_TOPIC_PREFIX + workspaceId);
 }
 
 /**

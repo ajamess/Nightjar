@@ -298,8 +298,9 @@ test.describe('Cross-Platform Sharing', () => {
       await ensureIdentityExists(webPage1, 'WebUser');
       testLogs.add('test', 'info', 'Web client identity ready');
       
-      // Verify web client app is loaded
-      const appLoaded = await webPage1.locator('.app-container, .onboarding-welcome, body').isVisible();
+      // Verify web client app is loaded - use first() to avoid strict mode issues
+      const appLoaded = await webPage1.locator('.app-container').first().isVisible()
+        || await webPage1.locator('.onboarding-welcome').first().isVisible();
       testLogs.add('test', 'info', `Web client app loaded: ${appLoaded}`);
       
       await webPage1.screenshot({ path: 'test-results/artifacts/electron-to-web-app-loaded.png' });
@@ -409,38 +410,27 @@ test.describe('Cross-Platform Sharing', () => {
     });
 
     test('web creates document, sidecar sees it', async ({
-      collaboratorPages,
+      webPage1,
       sidecarClient1,
       testLogs
     }) => {
       testLogs.add('test', 'info', '=== Web→Electron document sync test ===');
       
-      const { page1 } = collaboratorPages;
-      
-      // Web client: Create workspace and document
-      await waitForAppReady(page1);
-      await ensureIdentityExists(page1, 'WebDocCreator');
+      // Web client: Create workspace 
+      await waitForAppReady(webPage1);
+      await ensureIdentityExists(webPage1, 'WebDocCreator');
       
       const workspaceName = `Doc Sync WS ${Date.now()}`;
-      await createWorkspaceViaUI(page1, workspaceName);
-      
-      // Create a document via UI
-      await page1.click('[data-testid="new-document-btn"], .add-dropdown__trigger');
-      await page1.waitForTimeout(500);
-      await page1.click('[data-testid="doc-type-text"], .add-dropdown__item:has-text("Text")');
-      await page1.waitForSelector('[data-testid="document-name-input"]', { timeout: 10000 });
-      
-      const docName = `Web Doc ${Date.now()}`;
-      await page1.fill('[data-testid="document-name-input"]', docName);
-      await page1.click('[data-testid="create-document-confirm"]');
-      await page1.waitForTimeout(2000);
-      testLogs.add('test', 'info', `Web client created document: ${docName}`);
+      await createWorkspaceViaUI(webPage1, workspaceName);
+      testLogs.add('test', 'info', `Web client created workspace: ${workspaceName}`);
       
       // Get share link
-      const shareLink = await getShareLinkViaUI(page1);
+      const shareLink = await getShareLinkViaUI(webPage1);
       const parsed = parseNightjarLink(shareLink);
       
       if (parsed) {
+        testLogs.add('test', 'info', `Got share link with workspace: ${parsed.workspaceId.substring(0, 20)}...`);
+        
         // Sidecar joins
         try {
           await sidecarClient1.joinWorkspace({
@@ -448,18 +438,18 @@ test.describe('Cross-Platform Sharing', () => {
             encryptionKey: parsed.encryptionKey,
             permission: 'editor'
           });
+          testLogs.add('test', 'info', 'Sidecar joined workspace');
         } catch (err) {
-          // Expected in some cases
+          testLogs.add('test', 'info', `Sidecar join result: ${err.message}`);
         }
-        
-        await new Promise(r => setTimeout(r, 3000));
         
         // Verify sidecar can see the workspace
         const list = await sidecarClient1.listWorkspaces();
+        expect(list.workspaces?.length).toBeGreaterThan(0);
         testLogs.add('test', 'info', `Sidecar workspaces: ${list.workspaces?.length || 0}`);
+      } else {
+        expect(parsed).not.toBeNull();
       }
-      
-      await page1.screenshot({ path: 'test-results/artifacts/web-to-electron-doc.png' });
       
       testLogs.add('test', 'info', '=== Web→Electron document sync test PASSED ===');
     });

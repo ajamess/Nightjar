@@ -52,12 +52,6 @@ export function ShareDialog({
   }, [isOpen]);
 
   // Generate share link when options change
-  useEffect(() => {
-    if (isOpen && documentId && activeTab === 'share') {
-      generateLink();
-    }
-  }, [isOpen, documentId, usePassword, password, readOnly, activeTab]);
-
   const generateLink = useCallback(async () => {
     if (!documentId) return;
     
@@ -110,6 +104,13 @@ export function ShareDialog({
       setIsGenerating(false);
     }
   }, [documentId, usePassword, password, readOnly, encryptionKey]);
+  
+  // Generate share link when options change
+  useEffect(() => {
+    if (isOpen && documentId && activeTab === 'share') {
+      generateLink();
+    }
+  }, [isOpen, documentId, activeTab, generateLink]);
 
   // Generate the share message
   const getShareMessage = useCallback(() => {
@@ -226,7 +227,7 @@ export function ShareDialog({
   const handleCreateNew = async () => {
     try {
       setIsDerivingKey(true);
-      const { documentId: newDocId, shareLink: newLink } = createNewDocument({
+      const { documentId: newDocId, shareLink: newLink } = await createNewDocument({
         hasPassword: usePassword,
         password: usePassword ? password : undefined,
         readOnly

@@ -46,14 +46,24 @@ export default function RecoveryCodeModal({
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       // Fallback for older browsers
-      const textarea = document.createElement('textarea');
-      textarea.value = mnemonic;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = mnemonic;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (success) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } else {
+          console.error('Fallback copy failed');
+        }
+      } catch (fallbackErr) {
+        console.error('Failed to copy with fallback:', fallbackErr);
+      }
     }
   };
   

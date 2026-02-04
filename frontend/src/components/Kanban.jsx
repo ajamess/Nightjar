@@ -295,11 +295,13 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                                         value={column.color}
                                         onChange={(e) => updateColumnColor(column.id, e.target.value)}
                                         title="Change color"
+                                        aria-label={`Change ${column.name} column color`}
                                     />
                                     <button 
                                         className="btn-delete-column"
                                         onClick={() => deleteColumn(column.id)}
                                         title="Delete column"
+                                        aria-label={`Delete ${column.name} column`}
                                     >
                                         🗑
                                     </button>
