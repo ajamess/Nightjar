@@ -82,7 +82,7 @@ let meshParticipant = null;
 let meshEnabled = process.env.NIGHTJAR_MESH !== 'false'; // Default enabled, can disable via env
 
 // Enable relay bridge for cross-platform sharing (connects local docs to public relay)
-let relayBridgeEnabled = process.env.NIGHTJAR_RELAY_BRIDGE !== 'false'; // Default enabled
+let relayBridgeEnabled = process.env.NIGHTJAR_RELAY_BRIDGE === 'true'; // Default disabled (Electron uses Hyperswarm DHT)
 
 // Track if P2P is initialized with identity
 let p2pInitialized = false;
@@ -763,6 +763,69 @@ async function loadWorkspaceList() {
     }
     console.log(`[Sidecar] Loaded ${workspaces.length} workspaces for current identity`);
     return workspaces;
+}
+
+// Migrate workspaces to remove fake relay URLs
+async function migrateWorkspaceServerUrls() {
+    await metadataDbReady;
+    
+    const fakeRelayPatterns = [
+        'relay1.nightjar.io',
+        'relay2.nightjar.io',
+        'relay3.nightjar.io'
+    ];
+    
+    let migrationCount = 0;
+    
+    try {
+        for await (const [key, value] of metadataDb.iterator()) {
+            if (key.startsWith('workspace:')) {
+                let needsUpdate = false;
+                
+                // Check if serverUrl contains fake relay
+                if (value.serverUrl) {
+                    for (const fakeRelay of fakeRelayPatterns) {
+                        if (value.serverUrl.includes(fakeRelay)) {
+                            console.log(`[Sidecar] Migration: Removing fake relay URL from workspace ${value.id}: ${value.serverUrl}`);
+                            delete value.serverUrl;
+                            needsUpdate = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Check if relayNodes contains fake relays
+                if (value.relayNodes && Array.isArray(value.relayNodes)) {
+                    const cleanedNodes = value.relayNodes.filter(node => {
+                        for (const fakeRelay of fakeRelayPatterns) {
+                            if (node.includes(fakeRelay)) {
+                                console.log(`[Sidecar] Migration: Removing fake relay node from workspace ${value.id}: ${node}`);
+                                return false;
+                            }
+                        }
+                        return true;
+                    });
+                    
+                    if (cleanedNodes.length !== value.relayNodes.length) {
+                        value.relayNodes = cleanedNodes;
+                        needsUpdate = true;
+                    }
+                }
+                
+                if (needsUpdate) {
+                    await metadataDb.put(key, value);
+                    migrationCount++;
+                    console.log(`[Sidecar] Migration: Updated workspace ${value.id}`);
+                }
+            }
+        }
+        
+        if (migrationCount > 0) {
+            console.log(`[Sidecar] Migration complete: Cleaned ${migrationCount} workspace(s)`);
+        }
+    } catch (err) {
+        console.error('[Sidecar] Migration error:', err);
+    }
 }
 
 // Save workspace metadata
@@ -1502,6 +1565,11 @@ async function startServers() {
     // Wait for database to be ready before starting servers
     await dbReady;
     console.log(`[Sidecar] Database ready, starting servers... (${Date.now() - startTime}ms)`);
+    
+    // Run database migrations
+    console.log('[Sidecar] Running database migrations...');
+    await migrateWorkspaceServerUrls();
+    console.log('[Sidecar] Migrations complete');
     
     // --- UPnP Port Mapping (run AFTER servers start, truly non-blocking) ---
     // Use setImmediate to defer to after the current event loop tick

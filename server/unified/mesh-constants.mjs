@@ -58,13 +58,13 @@ export function getWorkspaceTopicHex(workspaceId) {
 // =============================================================================
 
 /**
- * Hardcoded bootstrap relay nodes
- * These are maintained by the Nightjar project for initial mesh entry
+ * Bootstrap relay nodes
+ * For Electron: Hyperswarm DHT is used for P2P discovery (no relay needed)
+ * For Browser: Auto-detected from window.location.origin
+ * These are only used if explicitly configured or in development
  */
 export const BOOTSTRAP_NODES = [
-  'wss://relay1.nightjar.io',
-  'wss://relay2.nightjar.io',
-  'wss://relay3.nightjar.io'
+  // Empty by default - use Hyperswarm DHT or auto-detection
 ];
 
 /**
