@@ -635,7 +635,7 @@ export default function WorkspaceSettings({
                         />
                         <button
                           type="button"
-                          onClick={validateRelayServer}
+                          onClick={() => handleRelayUrlChange(customServerUrl)}
                           disabled={validatingRelay || !customServerUrl?.trim()}
                           className="workspace-settings__validate-btn"
                         >
