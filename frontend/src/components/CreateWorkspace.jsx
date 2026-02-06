@@ -250,21 +250,8 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
       return;
     }
     
-    // DEBUG: Log parsed link details
-    console.log(`[CreateWorkspace] ========== JOIN ATTEMPT ==========`);
-    console.log(`[CreateWorkspace] shareLink:`, shareLink);
-    console.log(`[CreateWorkspace] parsedLink:`, parsedLink);
-    console.log(`[CreateWorkspace] isP2P:`, parsedLink.isP2P);
-    console.log(`[CreateWorkspace] hasBootstrapPeers:`, parsedLink.hasBootstrapPeers);
-    console.log(`[CreateWorkspace] hasHyperswarmPeers:`, parsedLink.hasHyperswarmPeers);
-    console.log(`[CreateWorkspace] hyperswarmPeers:`, parsedLink.hyperswarmPeers);
-    console.log(`[CreateWorkspace] topicHash:`, parsedLink.topic);
-    console.log(`[CreateWorkspace] isNewStyle:`, parsedLink.isNewStyle);
-    console.log(`[CreateWorkspace] entityId:`, parsedLink.entityId);
-    console.log(`[CreateWorkspace] hasPassword:`, !!parsedLink.embeddedPassword || !!joinPassword);
-    console.log(`[CreateWorkspace] hasEncryptionKey:`, !!parsedLink.encryptionKey);
-    console.log(`[CreateWorkspace] serverUrl:`, parsedLink.serverUrl || '(none - will use local)');
-    console.log(`[CreateWorkspace] ===================================`);
+    // SECURITY: Log only non-sensitive parsed link properties (no keys/passwords)
+    console.log(`[CreateWorkspace] Join attempt - isP2P: ${parsedLink.isP2P}, entityId: ${parsedLink.entityId}, hasKey: ${!!parsedLink.encryptionKey}`);
     
     setIsJoining(true);
     

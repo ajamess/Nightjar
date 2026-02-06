@@ -127,9 +127,15 @@ export class QRScanner {
  */
 export async function isCameraAvailable() {
     try {
+        // Guard: Check if mediaDevices API exists (not available in some WebViews)
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+            console.warn('[QRCode] navigator.mediaDevices not available');
+            return false;
+        }
         const devices = await navigator.mediaDevices.enumerateDevices();
         return devices.some(device => device.kind === 'videoinput');
     } catch (err) {
+        console.warn('[QRCode] Failed to check camera availability:', err);
         return false;
     }
 }

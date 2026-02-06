@@ -299,6 +299,9 @@ export function isValidUrl(url, allowedProtocols = ['https:'], allowedHosts = []
       return false;
     }
     
+    // Normalize hostname - remove IPv6 brackets for pattern matching
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+    
     // Reject localhost/internal IPs in production
     const blockedPatterns = [
       /^localhost$/i,
@@ -312,7 +315,7 @@ export function isValidUrl(url, allowedProtocols = ['https:'], allowedHosts = []
     ];
     
     for (const pattern of blockedPatterns) {
-      if (pattern.test(parsed.hostname)) {
+      if (pattern.test(hostname)) {
         return false;
       }
     }

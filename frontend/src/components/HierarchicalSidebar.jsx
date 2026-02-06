@@ -25,8 +25,9 @@ import './HierarchicalSidebar.css';
 
 /**
  * Single tree item (folder or document)
+ * Wrapped with React.memo to prevent re-renders when parent changes but props don't
  */
-function TreeItem({ 
+const TreeItem = React.memo(function TreeItem({ 
     item, 
     type, // 'folder' or 'document'
     level = 0,
@@ -297,7 +298,7 @@ function TreeItem({
             {isExpanded && children}
         </div>
     );
-}
+});
 
 /**
  * Welcome/onboarding component when no workspace exists

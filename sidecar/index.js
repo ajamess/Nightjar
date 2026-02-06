@@ -1,6 +1,9 @@
 console.log('[Sidecar] Starting up...');
 const startTime = Date.now();
 
+// Debug mode - reduces verbose logging in hot paths for better performance
+const DEBUG_MODE = process.env.NIGHTJAR_DEBUG === 'true';
+
 // Add global error handlers
 process.on('uncaughtException', (error) => {
     console.error('[Sidecar] Uncaught exception:', error);
@@ -365,6 +368,34 @@ let torEnabled = false; // Whether Tor should be enabled (default OFF)
 // --- 1. Persistence Layer ---
 const db = new Level(DB_PATH, { valueEncoding: 'binary' });
 
+// Database operation timeout (default 30 seconds)
+const DB_OPERATION_TIMEOUT_MS = parseInt(process.env.DB_TIMEOUT_MS, 10) || 30000;
+
+/**
+ * Wrap a database operation with a timeout to prevent indefinite hangs
+ * @param {Promise} operation - The database operation promise
+ * @param {string} operationName - Name of the operation for logging
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @returns {Promise} The operation result or throws timeout error
+ */
+async function withDbTimeout(operation, operationName = 'db operation', timeoutMs = DB_OPERATION_TIMEOUT_MS) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            reject(new Error(`Database operation '${operationName}' timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+    });
+    
+    try {
+        const result = await Promise.race([operation, timeoutPromise]);
+        clearTimeout(timeoutId);
+        return result;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+    }
+}
+
 // Wait for database to open before proceeding
 const dbReady = db.open().then(() => {
     console.log(`[Sidecar] LevelDB opened successfully at ${DB_PATH}`);
@@ -481,10 +512,10 @@ function getKeyForDocument(docName) {
 // Helper to persist and optionally broadcast document updates
 async function persistUpdate(docName, update, origin) {
     const key = getKeyForDocument(docName);
-    console.log(`[Sidecar] persistUpdate called for ${docName}, update size: ${update?.length}, hasKey: ${!!key}`);
+    if (DEBUG_MODE) console.log(`[Sidecar] persistUpdate called for ${docName}, update size: ${update?.length}, hasKey: ${!!key}`);
     
     if (!key) {
-        console.log(`[Sidecar] Cannot persist update - no encryption key for document ${docName}`);
+        if (DEBUG_MODE) console.log(`[Sidecar] Cannot persist update - no encryption key for document ${docName}`);
         return;
     }
     
@@ -492,21 +523,21 @@ async function persistUpdate(docName, update, origin) {
         // Wait for database to be ready
         await dbReady;
         
-        console.log(`[Sidecar] Encrypting update for ${docName}...`);
+        if (DEBUG_MODE) console.log(`[Sidecar] Encrypting update for ${docName}...`);
         const encrypted = encryptUpdate(update, key);
-        console.log(`[Sidecar] Encrypted size: ${encrypted?.length}`);
+        if (DEBUG_MODE) console.log(`[Sidecar] Encrypted size: ${encrypted?.length}`);
         
         // Use docName as prefix for proper per-document storage
         const dbKey = `${docName}:${Date.now().toString()}`;
-        await db.put(dbKey, encrypted);
-        console.log(`[Sidecar] Persisted update for document: ${docName} (${update.length} bytes) with key: ${dbKey}`);
+        await withDbTimeout(db.put(dbKey, encrypted), `put ${dbKey}`);
+        if (DEBUG_MODE) console.log(`[Sidecar] Persisted update for document: ${docName} (${update.length} bytes) with key: ${dbKey}`);
         
         // If P2P is available, broadcast to network with document ID
         if (isOnline && p2pNode && origin !== 'p2p') {
             // Create P2P message with document ID for proper routing
             const p2pMessage = createP2PMessage(docName, encrypted);
             await p2pNode.services.pubsub.publish(PUBSUB_TOPIC, p2pMessage);
-            console.log(`[Sidecar] Published update to P2P network for doc: ${docName}`);
+            if (DEBUG_MODE) console.log(`[Sidecar] Published update to P2P network for doc: ${docName}`);
         }
     } catch (err) {
         console.error('[Sidecar] Failed to persist update:', err);
@@ -514,51 +545,73 @@ async function persistUpdate(docName, update, origin) {
 }
 
 async function loadPersistedData(docName, doc, key) {
-    console.log(`[Sidecar] Loading persisted data for document: ${docName}`);
+    if (DEBUG_MODE) console.log(`[Sidecar] Loading persisted data for document: ${docName}`);
     
     // Wait for database to be ready
     await dbReady;
     
-    console.log(`[Sidecar] DB iterator starting...`);
+    if (DEBUG_MODE) console.log(`[Sidecar] DB range query starting for prefix: ${docName}:`);
     let count = 0;
     let errors = 0;
     let orphaned = 0;
-    let totalKeys = 0;
     const prefix = `${docName}:`;
     const orphanedKeys = [];
     
-    for await (const [dbKey, value] of db.iterator()) {
-        totalKeys++;
-        // Load updates for this specific document, or legacy data without prefix
-        // Legacy data (no colon) or p2p data (p2p: prefix) is loaded for all docs
-        const isLegacy = !dbKey.includes(':');
-        const isP2P = dbKey.startsWith('p2p:');
-        const isThisDoc = dbKey.startsWith(prefix);
-        
-        // Skip verbose logging for non-matching keys
-        if (isThisDoc || isLegacy || isP2P) {
-            console.log(`[Sidecar] DB key: ${dbKey}, isThisDoc: ${isThisDoc}, isLegacy: ${isLegacy}, isP2P: ${isP2P}`);
-            console.log(`[Sidecar] Decrypting update from key: ${dbKey}`);
-            const decrypted = decryptUpdate(value, key);
-            if (decrypted) {
-                console.log(`[Sidecar] Decrypted ${decrypted.length} bytes, applying to doc...`);
-                try {
-                    Y.applyUpdate(doc, decrypted, 'persistence');
-                    count++;
-                    console.log(`[Sidecar] Applied update successfully`);
-                } catch (e) {
-                    console.error(`[Sidecar] Failed to apply update ${dbKey}:`, e.message);
-                    errors++;
-                }
-            } else {
-                console.log(`[Sidecar] Decryption returned null for key: ${dbKey} (wrong key or corrupted)`);
-                orphaned++;
-                orphanedKeys.push(dbKey);
+    // Use LevelDB range queries (gte/lte) to only scan relevant keys
+    // This avoids O(n) full database scan for each document load
+    const rangeOptions = {
+        gte: prefix,           // Keys >= "docName:"
+        lte: `${docName}:\uffff`  // Keys <= "docName:\uffff" (high Unicode char for range end)
+    };
+    
+    // Load document-specific updates using range query
+    for await (const [dbKey, value] of db.iterator(rangeOptions)) {
+        if (DEBUG_MODE) console.log(`[Sidecar] DB key: ${dbKey}`);
+        const decrypted = decryptUpdate(value, key);
+        if (decrypted) {
+            if (DEBUG_MODE) console.log(`[Sidecar] Decrypted ${decrypted.length} bytes, applying to doc...`);
+            try {
+                Y.applyUpdate(doc, decrypted, 'persistence');
+                count++;
+            } catch (e) {
+                console.error(`[Sidecar] Failed to apply update ${dbKey}:`, e.message);
+                errors++;
             }
+        } else {
+            if (DEBUG_MODE) console.log(`[Sidecar] Decryption returned null for key: ${dbKey} (wrong key or corrupted)`);
+            orphaned++;
+            orphanedKeys.push(dbKey);
         }
     }
     
-    console.log(`[Sidecar] Loaded ${count} persisted updates for document: ${docName} (${errors} errors, ${orphaned} orphaned, ${totalKeys} total keys in DB)`);
+    // Also load legacy data (no colon prefix) and p2p data for backwards compatibility
+    // These are less common, so a separate pass is acceptable
+    for await (const [dbKey, value] of db.iterator()) {
+        const isLegacy = !dbKey.includes(':');
+        const isP2P = dbKey.startsWith('p2p:');
+        
+        // Skip if not legacy or p2p data (already handled above)
+        if (!isLegacy && !isP2P) continue;
+        
+        if (DEBUG_MODE) console.log(`[Sidecar] Legacy/P2P key: ${dbKey}, isLegacy: ${isLegacy}, isP2P: ${isP2P}`);
+        const decrypted = decryptUpdate(value, key);
+        if (decrypted) {
+            if (DEBUG_MODE) console.log(`[Sidecar] Decrypted ${decrypted.length} bytes, applying to doc...`);
+            try {
+                Y.applyUpdate(doc, decrypted, 'persistence');
+                count++;
+            } catch (e) {
+                console.error(`[Sidecar] Failed to apply update ${dbKey}:`, e.message);
+                errors++;
+            }
+        } else {
+            if (DEBUG_MODE) console.log(`[Sidecar] Decryption returned null for key: ${dbKey} (wrong key or corrupted)`);
+            orphaned++;
+            orphanedKeys.push(dbKey);
+        }
+    }
+    
+    console.log(`[Sidecar] Loaded ${count} persisted updates for document: ${docName} (${errors} errors, ${orphaned} orphaned)`);
     
     // Return info about orphaned data for potential cleanup
     return { count, errors, orphaned, orphanedKeys };
@@ -651,7 +704,7 @@ async function deleteDocumentMetadata(docId) {
 
 // Delete document data (all updates for a document)
 async function deleteDocumentData(docId) {
-    await dbReady;
+    await withDbTimeout(dbReady, 'dbReady for delete');
     
     try {
         const prefix = `${docId}:`;
@@ -667,7 +720,7 @@ async function deleteDocumentData(docId) {
         
         // Delete all collected keys
         for (const key of keysToDelete) {
-            await db.del(key);
+            await withDbTimeout(db.del(key), `del ${key}`);
             count++;
         }
         
@@ -1649,7 +1702,7 @@ async function startServers() {
     // --- Server 1: Plain Yjs WebSocket (ws://) ---
     console.log(`[Sidecar] Creating Yjs WebSocket server on port ${YJS_WEBSOCKET_PORT}...`);
     await new Promise((resolve, reject) => {
-        yjsWss = new WebSocket.Server({ port: YJS_WEBSOCKET_PORT }, () => {
+        yjsWss = new WebSocket.Server({ port: YJS_WEBSOCKET_PORT, maxPayload: 10 * 1024 * 1024 /* 10MB */ }, () => {
             console.log(`[Sidecar] Yjs WebSocket server listening on ws://localhost:${YJS_WEBSOCKET_PORT} (${Date.now() - startTime}ms)`);
             resolve();
         });
@@ -1671,10 +1724,13 @@ async function startServers() {
                 key: sslCreds.key
             });
             
-            yjsWssSecure = new WebSocket.Server({ server: httpsServer });
+            yjsWssSecure = new WebSocket.Server({ server: httpsServer, maxPayload: 10 * 1024 * 1024 /* 10MB */ });
             yjsWssSecure.on('connection', (conn, req) => {
                 console.log('[Sidecar] Yjs client connected (WSS)');
                 setupWSConnection(conn, req);
+            });
+            yjsWssSecure.on('error', (err) => {
+                console.error('[Sidecar] Yjs Secure WebSocket server error:', err);
             });
             
             httpsServer.listen(YJS_WEBSOCKET_SECURE_PORT, () => {
@@ -1688,7 +1744,7 @@ async function startServers() {
     // Server 2: Handles metadata and commands  
     console.log(`[Sidecar] Creating Metadata WebSocket server on port ${METADATA_WEBSOCKET_PORT}...`);
     const metaServerReady = new Promise((resolve, reject) => {
-        metaWss = new WebSocket.Server({ port: METADATA_WEBSOCKET_PORT }, () => {
+        metaWss = new WebSocket.Server({ port: METADATA_WEBSOCKET_PORT, maxPayload: 10 * 1024 * 1024 /* 10MB */ }, () => {
             console.log(`[Sidecar] Metadata WebSocket server listening on ws://localhost:${METADATA_WEBSOCKET_PORT} (${Date.now() - startTime}ms)`);
             resolve();
         });
@@ -2556,7 +2612,7 @@ setTimeout(initializeP2PWithRetry, 1000);
                     }
                     
                     for (const key of keysToDelete) {
-                        await db.del(key);
+                        await withDbTimeout(db.del(key), `del orphaned ${key}`);
                         clearedCount++;
                     }
                     
@@ -3274,7 +3330,7 @@ async function startP2PStack() {
                 console.log(`[Sidecar] Received P2P update for doc: ${docId}`);
                 
                 // Store with document prefix
-                await db.put(`${docId}:p2p:${Date.now().toString()}`, encryptedData);
+                await withDbTimeout(db.put(`${docId}:p2p:${Date.now().toString()}`, encryptedData), `put p2p ${docId}`);
                 
                 // Get the key for this specific document
                 const key = getKeyForDocument(docId);
@@ -3297,7 +3353,7 @@ async function startP2PStack() {
             } else {
                 // Legacy protocol: no document ID, apply to all docs (backwards compat)
                 console.log('[Sidecar] Received legacy P2P update (no docId)');
-                await db.put(`p2p:${Date.now().toString()}`, rawData);
+                await withDbTimeout(db.put(`p2p:${Date.now().toString()}`, rawData), 'put legacy p2p');
 
                 if (!sessionKey) return;
 
@@ -3333,7 +3389,63 @@ docs.set = function(key, value) {
 Object.assign(docs, EventEmitter.prototype);
 
 // Queue of pending updates that arrived before the key was set
-const pendingUpdates = new Map(); // docName -> [{ update, origin }]
+const pendingUpdates = new Map(); // docName -> [{ update, origin, timestamp }]
+
+// Pending updates configuration
+const PENDING_UPDATES_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes TTL
+const PENDING_UPDATES_MAX_PER_DOC = 1000; // Max updates per document
+const PENDING_UPDATES_MAX_TOTAL = 10000; // Max total updates across all docs
+
+/**
+ * Clean up stale pending updates and enforce size limits
+ */
+function cleanupPendingUpdates() {
+    const now = Date.now();
+    let totalCount = 0;
+    
+    for (const [docName, updates] of pendingUpdates.entries()) {
+        // Remove entries older than TTL
+        const filtered = updates.filter(u => (now - (u.timestamp || 0)) < PENDING_UPDATES_MAX_AGE_MS);
+        
+        // Enforce per-doc limit (keep most recent)
+        const limited = filtered.length > PENDING_UPDATES_MAX_PER_DOC 
+            ? filtered.slice(-PENDING_UPDATES_MAX_PER_DOC) 
+            : filtered;
+        
+        if (limited.length === 0) {
+            pendingUpdates.delete(docName);
+        } else {
+            pendingUpdates.set(docName, limited);
+            totalCount += limited.length;
+        }
+    }
+    
+    // If still over total limit, remove oldest entries across all docs
+    if (totalCount > PENDING_UPDATES_MAX_TOTAL) {
+        console.warn(`[Sidecar] pendingUpdates exceeded max total (${totalCount}), trimming oldest entries`);
+        // Collect all entries with timestamps, sort by age, keep newest
+        const allEntries = [];
+        for (const [docName, updates] of pendingUpdates.entries()) {
+            for (const update of updates) {
+                allEntries.push({ docName, update });
+            }
+        }
+        allEntries.sort((a, b) => (b.update.timestamp || 0) - (a.update.timestamp || 0));
+        
+        // Clear and rebuild with only the newest entries
+        pendingUpdates.clear();
+        const keep = allEntries.slice(0, PENDING_UPDATES_MAX_TOTAL);
+        for (const { docName, update } of keep) {
+            if (!pendingUpdates.has(docName)) {
+                pendingUpdates.set(docName, []);
+            }
+            pendingUpdates.get(docName).push(update);
+        }
+    }
+}
+
+// Clean up pending updates every minute
+setInterval(cleanupPendingUpdates, 60000);
 
 // When a new document is added, bind persistence to it
 docs.on('doc-added', async (doc, docName) => {
@@ -3385,7 +3497,7 @@ docs.on('doc-added', async (doc, docName) => {
             } else {
                 // Queue the update for when key is available
                 console.log(`[Sidecar] Queuing update for ${docName} (no key yet)`);
-                pendingUpdates.get(docName).push({ update, origin });
+                pendingUpdates.get(docName).push({ update, origin, timestamp: Date.now() });
             }
         };
         
@@ -3419,46 +3531,123 @@ docs.on('doc-added', async (doc, docName) => {
 console.log('[Sidecar] Running in OFFLINE mode by default. Use toggle-tor to enable P2P.');
 
 // --- Graceful Shutdown ---
+let isShuttingDown = false;
+
 async function shutdown() {
+    // Prevent multiple shutdown attempts
+    if (isShuttingDown) {
+        console.log('[Sidecar] Shutdown already in progress...');
+        return;
+    }
+    isShuttingDown = true;
+    
     console.log('[Sidecar] Shutting down...');
     
-    // Disconnect relay bridge
-    if (relayBridgeEnabled) {
-        console.log('[Sidecar] Disconnecting relay bridge...');
-        relayBridge.disconnectAll();
-    }
+    // Set a hard timeout for shutdown (30 seconds)
+    const shutdownTimeout = setTimeout(() => {
+        console.error('[Sidecar] Shutdown timeout exceeded, forcing exit');
+        process.exit(1);
+    }, 30000);
     
-    // Unmap UPnP ports (only if upnpMapper was loaded)
-    if (upnpStatus.wsPortMapped || upnpStatus.wssPortMapped) {
-        console.log('[Sidecar] Unmapping UPnP ports...');
-        const { unmapPort } = getUPnPMapper();
-        if (upnpStatus.wsPortMapped) {
-            await unmapPort(YJS_WEBSOCKET_PORT);
-        }
-        if (upnpStatus.wssPortMapped) {
-            await unmapPort(YJS_WEBSOCKET_SECURE_PORT);
-        }
-    }
-    
-    // Stop mesh participant
-    if (meshParticipant) {
-        try {
-            await meshParticipant.stop();
-            console.log('[Sidecar] Mesh participant stopped');
-        } catch (err) {
-            console.error('[Sidecar] Error stopping mesh:', err);
-        }
-    }
-    
-    // Close database
     try {
-        await db.close();
-        console.log('[Sidecar] Database closed');
+        // Close WebSocket servers first to stop accepting new connections
+        if (metaWss) {
+            console.log('[Sidecar] Closing metadata WebSocket server...');
+            await new Promise((resolve) => {
+                metaWss.clients.forEach(client => client.close(1001, 'Server shutting down'));
+                metaWss.close(() => resolve());
+            });
+            console.log('[Sidecar] Metadata WebSocket server closed');
+        }
+        
+        if (yjsWss) {
+            console.log('[Sidecar] Closing Yjs WebSocket server...');
+            await new Promise((resolve) => {
+                yjsWss.clients.forEach(client => client.close(1001, 'Server shutting down'));
+                yjsWss.close(() => resolve());
+            });
+            console.log('[Sidecar] Yjs WebSocket server closed');
+        }
+        
+        if (yjsWssSecure) {
+            console.log('[Sidecar] Closing secure Yjs WebSocket server...');
+            await new Promise((resolve) => {
+                yjsWssSecure.clients.forEach(client => client.close(1001, 'Server shutting down'));
+                yjsWssSecure.close(() => resolve());
+            });
+            console.log('[Sidecar] Secure Yjs WebSocket server closed');
+        }
+        
+        // Disconnect relay bridge
+        if (relayBridgeEnabled) {
+            console.log('[Sidecar] Disconnecting relay bridge...');
+            relayBridge.disconnectAll();
+        }
+        
+        // Stop P2P bridge
+        if (p2pBridge) {
+            console.log('[Sidecar] Stopping P2P bridge...');
+            try {
+                await p2pBridge.stop();
+                console.log('[Sidecar] P2P bridge stopped');
+            } catch (err) {
+                console.error('[Sidecar] Error stopping P2P bridge:', err);
+            }
+        }
+        
+        // Stop P2P node (libp2p)
+        if (p2pNode) {
+            console.log('[Sidecar] Stopping P2P node...');
+            try {
+                await p2pNode.stop();
+                console.log('[Sidecar] P2P node stopped');
+            } catch (err) {
+                console.error('[Sidecar] Error stopping P2P node:', err);
+            }
+        }
+        
+        // Unmap UPnP ports (only if upnpMapper was loaded)
+        if (upnpStatus.wsPortMapped || upnpStatus.wssPortMapped) {
+            console.log('[Sidecar] Unmapping UPnP ports...');
+            const { unmapPort } = getUPnPMapper();
+            if (upnpStatus.wsPortMapped) {
+                await unmapPort(YJS_WEBSOCKET_PORT);
+            }
+            if (upnpStatus.wssPortMapped) {
+                await unmapPort(YJS_WEBSOCKET_SECURE_PORT);
+            }
+        }
+        
+        // Stop mesh participant
+        if (meshParticipant) {
+            try {
+                await meshParticipant.stop();
+                console.log('[Sidecar] Mesh participant stopped');
+            } catch (err) {
+                console.error('[Sidecar] Error stopping mesh:', err);
+            }
+        }
+        
+        // Clear pending updates
+        pendingUpdates.clear();
+        console.log('[Sidecar] Pending updates cleared');
+        
+        // Close database
+        try {
+            await db.close();
+            console.log('[Sidecar] Database closed');
+        } catch (err) {
+            console.error('[Sidecar] Error closing database:', err);
+        }
+        
+        clearTimeout(shutdownTimeout);
+        console.log('[Sidecar] Graceful shutdown complete');
+        process.exit(0);
     } catch (err) {
-        console.error('[Sidecar] Error closing database:', err);
+        console.error('[Sidecar] Error during shutdown:', err);
+        clearTimeout(shutdownTimeout);
+        process.exit(1);
     }
-    
-    process.exit(0);
 }
 
 process.on('SIGINT', shutdown);

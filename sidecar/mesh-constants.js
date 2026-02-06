@@ -227,8 +227,13 @@ function parseBootstrapNodes(nodesStr) {
  * @returns {string} Version string (e.g., "1.0.0")
  */
 function getVersion() {
-  // TODO: Read from package.json
-  return '1.0.0';
+  try {
+    const packageJson = require('../package.json');
+    return packageJson.version || '1.0.0';
+  } catch (err) {
+    // Fallback if package.json cannot be read
+    return '1.0.0';
+  }
 }
 
 // =============================================================================

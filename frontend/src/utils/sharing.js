@@ -740,9 +740,22 @@ function crc16(data) {
  * Helper: SHA256 hash
  */
 async function sha256Async(data) {
-  const encoder = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
-  return bytesToHex(new Uint8Array(hashBuffer));
+  // Use Web Crypto API if available (browser)
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+    return bytesToHex(new Uint8Array(hashBuffer));
+  }
+  
+  // Fallback for Node.js environment (tests)
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.subtle) {
+    const encoder = new TextEncoder();
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', encoder.encode(data));
+    return bytesToHex(new Uint8Array(hashBuffer));
+  }
+  
+  // Final fallback: use synchronous hash
+  return sha256(data);
 }
 
 /**

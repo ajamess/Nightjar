@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import './TabBar.css';
 import UserProfile from './UserProfile';
 import { createColorGradient } from '../utils/colorUtils';
@@ -18,10 +18,28 @@ const TabBar = ({
     documents = [], // Added for color lookups
     folders = [] // Added for color lookups
 }) => {
+    const handleTabKeyDown = useCallback((e, tabIndex) => {
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const nextIndex = (tabIndex + 1) % tabs.length;
+            onSelectTab(tabs[nextIndex].id);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const prevIndex = (tabIndex - 1 + tabs.length) % tabs.length;
+            onSelectTab(tabs[prevIndex].id);
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            onSelectTab(tabs[0].id);
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            onSelectTab(tabs[tabs.length - 1].id);
+        }
+    }, [tabs, onSelectTab]);
+
     return (
         <div className="tab-bar">
-            <div className="tabs-container">
-                {tabs.map((tab) => {
+            <div className="tabs-container" role="tablist" aria-label="Document tabs">
+                {tabs.map((tab, tabIndex) => {
                     // Look up document and folder for color gradient
                     const doc = documents.find(d => d.id === tab.id);
                     const folder = doc?.folderId ? folders.find(f => f.id === doc.folderId) : null;
@@ -33,12 +51,19 @@ const TabBar = ({
                         ? { background: createColorGradient(folderColor, docColor, 0.25) }
                         : {};
                     
+                    const isSelected = tab.id === activeTabId;
                     return (
                         <div
                             key={tab.id}
-                            className={`tab ${tab.id === activeTabId ? 'active' : ''} ${tab.hasUnsavedChanges ? 'unsaved' : ''}`}
+                            className={`tab ${isSelected ? 'active' : ''} ${tab.hasUnsavedChanges ? 'unsaved' : ''}`}
                             onClick={() => onSelectTab(tab.id)}
+                            onKeyDown={(e) => handleTabKeyDown(e, tabIndex)}
                             style={backgroundStyle}
+                            role="tab"
+                            aria-selected={isSelected}
+                            aria-controls={`tabpanel-${tab.id}`}
+                            tabIndex={isSelected ? 0 : -1}
+                            id={`tab-${tab.id}`}
                         >
                         <span className="tab-name">{tab.name}</span>
                         {tab.hasUnsavedChanges && <span className="unsaved-indicator">●</span>}

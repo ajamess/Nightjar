@@ -58,12 +58,17 @@ export default function ConfirmDialog({
         }
     }, [onCancel, onConfirm]);
 
-    // Focus cancel button when opened (safer default)
+    // Focus management: for destructive actions (danger), focus cancel button
+    // For non-destructive, focus confirm button
     useEffect(() => {
         if (isOpen) {
-            cancelBtnRef.current?.focus();
+            if (variant === 'danger') {
+                cancelBtnRef.current?.focus();
+            } else {
+                confirmBtnRef.current?.focus();
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, variant]);
 
     // Prevent body scroll when open
     useEffect(() => {

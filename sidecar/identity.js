@@ -324,18 +324,22 @@ function exportIdentity(password) {
         createdAt: identity.createdAt
     };
     
-    // Derive key from password
-    const key = deriveKeyFromPassword(password);
+    // Generate random salt for this export
+    const salt = generateExportSalt();
+    
+    // Derive key from password with random salt
+    const key = deriveKeyFromPassword(password, salt);
     
     // Encrypt
     const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
     const plaintext = new TextEncoder().encode(JSON.stringify(payload));
     const ciphertext = nacl.secretbox(plaintext, nonce, key);
     
-    // Pack with version marker
+    // Pack with version marker - include salt in output
+    // Format: salt (16 bytes) + nonce (24 bytes) + ciphertext
     const result = {
-        version: 1,
-        data: Buffer.concat([Buffer.from(nonce), Buffer.from(ciphertext)]).toString('base64')
+        version: 2,
+        data: Buffer.concat([salt, Buffer.from(nonce), Buffer.from(ciphertext)]).toString('base64')
     };
     
     return JSON.stringify(result);
@@ -347,15 +351,28 @@ function exportIdentity(password) {
 function importIdentity(exportedData, password) {
     const parsed = JSON.parse(exportedData);
     
-    if (parsed.version !== 1) {
+    if (parsed.version !== 1 && parsed.version !== 2) {
         throw new Error('Unsupported export version');
     }
     
     const packed = Buffer.from(parsed.data, 'base64');
-    const key = deriveKeyFromPassword(password);
+    let key, nonce, ciphertext;
     
-    const nonce = new Uint8Array(packed.slice(0, nacl.secretbox.nonceLength));
-    const ciphertext = new Uint8Array(packed.slice(nacl.secretbox.nonceLength));
+    if (parsed.version === 2) {
+        // Version 2: salt (16 bytes) + nonce (24 bytes) + ciphertext
+        const salt = packed.slice(0, 16);
+        nonce = new Uint8Array(packed.slice(16, 16 + nacl.secretbox.nonceLength));
+        ciphertext = new Uint8Array(packed.slice(16 + nacl.secretbox.nonceLength));
+        key = deriveKeyFromPassword(password, salt);
+    } else {
+        // Version 1 (legacy): static salt, nonce + ciphertext
+        // Use legacy static salt for backward compatibility
+        const legacySalt = Buffer.from('Nightjar-identity-export-salt-v1', 'utf-8');
+        key = crypto.pbkdf2Sync(password, legacySalt, 100000, 32, 'sha512');
+        key = new Uint8Array(key);
+        nonce = new Uint8Array(packed.slice(0, nacl.secretbox.nonceLength));
+        ciphertext = new Uint8Array(packed.slice(nacl.secretbox.nonceLength));
+    }
     
     const plaintext = nacl.secretbox.open(ciphertext, nonce, key);
     if (!plaintext) {
@@ -393,12 +410,23 @@ function importIdentity(exportedData, password) {
 }
 
 // Helper functions (duplicated for sidecar context)
-function deriveKeyFromPassword(password) {
+function deriveKeyFromPassword(password, salt) {
     // Use PBKDF2 with SHA-512 for proper key derivation
     // 100,000 iterations provides reasonable security for export passwords
-    const salt = Buffer.from('Nightjar-identity-export-salt-v1', 'utf-8');
+    // Salt must be provided - use generateExportSalt() to create one
+    if (!salt || salt.length < 16) {
+        throw new Error('Salt is required and must be at least 16 bytes');
+    }
     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
     return new Uint8Array(key);
+}
+
+/**
+ * Generate a random salt for export operations
+ * @returns {Buffer} 16-byte random salt
+ */
+function generateExportSalt() {
+    return crypto.randomBytes(16);
 }
 
 // Base62 encoding

@@ -15,6 +15,9 @@ const ACTIVITY_EVENTS = [
     'keydown',
     'scroll',
     'touchstart',
+    'touchmove',
+    'touchend',
+    'pointerdown',
     'click'
 ];
 
@@ -101,8 +104,9 @@ export function useAutoLock() {
                 clearInterval(checkIntervalRef.current);
             }
             
+            // Match the { passive: true } option used in addEventListener
             ACTIVITY_EVENTS.forEach(event => {
-                window.removeEventListener(event, handleActivity);
+                window.removeEventListener(event, handleActivity, { passive: true });
             });
             
             document.removeEventListener('visibilitychange', handleVisibilityChange);

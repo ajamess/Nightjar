@@ -76,6 +76,9 @@ export function FolderProvider({ children }) {
   const serverUrl = currentWorkspace?.serverUrl || null;
   const isRemoteWorkspace = !!serverUrl;
   
+  // Track whether observers have been set up (for StrictMode cleanup safety)
+  const observersSetUpRef = useRef(false);
+  
   useEffect(() => {
     // Skip for local Electron workspaces (uses sidecar), but enable for:
     // 1. Web mode (always uses Yjs)
@@ -83,6 +86,9 @@ export function FolderProvider({ children }) {
     if ((isElectronMode && !isRemoteWorkspace) || !currentWorkspaceId) {
       return;
     }
+    
+    // Reset observer tracking for new effect run
+    observersSetUpRef.current = false;
     
     const mode = isElectronMode ? 'Electron (remote workspace)' : 'Web';
     console.log(`[FolderContext] ${mode} - setting up Yjs folder sync for workspace:`, currentWorkspaceId);
@@ -167,6 +173,9 @@ export function FolderProvider({ children }) {
     yDocFolders.observe(syncDocFolders);
     yTrashedDocs.observe(syncTrashedDocs);
     
+    // Mark observers as successfully set up
+    observersSetUpRef.current = true;
+    
     // Handle initial sync - wait for provider to sync with server
     let hasSynced = false;
     provider.on('synced', (isSynced) => {
@@ -217,9 +226,13 @@ export function FolderProvider({ children }) {
     // Cleanup
     return () => {
       console.log('[FolderContext] Cleaning up Yjs folder sync');
-      yFolders.unobserve(syncFolders);
-      yDocFolders.unobserve(syncDocFolders);
-      yTrashedDocs.unobserve(syncTrashedDocs);
+      // Only unobserve if observers were actually set up (StrictMode safety)
+      if (observersSetUpRef.current) {
+        yFolders.unobserve(syncFolders);
+        yDocFolders.unobserve(syncDocFolders);
+        yTrashedDocs.unobserve(syncTrashedDocs);
+        observersSetUpRef.current = false;
+      }
       provider.destroy();
       ydoc.destroy();
       ydocRef.current = null;
@@ -729,18 +742,29 @@ export function FolderProvider({ children }) {
     return Math.max(0, Math.ceil(remaining / (24 * 60 * 60 * 1000)));
   }, []);
 
-  // Get folder hierarchy for tree view (workspace-scoped, excluding system folders)
-  const getFolderHierarchy = useCallback((parentId = null) => {
-    // Only show user-created folders in hierarchy, not system virtual folders
+  // Pre-compute folder hierarchy map for O(1) child lookups (avoids O(n²) recursive traversal)
+  const folderChildrenMap = useMemo(() => {
+    const map = new Map();
     const userFolders = folders.filter(f => !f.isSystem && !f.deletedAt);
-    
-    return userFolders
-      .filter(f => f.parentId === parentId)
-      .map(folder => ({
-        ...folder,
-        children: getFolderHierarchy(folder.id),
-      }));
+    userFolders.forEach(folder => {
+      const parentId = folder.parentId || null;
+      if (!map.has(parentId)) {
+        map.set(parentId, []);
+      }
+      map.get(parentId).push(folder);
+    });
+    return map;
   }, [folders]);
+
+  // Get folder hierarchy for tree view (workspace-scoped, excluding system folders)
+  // Uses pre-computed map for O(n) traversal instead of O(n²)
+  const getFolderHierarchy = useCallback((parentId = null) => {
+    const children = folderChildrenMap.get(parentId) || [];
+    return children.map(folder => ({
+      ...folder,
+      children: getFolderHierarchy(folder.id),
+    }));
+  }, [folderChildrenMap]);
 
   // Get documents in a folder (updated for workspace-scoped virtual folders)
   const getDocumentsInFolder = useCallback((folderId, documents) => {
@@ -774,22 +798,26 @@ export function FolderProvider({ children }) {
     }
     
     // Return documents in this folder or its children
+    // Use BFS with pre-computed folderChildrenMap for O(n) traversal instead of O(n²)
     const folderIds = new Set([folderId]);
+    const queue = [folderId];
     
-    // Add child folder IDs recursively
-    const addChildren = (parentId) => {
-      folders.filter(f => f.parentId === parentId && !f.deletedAt).forEach(child => {
-        folderIds.add(child.id);
-        addChildren(child.id);
-      });
-    };
-    addChildren(folderId);
+    while (queue.length > 0) {
+      const parentId = queue.shift();
+      const children = folderChildrenMap.get(parentId) || [];
+      for (const child of children) {
+        if (!folderIds.has(child.id)) {
+          folderIds.add(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
     
     return activeDocuments.filter(d => {
       const docFolderId = documentFolders[d.id];
       return folderIds.has(docFolderId);
     });
-  }, [folders, documentFolders, trashedDocuments, allFolders, currentWorkspaceId]);
+  }, [folders, folderChildrenMap, documentFolders, trashedDocuments, allFolders, currentWorkspaceId]);
   
   // Get all trash items (folders and documents) for current workspace
   const getTrashItems = useCallback(() => {
