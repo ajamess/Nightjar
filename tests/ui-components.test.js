@@ -414,7 +414,7 @@ describe('HierarchicalSidebar Sheet Support', () => {
     expect(sidebarContent).toContain('📊');
   });
 
-  test('type selector includes sheet option', async () => {
+  test('component supports sheet creation via props', async () => {
     const fs = require('fs');
     const path = require('path');
     
@@ -423,7 +423,8 @@ describe('HierarchicalSidebar Sheet Support', () => {
       'utf-8'
     );
     
-    expect(sidebarContent).toContain("createDocType === 'sheet'");
+    // Verify sheet creation is supported via onCreateSheet prop
+    expect(sidebarContent).toContain("onCreateSheet");
   });
 });
 

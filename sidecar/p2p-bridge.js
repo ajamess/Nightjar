@@ -21,6 +21,9 @@ async function ensureHyperswarm() {
 
 const EventEmitter = require('events');
 
+// Maximum number of concurrent P2P clients to prevent resource exhaustion
+const MAX_CLIENTS = 100;
+
 class P2PBridge extends EventEmitter {
   constructor() {
     super();
@@ -29,6 +32,7 @@ class P2PBridge extends EventEmitter {
     this.topics = new Map(); // topic -> Set<websocket>
     this.peerIdToSocket = new Map(); // peerId -> websocket
     this.isInitialized = false;
+    this.maxClients = MAX_CLIENTS;
     
     // mDNS (optional - try to load bonjour)
     this.bonjour = null;
@@ -119,6 +123,13 @@ class P2PBridge extends EventEmitter {
    * Handle new WebSocket client connection
    */
   handleClient(ws) {
+    // Reject new connections when at limit to prevent resource exhaustion
+    if (this.clients.size >= this.maxClients) {
+      console.warn(`[P2PBridge] Connection rejected: max clients (${this.maxClients}) reached`);
+      ws.close(1013, 'Max clients reached'); // 1013 = Try Again Later
+      return;
+    }
+
     this.clients.set(ws, {
       peerId: null,
       topics: new Set(),

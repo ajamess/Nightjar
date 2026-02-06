@@ -320,6 +320,13 @@ function verifyMessage(signedMessage, publicKeyHex) {
   }
 }
 
+// Constants for P2P networking
+const MAX_PEER_LIST_SIZE = 50; // Limit peer list processing to prevent DoS
+const MESSAGE_DEDUP_TTL = 60000; // 60 seconds TTL for message deduplication
+const MESSAGE_DEDUP_CLEANUP_INTERVAL = 30000; // Clean up old message IDs every 30s
+const HEARTBEAT_INTERVAL = 30000; // Send ping every 30 seconds
+const HEARTBEAT_TIMEOUT = 10000; // Consider connection dead if no pong in 10s
+
 class HyperswarmManager extends EventEmitter {
   constructor() {
     super();
@@ -328,6 +335,13 @@ class HyperswarmManager extends EventEmitter {
     this.topics = new Map(); // topicHex -> { discovery, peers }
     this.identity = null;
     this.isInitialized = false;
+    
+    // Message deduplication: messageHash -> timestamp
+    this.processedMessages = new Map();
+    this.dedupCleanupInterval = null;
+    
+    // Heartbeat tracking
+    this.heartbeatInterval = null;
   }
 
   /**
@@ -356,6 +370,12 @@ class HyperswarmManager extends EventEmitter {
     this.isInitialized = true;
     console.log('[Hyperswarm] Initialized with peer ID:', this.swarm.keyPair.publicKey.toString('hex').slice(0, 16) + '...');
     
+    // Start message deduplication cleanup interval
+    this._startDedupCleanup();
+    
+    // Start heartbeat interval
+    this._startHeartbeat();
+    
     // Start listening in background (don't block initialization)
     // This will establish DHT connection and get a port asynchronously
     this.swarm.listen().then(() => {
@@ -363,6 +383,110 @@ class HyperswarmManager extends EventEmitter {
     }).catch(err => {
       console.warn('[Hyperswarm] Failed to start listening:', err.message);
     });
+  }
+
+  /**
+   * Start periodic cleanup of old message IDs for deduplication
+   * @private
+   */
+  _startDedupCleanup() {
+    if (this.dedupCleanupInterval) return;
+    
+    this.dedupCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      let cleaned = 0;
+      for (const [hash, timestamp] of this.processedMessages) {
+        if (now - timestamp > MESSAGE_DEDUP_TTL) {
+          this.processedMessages.delete(hash);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        console.log(`[Hyperswarm] Cleaned ${cleaned} old message IDs, ${this.processedMessages.size} remaining`);
+      }
+    }, MESSAGE_DEDUP_CLEANUP_INTERVAL);
+  }
+
+  /**
+   * Start heartbeat mechanism for connection health monitoring
+   * @private
+   */
+  _startHeartbeat() {
+    if (this.heartbeatInterval) return;
+    
+    this.heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [peerId, conn] of this.connections) {
+        // Check if connection is still writable
+        if (!conn.socket || !conn.socket.writable) {
+          console.warn(`[Hyperswarm] Removing dead connection (not writable): ${peerId.slice(0, 16)}`);
+          this._cleanupConnection(peerId);
+          continue;
+        }
+        
+        // Check for heartbeat timeout
+        if (conn.lastPingSent && !conn.lastPongReceived) {
+          const pingAge = now - conn.lastPingSent;
+          if (pingAge > HEARTBEAT_TIMEOUT) {
+            console.warn(`[Hyperswarm] Heartbeat timeout for peer: ${peerId.slice(0, 16)}`);
+            this._cleanupConnection(peerId);
+            continue;
+          }
+        }
+        
+        // Send ping
+        conn.lastPingSent = now;
+        this._sendMessage(conn.socket, { type: 'ping', timestamp: now });
+      }
+    }, HEARTBEAT_INTERVAL);
+  }
+
+  /**
+   * Clean up a connection and notify listeners
+   * @private
+   */
+  _cleanupConnection(peerId) {
+    const conn = this.connections.get(peerId);
+    if (!conn) return;
+    
+    // Notify about peer leaving for each topic
+    for (const topic of conn.topics) {
+      this.emit('peer-left', { peerId, topic, identity: conn.identity });
+    }
+    
+    // Close socket if possible
+    try {
+      if (conn.socket && !conn.socket.destroyed) {
+        conn.socket.destroy();
+      }
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    
+    this.connections.delete(peerId);
+  }
+
+  /**
+   * Generate a hash for message deduplication
+   * @private
+   */
+  _getMessageHash(peerId, data) {
+    const content = typeof data === 'string' ? data : JSON.stringify(data);
+    return crypto.createHash('sha256').update(`${peerId}:${content}`).digest('hex').slice(0, 32);
+  }
+
+  /**
+   * Check if a message has already been processed (deduplication)
+   * @private
+   * @returns {boolean} True if message is a duplicate
+   */
+  _isDuplicateMessage(peerId, data) {
+    const hash = this._getMessageHash(peerId, data);
+    if (this.processedMessages.has(hash)) {
+      return true;
+    }
+    this.processedMessages.set(hash, Date.now());
+    return false;
   }
 
   /**
@@ -422,6 +546,23 @@ class HyperswarmManager extends EventEmitter {
 
       if (!conn) return;
 
+      // Handle heartbeat messages immediately (no deduplication needed)
+      if (message.type === 'ping') {
+        this._sendMessage(conn.socket, { type: 'pong', timestamp: message.timestamp });
+        return;
+      }
+      
+      if (message.type === 'pong') {
+        conn.lastPongReceived = Date.now();
+        return;
+      }
+
+      // Check for duplicate messages (skip for identity which has its own replay protection)
+      if (message.type !== 'identity' && this._isDuplicateMessage(peerId, data.toString())) {
+        console.log(`[Hyperswarm] Dropping duplicate message from ${peerId.slice(0, 16)}: ${message.type}`);
+        return;
+      }
+
       switch (message.type) {
         case 'identity':
           // Verify the signature before trusting the identity
@@ -478,10 +619,16 @@ class HyperswarmManager extends EventEmitter {
 
         case 'peer-list':
           // Mesh peer discovery: connect to peers we don't already know
-          this.emit('peer-list-received', { peerId, topic: message.topic, peers: message.peers });
+          // SECURITY: Limit peer list size to prevent DoS from malicious peers
+          let peers = message.peers;
+          if (Array.isArray(peers) && peers.length > MAX_PEER_LIST_SIZE) {
+            console.warn(`[Hyperswarm] Truncating peer list from ${peers.length} to ${MAX_PEER_LIST_SIZE}`);
+            peers = peers.slice(0, MAX_PEER_LIST_SIZE);
+          }
+          this.emit('peer-list-received', { peerId, topic: message.topic, peers });
           // Auto-connect to new peers
-          if (Array.isArray(message.peers)) {
-            for (const peerKey of message.peers) {
+          if (Array.isArray(peers)) {
+            for (const peerKey of peers) {
               if (!this.connections.has(peerKey) && peerKey !== this.swarm?.keyPair?.publicKey?.toString('hex')) {
                 this.connectToPeer(peerKey).catch(() => {
                   // Peer may be unreachable, ignore
@@ -504,9 +651,16 @@ class HyperswarmManager extends EventEmitter {
    */
   _sendMessage(socket, message) {
     try {
+      // Check socket state before sending
+      if (!socket || !socket.writable) {
+        console.warn('[Hyperswarm] Cannot send message: socket not writable');
+        return false;
+      }
       socket.write(JSON.stringify(message));
+      return true;
     } catch (err) {
       console.error('[Hyperswarm] Failed to send message:', err.message);
+      return false;
     }
   }
 
@@ -563,6 +717,11 @@ class HyperswarmManager extends EventEmitter {
   async joinTopic(topicHex) {
     if (!this.isInitialized) {
       throw new Error('Hyperswarm not initialized');
+    }
+
+    // Validate topicHex format: must be exactly 64 hex characters (32 bytes)
+    if (!topicHex || typeof topicHex !== 'string' || !/^[0-9a-f]{64}$/i.test(topicHex)) {
+      throw new Error(`Invalid topicHex format: expected 64-character hex string, got ${topicHex?.length || 0} chars`);
     }
 
     if (this.topics.has(topicHex)) {
@@ -629,8 +788,15 @@ class HyperswarmManager extends EventEmitter {
     console.log(`[Hyperswarm] Data type: ${typeof data}, size: ${dataStr.length}`);
     
     let sentCount = 0;
+    let skippedCount = 0;
     for (const [peerId, conn] of this.connections) {
       if (conn.topics.has(topicHex)) {
+        // Check socket state before sending
+        if (!conn.socket || !conn.socket.writable) {
+          console.warn(`[Hyperswarm] Skipping peer ${peerId.slice(0, 8)}... - socket not writable`);
+          skippedCount++;
+          continue;
+        }
         console.log(`[Hyperswarm] → Sending to peer ${peerId.slice(0, 8)}... (${conn.identity?.displayName || 'unknown'})`);
         this._sendMessage(conn.socket, {
           type: 'sync',
@@ -641,7 +807,7 @@ class HyperswarmManager extends EventEmitter {
       }
     }
     
-    console.log(`[Hyperswarm] broadcastSync complete - sent to ${sentCount} peer(s)`);
+    console.log(`[Hyperswarm] broadcastSync complete - sent to ${sentCount} peer(s), skipped ${skippedCount}`);
     
     if (sentCount === 0) {
       console.warn(`[Hyperswarm] ⚠ No peers on topic ${topicHex.slice(0, 8)}... to receive broadcast!`);
@@ -841,6 +1007,18 @@ class HyperswarmManager extends EventEmitter {
   async destroy() {
     if (!this.isInitialized) return;
 
+    // Stop deduplication cleanup
+    if (this.dedupCleanupInterval) {
+      clearInterval(this.dedupCleanupInterval);
+      this.dedupCleanupInterval = null;
+    }
+    
+    // Stop heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
     // Leave all topics
     for (const topicHex of this.topics.keys()) {
       await this.leaveTopic(topicHex);
@@ -851,6 +1029,7 @@ class HyperswarmManager extends EventEmitter {
     
     this.connections.clear();
     this.topics.clear();
+    this.processedMessages.clear();
     this.isInitialized = false;
 
     console.log('[Hyperswarm] Destroyed');

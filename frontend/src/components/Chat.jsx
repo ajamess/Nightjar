@@ -636,7 +636,13 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                 </div>
             )}
 
-            <div className="chat-messages" ref={chatContainerRef}>
+            <div 
+                className="chat-messages" 
+                ref={chatContainerRef}
+                role="log"
+                aria-live="polite"
+                aria-label="Chat messages"
+            >
                 {Object.entries(groupedMessages).map(([date, msgs]) => (
                     <div key={date} className="message-group">
                         <div className="date-separator">
@@ -688,7 +694,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="chat-input-container">
+            <div className="chat-input-container" role="form" aria-label="Send message form">
                 <input
                     type="text"
                     value={inputValue}
@@ -696,6 +702,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                     onKeyDown={handleKeyDown}
                     placeholder={activeTab === 'general' ? "Type a message..." : `Message ${chatTabs.find(t => t.id === activeTab)?.name || ''}...`}
                     className="chat-input"
+                    aria-label={activeTab === 'general' ? "Type a message" : `Message ${chatTabs.find(t => t.id === activeTab)?.name || ''}`}
                 />
                 <button 
                     type="button"

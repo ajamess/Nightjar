@@ -13,10 +13,7 @@
  */
 
 import { isElectron } from '../hooks/useEnvironment';
-
-// Sidecar ports (Electron only)
-const SIDECAR_YJS_PORT = 8080;
-const SIDECAR_METADATA_PORT = 8081;
+import { YJS_WS_PORT, META_WS_PORT, WEB_SERVER_PORT } from '../config/constants';
 
 // Global P2P configuration (set by P2PContext)
 let globalP2PConfig = {
@@ -84,10 +81,10 @@ export function getYjsWebSocketUrl(serverUrl = null) {
     }
     
     if (isElectronMode) {
-        url = `ws://localhost:${SIDECAR_YJS_PORT}`;
+        url = `ws://localhost:${YJS_WS_PORT}`;
     } else {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host || 'localhost:3000';
+        const host = window.location.host || `localhost:${WEB_SERVER_PORT}`;
         url = `${protocol}//${host}`;
     }
     console.log(`[WebSocket] getYjsWebSocketUrl() => ${url} (isElectron: ${isElectronMode})`);
@@ -100,7 +97,7 @@ export function getYjsWebSocketUrl(serverUrl = null) {
  */
 export function getMetadataWebSocketUrl() {
     if (isElectron()) {
-        return `ws://localhost:${SIDECAR_METADATA_PORT}`;
+        return `ws://localhost:${META_WS_PORT}`;
     }
     // Web mode uses the same connection as Yjs
     return null;
@@ -112,7 +109,7 @@ export function getMetadataWebSocketUrl() {
  */
 export function getApiBaseUrl() {
     if (isElectron()) {
-        return 'http://localhost:3000';
+        return `http://localhost:${WEB_SERVER_PORT}`;
     }
     return window.location.origin;
 }

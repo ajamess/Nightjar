@@ -19,6 +19,7 @@ import { secureError, secureLog } from '../utils/secureLogger';
 import { isElectron as checkIsElectron } from '../hooks/useEnvironment';
 import { useIdentity } from './IdentityContext';
 import identityManager from '../utils/identityManager';
+import { META_WS_PORT } from '../config/constants';
 
 /**
  * Get identity-scoped storage key for web mode
@@ -162,6 +163,9 @@ export function WorkspaceProvider({ children }) {
   // Use ref to always have latest message handler
   const handleSidecarMessageRef = useRef(null);
   
+  // AbortController for canceling pending async operations when switching workspaces
+  const abortControllerRef = useRef(null);
+  
   // Persist workspaces to localStorage in web mode (identity-scoped)
   useEffect(() => {
     if (!isElectron && workspaces.length > 0) {
@@ -195,7 +199,20 @@ export function WorkspaceProvider({ children }) {
         // Restore keychains for all loaded workspaces (async)
         // This is critical for share link generation to work
         const restoreAllKeychains = async () => {
+          // Cancel any previous keychain restoration
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
+          abortControllerRef.current = new AbortController();
+          const signal = abortControllerRef.current.signal;
+          
+          const failedWorkspaces = [];
           for (const workspace of (data.workspaces || [])) {
+            // Check if operation was cancelled (workspace switch)
+            if (signal.aborted) {
+              secureLog('[WorkspaceContext] Keychain restoration cancelled due to workspace switch');
+              return;
+            }
             try {
               const updated = await restoreKeyChain(workspace);
               if (updated) {
@@ -208,6 +225,19 @@ export function WorkspaceProvider({ children }) {
               }
             } catch (e) {
               secureError('[WorkspaceContext] Failed to restore keychain for:', workspace.id, e);
+              failedWorkspaces.push({ id: workspace.id, name: workspace.name, error: e.message });
+            }
+          }
+          
+          // Report failures to user and allow retry
+          if (failedWorkspaces.length > 0) {
+            secureError('[WorkspaceContext] Failed to restore keychains for workspaces:', failedWorkspaces);
+            // Broadcast keychain restoration failures for UI notification
+            // Store failed workspaces for potential retry
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('keychain-restore-failed', {
+                detail: { failedWorkspaces, retry: () => restoreAllKeychains() }
+              }));
             }
           }
         };
@@ -382,7 +412,7 @@ export function WorkspaceProvider({ children }) {
       }
       
       try {
-        const ws = new WebSocket('ws://localhost:8081');
+        const ws = new WebSocket(`ws://localhost:${META_WS_PORT}`);
         
         ws.onopen = () => {
           secureLog('[WorkspaceContext] Connected to sidecar');
@@ -428,11 +458,14 @@ export function WorkspaceProvider({ children }) {
           if (retryCount >= 3) {
             secureError('[WorkspaceContext] WebSocket error:', error);
           }
-          // Retry with exponential backoff during startup
+          // Retry with exponential backoff + jitter during startup
           if (retryCount < maxRetries) {
             retryCount++;
-            const delay = Math.min(baseDelay * Math.pow(1.5, retryCount), 5000);
-            secureLog(`[WorkspaceContext] Sidecar not ready, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+            const baseBackoff = Math.min(baseDelay * Math.pow(1.5, retryCount), 5000);
+            // Add randomized jitter (0-50% of base delay) to prevent thundering herd
+            const jitter = baseBackoff * Math.random() * 0.5;
+            const delay = baseBackoff + jitter;
+            secureLog(`[WorkspaceContext] Sidecar not ready, retrying in ${Math.round(delay)}ms (attempt ${retryCount}/${maxRetries})`);
             setTimeout(connectToSidecar, delay);
           } else {
             // Max retries reached - sidecar is unavailable

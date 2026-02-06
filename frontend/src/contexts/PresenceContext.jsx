@@ -20,6 +20,8 @@ export function PresenceProvider({ children, awareness }) {
     const [peers, setPeers] = useState(new Map());
     const [isTyping, setIsTyping] = useState(false);
     const typingTimeoutRef = useRef(null);
+    // Track mounted state to prevent setState after unmount
+    const isMountedRef = useRef(true);
     
     // Update local awareness state when identity changes
     useEffect(() => {
@@ -104,15 +106,21 @@ export function PresenceProvider({ children, awareness }) {
                 clearTimeout(typingTimeoutRef.current);
             }
             typingTimeoutRef.current = setTimeout(() => {
+                // Check if component is still mounted before setState
+                if (!isMountedRef.current) return;
                 setIsTyping(false);
-                awareness.setLocalStateField('isTyping', false);
+                if (awareness) {
+                    awareness.setLocalStateField('isTyping', false);
+                }
             }, 3000);
         }
     }, [awareness]);
     
     // Cleanup typing timeout on unmount to prevent state updates after unmount
     useEffect(() => {
+        isMountedRef.current = true;
         return () => {
+            isMountedRef.current = false;
             if (typingTimeoutRef.current) {
                 clearTimeout(typingTimeoutRef.current);
             }

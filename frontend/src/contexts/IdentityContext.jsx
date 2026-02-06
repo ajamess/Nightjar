@@ -200,10 +200,58 @@ export function IdentityProvider({ children }) {
             if (window.electronAPI?.identity) {
                 return await window.electronAPI.identity.export(password);
             } else {
-                // Simplified export for dev
+                // Web/Capacitor: Use WebCrypto for proper encryption
+                if (!password) {
+                    throw new Error('Password required for export');
+                }
+                
+                // Generate random salt (16 bytes)
+                const salt = crypto.getRandomValues(new Uint8Array(16));
+                
+                // Derive key from password using PBKDF2
+                const encoder = new TextEncoder();
+                const passwordKey = await crypto.subtle.importKey(
+                    'raw',
+                    encoder.encode(password),
+                    'PBKDF2',
+                    false,
+                    ['deriveBits', 'deriveKey']
+                );
+                
+                const derivedKey = await crypto.subtle.deriveKey(
+                    {
+                        name: 'PBKDF2',
+                        salt: salt,
+                        iterations: 100000,
+                        hash: 'SHA-256'
+                    },
+                    passwordKey,
+                    { name: 'AES-GCM', length: 256 },
+                    false,
+                    ['encrypt']
+                );
+                
+                // Generate random IV (12 bytes for AES-GCM)
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                
+                // Encrypt identity data
+                const plaintext = encoder.encode(JSON.stringify(identity));
+                const ciphertext = await crypto.subtle.encrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    derivedKey,
+                    plaintext
+                );
+                
+                // Combine salt + iv + ciphertext and encode as base64
+                const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+                combined.set(salt, 0);
+                combined.set(iv, salt.length);
+                combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+                
+                // Return versioned export format
                 return JSON.stringify({
-                    version: 1,
-                    identity: identity
+                    version: 2,
+                    data: btoa(String.fromCharCode(...combined))
                 });
             }
         } catch (e) {
@@ -219,9 +267,60 @@ export function IdentityProvider({ children }) {
             if (window.electronAPI?.identity) {
                 restored = await window.electronAPI.identity.import(exportedData, password);
             } else {
-                // Simplified import for dev
+                // Web/Capacitor: Decrypt using WebCrypto
                 const parsed = JSON.parse(exportedData);
-                restored = parsed.identity;
+                
+                if (parsed.version === 2) {
+                    // New encrypted format
+                    if (!password) {
+                        throw new Error('Password required for import');
+                    }
+                    
+                    // Decode base64 data
+                    const combined = Uint8Array.from(atob(parsed.data), c => c.charCodeAt(0));
+                    
+                    // Extract salt (16 bytes), iv (12 bytes), and ciphertext
+                    const salt = combined.slice(0, 16);
+                    const iv = combined.slice(16, 28);
+                    const ciphertext = combined.slice(28);
+                    
+                    // Derive key from password using PBKDF2
+                    const encoder = new TextEncoder();
+                    const passwordKey = await crypto.subtle.importKey(
+                        'raw',
+                        encoder.encode(password),
+                        'PBKDF2',
+                        false,
+                        ['deriveBits', 'deriveKey']
+                    );
+                    
+                    const derivedKey = await crypto.subtle.deriveKey(
+                        {
+                            name: 'PBKDF2',
+                            salt: salt,
+                            iterations: 100000,
+                            hash: 'SHA-256'
+                        },
+                        passwordKey,
+                        { name: 'AES-GCM', length: 256 },
+                        false,
+                        ['decrypt']
+                    );
+                    
+                    // Decrypt
+                    const plaintext = await crypto.subtle.decrypt(
+                        { name: 'AES-GCM', iv: iv },
+                        derivedKey,
+                        ciphertext
+                    );
+                    
+                    restored = JSON.parse(new TextDecoder().decode(plaintext));
+                } else if (parsed.version === 1) {
+                    // Legacy unencrypted format (for migration only)
+                    restored = parsed.identity;
+                } else {
+                    throw new Error('Unsupported export format version');
+                }
             }
             
             setIdentity(restored);

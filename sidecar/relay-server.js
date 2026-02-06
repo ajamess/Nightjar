@@ -18,11 +18,12 @@ class RelayServer {
   }
   
   async start() {
-    // Initialize Hyperswarm with relay identity
-    const crypto = require('crypto');
+    // Initialize Hyperswarm with relay identity using valid Ed25519 keypair
+    const nacl = require('tweetnacl');
+    const keyPair = nacl.sign.keyPair();
     await this.swarmManager.initialize({
-      publicKey: crypto.randomBytes(32).toString('hex'),
-      secretKey: crypto.randomBytes(64).toString('hex'),
+      publicKey: Buffer.from(keyPair.publicKey).toString('hex'),
+      secretKey: Buffer.from(keyPair.secretKey).toString('hex'),
       displayName: 'Relay',
       color: '#888888'
     });

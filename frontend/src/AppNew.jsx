@@ -36,7 +36,7 @@ import { useFolders } from './contexts/FolderContext';
 import { usePermissions } from './contexts/PermissionContext';
 import { useIdentity } from './contexts/IdentityContext';
 import { createCollaboratorTracker } from './utils/collaboratorTracking';
-import { useEnvironment, isElectron } from './hooks/useEnvironment';
+import { useEnvironment, isElectron, isCapacitor, getPlatform } from './hooks/useEnvironment';
 import { getYjsWebSocketUrl } from './utils/websocket';
 import { parseShareLink, clearUrlFragment } from './utils/sharing';
 import { handleShareLink, isNightjarShareLink } from './utils/linkHandler';
@@ -440,6 +440,87 @@ function App() {
             handleBeforeUnload();
         };
     }, []);
+
+    // --- Android Back Button Handling (Capacitor only) ---
+    useEffect(() => {
+        // Only add listener if running on Capacitor Android
+        if (!isCapacitor() || getPlatform() !== 'android') {
+            return;
+        }
+        
+        let backButtonListener = null;
+        
+        // Dynamically import Capacitor App plugin
+        const setupBackButtonHandler = async () => {
+            try {
+                const { App } = await import('@capacitor/app');
+                
+                backButtonListener = await App.addListener('backButton', ({ canGoBack }) => {
+                    // Priority 1: Close any open modals/dialogs
+                    if (showRelaySettings) {
+                        setShowRelaySettings(false);
+                        return;
+                    }
+                    if (showTorSettings) {
+                        setShowTorSettings(false);
+                        return;
+                    }
+                    if (showCreateWorkspaceDialog) {
+                        setShowCreateWorkspaceDialog(false);
+                        return;
+                    }
+                    if (showCreateDocumentDialog) {
+                        setShowCreateDocumentDialog(false);
+                        return;
+                    }
+                    if (showIdentitySelector) {
+                        setShowIdentitySelector(false);
+                        return;
+                    }
+                    if (showChangelog) {
+                        setShowChangelog(false);
+                        return;
+                    }
+                    if (showComments) {
+                        setShowComments(false);
+                        return;
+                    }
+                    
+                    // Priority 2: Close active document tab
+                    if (activeDocId && openTabs.length > 0) {
+                        // Close active tab
+                        const newTabs = openTabs.filter(t => t.id !== activeDocId);
+                        setOpenTabs(newTabs);
+                        setActiveDocId(newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null);
+                        return;
+                    }
+                    
+                    // Priority 3: If browser can go back, allow it
+                    if (canGoBack) {
+                        window.history.back();
+                        return;
+                    }
+                    
+                    // Priority 4: Exit app (with optional confirmation)
+                    App.exitApp();
+                });
+            } catch (err) {
+                console.warn('[App] Failed to set up Android back button handler:', err);
+            }
+        };
+        
+        setupBackButtonHandler();
+        
+        return () => {
+            if (backButtonListener) {
+                backButtonListener.remove();
+            }
+        };
+    }, [
+        showRelaySettings, showTorSettings, showCreateWorkspaceDialog, 
+        showCreateDocumentDialog, showIdentitySelector, showChangelog, 
+        showComments, activeDocId, openTabs
+    ]);
 
     // --- Sync workspace info from remote (for joined workspaces) ---
     // Track last synced values to detect local vs remote changes

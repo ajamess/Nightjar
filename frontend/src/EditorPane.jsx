@@ -170,8 +170,8 @@ const EditorPane = ({
 
     if (!editor) {
         return (
-            <div className="editor-loading">
-                <div className="loading-spinner"></div>
+            <div className="editor-loading" role="status" aria-live="polite" aria-busy="true">
+                <div className="loading-spinner" aria-hidden="true"></div>
                 <p>Loading editor...</p>
             </div>
         );

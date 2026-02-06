@@ -4,6 +4,9 @@
 const { createLibp2p } = require('libp2p');
 const { tcp } = require('@libp2p/tcp');
 const { noise } = require('@chainsafe/libp2p-noise');
+// NOTE: @libp2p/mplex is deprecated in favor of @libp2p/yamux which offers better performance.
+// Changing to yamux would require testing across all P2P functionality.
+// See: https://github.com/libp2p/js-libp2p/issues/1878
 const { mplex } = require('@libp2p/mplex');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { gossipsub } = require('@libp2p/gossipsub');

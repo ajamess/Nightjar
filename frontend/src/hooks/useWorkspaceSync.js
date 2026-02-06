@@ -19,6 +19,7 @@ import { isElectron } from '../hooks/useEnvironment';
 import { getYjsWebSocketUrl } from '../utils/websocket';
 import { getStoredKeyChain } from '../utils/keyDerivation';
 import { toString as uint8ArrayToString } from 'uint8arrays';
+import { META_WS_PORT, WS_RECONNECT_MAX_DELAY, TIMEOUT_LONG } from '../config/constants';
 
 // Alias for backwards compatibility
 const getWsUrl = getYjsWebSocketUrl;
@@ -97,7 +98,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       const keyChain = getStoredKeyChain(workspaceId);
       if (keyChain?.workspaceKey) {
         try {
-          keySocket = new WebSocket('ws://localhost:8081');
+          keySocket = new WebSocket(`ws://localhost:${META_WS_PORT}`);
           keySocket.onopen = () => {
             const keyBase64 = uint8ArrayToString(keyChain.workspaceKey, 'base64');
             // Register key for workspace-meta room
@@ -135,15 +136,16 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     const isRemote = !!serverUrl;
     const providerOptions = isRemote ? {
       connect: true,
-      maxBackoffTime: 10000,  // Max 10 seconds between retries
+      maxBackoffTime: WS_RECONNECT_MAX_DELAY,  // Max reconnect delay between retries
       // y-websocket doesn't have maxAttempts, but we'll handle it via status tracking
     } : {};
     
     const provider = new WebsocketProvider(wsUrl, roomName, ydoc, providerOptions);
     
-    // Track connection failures for remote workspaces
+    // Track connection failures for remote/local workspaces
     let connectionFailures = 0;
-    const maxFailures = isRemote ? 5 : 30; // Stop trying after 5 failures for remote servers
+    // Limit retries: 5 for remote servers, 10 for local sidecar (was 30)
+    const maxFailures = isRemote ? 5 : 10;
     
     // DEBUG: Track WebSocket events
     provider.on('status', (event) => {
@@ -194,14 +196,25 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       
       // Keep awareness updated with heartbeat
       const heartbeatInterval = setInterval(() => {
-        const currentState = provider.awareness.getLocalState();
-        if (currentState?.user) {
-          provider.awareness.setLocalStateField('user', {
-            ...currentState.user,
-            lastActive: Date.now(),
-          });
+        try {
+          // Guard against destroyed provider or awareness
+          if (!provider || !provider.awareness || provider.wsconnected === false) {
+            clearInterval(heartbeatInterval);
+            return;
+          }
+          const currentState = provider.awareness.getLocalState();
+          if (currentState?.user) {
+            provider.awareness.setLocalStateField('user', {
+              ...currentState.user,
+              lastActive: Date.now(),
+            });
+          }
+        } catch (err) {
+          // Provider was likely destroyed, clear the interval
+          console.warn('[WorkspaceSync] Heartbeat error, clearing interval:', err.message);
+          clearInterval(heartbeatInterval);
         }
-      }, 30000); // Update every 30 seconds
+      }, TIMEOUT_LONG); // Update every 30 seconds
       
       // Store interval ID for cleanup
       provider._heartbeatInterval = heartbeatInterval;
@@ -430,7 +443,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
               joinedAt: now,
               isOnline: true,
             });
-          } else if (now - (existingMember.lastSeen || 0) > 30000) {
+          } else if (now - (existingMember.lastSeen || 0) > TIMEOUT_LONG) {
             // Update existing member if more than 30s since last update
             yMembers.set(publicKey, {
               ...existingMember,

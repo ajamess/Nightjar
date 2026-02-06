@@ -18,6 +18,12 @@ const { BOOTSTRAP_NODES, DEV_BOOTSTRAP_NODES } = require('./mesh-constants');
 // Use development nodes if not in production
 const RELAY_NODES = process.env.NODE_ENV === 'development' ? DEV_BOOTSTRAP_NODES : BOOTSTRAP_NODES;
 
+// Exponential backoff configuration
+const BACKOFF_INITIAL_DELAY = 1000; // Start with 1 second
+const BACKOFF_MAX_DELAY = 60000; // Max 60 seconds
+const BACKOFF_MULTIPLIER = 2; // Double each time
+const BACKOFF_JITTER = 0.3; // 30% jitter
+
 /**
  * RelayBridge - Manages connections to public relay servers
  */
@@ -32,8 +38,31 @@ class RelayBridge {
     // Connection retry state
     this.retryTimeouts = new Map();
     
+    // Retry attempt counters for exponential backoff: roomName -> attemptCount
+    this.retryAttempts = new Map();
+    
     // Event handlers
     this.onStatusChange = null;
+  }
+
+  /**
+   * Calculate exponential backoff delay with jitter
+   * @param {number} attempt - Current attempt number (0-based)
+   * @returns {number} Delay in milliseconds
+   * @private
+   */
+  _calculateBackoffDelay(attempt) {
+    // Calculate base delay with exponential backoff
+    const baseDelay = Math.min(
+      BACKOFF_INITIAL_DELAY * Math.pow(BACKOFF_MULTIPLIER, attempt),
+      BACKOFF_MAX_DELAY
+    );
+    
+    // Add jitter (random value between -jitter% and +jitter%)
+    const jitterRange = baseDelay * BACKOFF_JITTER;
+    const jitter = (Math.random() * 2 - 1) * jitterRange;
+    
+    return Math.round(baseDelay + jitter);
   }
 
   /**
@@ -100,6 +129,9 @@ class RelayBridge {
         connected = true;
         clearTimeout(connectionTimeout);
         console.log(`[RelayBridge] ✓ Connected to relay for ${roomName}`);
+        
+        // Reset retry counter on successful connection
+        this.retryAttempts.delete(roomName);
         
         // Store connection
         this.connections.set(roomName, {
@@ -186,7 +218,18 @@ class RelayBridge {
           case 2: // update
             {
               const update = decoding.readVarUint8Array(decoder);
-              Y.applyUpdate(ydoc, update, 'relay');
+              // Validate update size to prevent malformed updates from corrupting Yjs documents
+              const MAX_UPDATE_SIZE = 10 * 1024 * 1024; // 10MB max update size
+              if (update.length > MAX_UPDATE_SIZE) {
+                console.warn(`[RelayBridge] Rejecting oversized update (${update.length} bytes) for ${roomName}`);
+                break;
+              }
+              try {
+                Y.applyUpdate(ydoc, update, 'relay');
+              } catch (applyErr) {
+                console.error(`[RelayBridge] Failed to apply update for ${roomName}:`, applyErr.message);
+                // Don't propagate corrupted updates - just log and continue
+              }
             }
             break;
             
@@ -255,7 +298,7 @@ class RelayBridge {
   }
 
   /**
-   * Schedule reconnection attempt
+   * Schedule reconnection attempt with exponential backoff
    * @private
    */
   _scheduleReconnect(roomName, ydoc, relayUrl) {
@@ -264,18 +307,34 @@ class RelayBridge {
       clearTimeout(this.retryTimeouts.get(roomName));
     }
     
-    // Retry after 5 seconds
+    // Get current attempt count and calculate delay
+    const attempt = this.retryAttempts.get(roomName) || 0;
+    const delay = this._calculateBackoffDelay(attempt);
+    
+    console.log(`[RelayBridge] Scheduling reconnect for ${roomName} in ${delay}ms (attempt ${attempt + 1})`);
+    
     const timeout = setTimeout(() => {
       this.retryTimeouts.delete(roomName);
       
       // Only reconnect if doc still exists
       if (docs.has(roomName)) {
-        console.log(`[RelayBridge] Attempting reconnect for ${roomName}...`);
-        this.connect(roomName, ydoc, relayUrl).catch(err => {
-          console.error(`[RelayBridge] Reconnect failed for ${roomName}:`, err.message);
-        });
+        console.log(`[RelayBridge] Attempting reconnect for ${roomName} (attempt ${attempt + 1})...`);
+        this.connect(roomName, ydoc, relayUrl)
+          .then(() => {
+            // Reset retry counter on successful connection
+            this.retryAttempts.delete(roomName);
+            console.log(`[RelayBridge] Reconnect successful for ${roomName}, reset backoff`);
+          })
+          .catch(err => {
+            console.error(`[RelayBridge] Reconnect failed for ${roomName}:`, err.message);
+            // Increment attempt counter for next retry
+            this.retryAttempts.set(roomName, attempt + 1);
+          });
+      } else {
+        // Doc no longer exists, clean up retry state
+        this.retryAttempts.delete(roomName);
       }
-    }, 5000);
+    }, delay);
     
     this.retryTimeouts.set(roomName, timeout);
   }
@@ -290,6 +349,9 @@ class RelayBridge {
       clearTimeout(this.retryTimeouts.get(roomName));
       this.retryTimeouts.delete(roomName);
     }
+    
+    // Clear retry attempt counter
+    this.retryAttempts.delete(roomName);
     
     const conn = this.connections.get(roomName);
     if (!conn) return;
@@ -316,6 +378,7 @@ class RelayBridge {
       this.disconnect(roomName);
     }
     this.pending.clear();
+    this.retryAttempts.clear();
   }
 
   /**
