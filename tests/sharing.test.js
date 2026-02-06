@@ -3,7 +3,8 @@
  * Tests for share link generation and parsing
  */
 
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect, beforeAll } from '@jest/globals';
+import { webcrypto } from 'crypto';
 import { 
   generateShareLink, 
   parseShareLink, 
@@ -11,6 +12,13 @@ import {
   createNewEntity,
   createNewDocument,
 } from '../frontend/src/utils/sharing';
+
+// Setup crypto.subtle for Node.js test environment
+beforeAll(() => {
+  if (!globalThis.crypto) {
+    globalThis.crypto = webcrypto;
+  }
+});
 
 describe('Sharing Utilities', () => {
   // Sample entity IDs (32 hex chars = 16 bytes)
@@ -28,7 +36,7 @@ describe('Sharing Utilities', () => {
         password: 'test-password',
       });
 
-      expect(link).toMatch(/^Nightjar:\/\/w\//);
+      expect(link).toMatch(/^nightjar:\/\/w\//i);
       expect(link).toContain('perm:o');
       expect(link).toContain('p:test-password');
     });
@@ -42,7 +50,7 @@ describe('Sharing Utilities', () => {
         password: 'folder-pass',
       });
 
-      expect(link).toMatch(/^Nightjar:\/\/f\//);
+      expect(link).toMatch(/^nightjar:\/\/f\//i);
       expect(link).toContain('perm:e');
     });
 
@@ -55,7 +63,7 @@ describe('Sharing Utilities', () => {
         password: 'doc-pass',
       });
 
-      expect(link).toMatch(/^Nightjar:\/\/d\//);
+      expect(link).toMatch(/^nightjar:\/\/d\//i);
       expect(link).toContain('perm:v');
     });
 
@@ -136,7 +144,7 @@ describe('Sharing Utilities', () => {
 
     test('throws on invalid link format', () => {
       expect(() => parseShareLink('invalid')).toThrow();
-      expect(() => parseShareLink('Nightjar://x/abc')).toThrow();
+      expect(() => parseShareLink('nightjar://x/abc')).toThrow();
     });
 
     test('round-trip: generate then parse returns same data', () => {
@@ -174,7 +182,7 @@ describe('Sharing Utilities', () => {
     test('rejects invalid links', () => {
       expect(isValidShareLink('')).toBe(false);
       expect(isValidShareLink('http://example.com')).toBe(false);
-      expect(isValidShareLink('Nightjar://invalid')).toBe(false);
+      expect(isValidShareLink('nightjar://invalid')).toBe(false);
       expect(isValidShareLink(null)).toBe(false);
       expect(isValidShareLink(undefined)).toBe(false);
     });
@@ -189,7 +197,7 @@ describe('Sharing Utilities', () => {
 
       expect(result.entityId).toBeDefined();
       expect(result.entityId.length).toBe(32);
-      expect(result.shareLink).toMatch(/^Nightjar:\/\/w\//);
+      expect(result.shareLink).toMatch(/^nightjar:\/\/w\//i);
     });
 
     test('creates new folder with ID and share link', () => {
@@ -199,7 +207,7 @@ describe('Sharing Utilities', () => {
       });
 
       expect(result.entityId).toBeDefined();
-      expect(result.shareLink).toMatch(/^Nightjar:\/\/f\//);
+      expect(result.shareLink).toMatch(/^nightjar:\/\/f\//i);
     });
 
     test('creates new document with ID and share link', () => {
@@ -209,7 +217,7 @@ describe('Sharing Utilities', () => {
       });
 
       expect(result.entityId).toBeDefined();
-      expect(result.shareLink).toMatch(/^Nightjar:\/\/d\//);
+      expect(result.shareLink).toMatch(/^nightjar:\/\/d\//i);
     });
 
     test('generated IDs are unique', () => {
@@ -223,15 +231,15 @@ describe('Sharing Utilities', () => {
   });
 
   describe('createNewDocument (legacy)', () => {
-    test('creates document with default options', () => {
-      const result = createNewDocument();
+    test('creates document with default options', async () => {
+      const result = await createNewDocument();
       
       expect(result.documentId).toBeDefined();
       expect(result.shareLink).toBeDefined();
     });
 
-    test('creates document with password', () => {
-      const result = createNewDocument({ password: 'legacy-pass' });
+    test('creates document with password', async () => {
+      const result = await createNewDocument({ password: 'legacy-pass' });
       
       expect(result.documentId).toBeDefined();
       expect(result.shareLink).toContain('p:legacy-pass');

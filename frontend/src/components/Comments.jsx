@@ -304,7 +304,7 @@ const Comments = ({
                         💡 Edit a card and click the comment button to comment on specific cards
                     </div>
                 )}
-                <div className="new-comment-input-row">
+                <div className="new-comment-input-row" role="form" aria-label="Add comment form">
                     <input
                         ref={inputRef}
                         type="text"
@@ -313,6 +313,7 @@ const Comments = ({
                         onKeyDown={(e) => handleKeyDown(e, 'comment')}
                         placeholder={currentSelection ? "Add your comment..." : "Add a general comment..."}
                         className="comment-input"
+                        aria-label={currentSelection ? "Add comment on selection" : "Add general comment"}
                     />
                     <button 
                         type="button"
@@ -327,7 +328,12 @@ const Comments = ({
             </div>
 
             {/* Comments List */}
-            <div className="comments-list">
+            <div 
+                className="comments-list"
+                role="log"
+                aria-live="polite"
+                aria-label="Comments list"
+            >
                 {unresolvedComments.length === 0 && resolvedComments.length === 0 && (
                     <div className="no-comments">
                         <span className="no-comments-icon">📝</span>

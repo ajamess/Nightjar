@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import KanbanCardEditor from './KanbanCardEditor';
 import SimpleMarkdown from './SimpleMarkdown';
+import { useConfirmDialog } from './common/ConfirmDialog';
 import './Kanban.css';
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
@@ -15,6 +16,7 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
     const [newColumnName, setNewColumnName] = useState('');
     const [showNewColumn, setShowNewColumn] = useState(false);
     const ykanbanRef = useRef(null);
+    const { confirm, ConfirmDialogComponent } = useConfirmDialog();
 
     // Initialize Yjs map for kanban data
     useEffect(() => {
@@ -70,11 +72,18 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
         setShowNewColumn(false);
     }, [columns, newColumnName, saveToYjs]);
 
-    const deleteColumn = useCallback((columnId) => {
+    const deleteColumn = useCallback(async (columnId) => {
+        const confirmed = await confirm({
+            title: 'Delete Column',
+            message: 'Are you sure? All cards in this column will be lost.',
+            confirmText: 'Delete',
+            variant: 'danger'
+        });
+        if (!confirmed) return;
         const newColumns = columns.filter(c => c.id !== columnId);
         setColumns(newColumns);
         saveToYjs(newColumns);
-    }, [columns, saveToYjs]);
+    }, [columns, saveToYjs, confirm]);
 
     const updateColumnName = useCallback((columnId, name) => {
         const newColumns = columns.map(c => 
@@ -135,7 +144,14 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
         saveToYjs(newColumns);
     }, [columns, saveToYjs]);
 
-    const deleteCard = useCallback((columnId, cardId) => {
+    const deleteCard = useCallback(async (columnId, cardId) => {
+        const confirmed = await confirm({
+            title: 'Delete Card',
+            message: 'Are you sure you want to delete this card?',
+            confirmText: 'Delete',
+            variant: 'danger'
+        });
+        if (!confirmed) return;
         const newColumns = columns.map(c => {
             if (c.id === columnId) {
                 return {
@@ -147,7 +163,7 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
         });
         setColumns(newColumns);
         saveToYjs(newColumns);
-    }, [columns, saveToYjs]);
+    }, [columns, saveToYjs, confirm]);
 
     // Drag and drop for cards
     const handleDragStart = (e, card, fromColumnId) => {
@@ -237,7 +253,12 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
     };
 
     return (
-        <div className={`kanban-container ${readOnly ? 'kanban-container--readonly' : ''}`}>
+        <div 
+            className={`kanban-container ${readOnly ? 'kanban-container--readonly' : ''}`}
+            role="region"
+            aria-label="Kanban Board"
+        >
+            {ConfirmDialogComponent}
             <div className="kanban-header">
                 <h2>Kanban Board</h2>
                 {readOnly && (
@@ -269,6 +290,8 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                         key={column.id}
                         className="kanban-column"
                         style={{ '--column-color': column.color }}
+                        role="region"
+                        aria-labelledby={`column-header-${column.id}`}
                         draggable={!readOnly}
                         onDragStart={(e) => !readOnly && handleColumnDragStart(e, column)}
                         onDragEnd={!readOnly ? handleColumnDragEnd : undefined}
@@ -298,7 +321,10 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                                     }}
                                 />
                             ) : (
-                                <h3 onClick={() => !readOnly && setEditingColumn(column.id)}>
+                                <h3 
+                                    id={`column-header-${column.id}`}
+                                    onClick={() => !readOnly && setEditingColumn(column.id)}
+                                >
                                     {column.name}
                                     <span className="card-count">{column.cards.length}</span>
                                 </h3>
@@ -324,13 +350,16 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                             )}
                         </div>
 
-                        <div className="column-cards">
+                        <div className="column-cards" role="list" aria-label={`${column.name} cards`}>
                             {column.cards.map((card, index) => (
                                 <div
                                     key={card.id}
                                     className={`kanban-card ${draggedCard?.card.id === card.id ? 'dragging' : ''}`}
                                     style={card.color ? { borderLeftColor: card.color } : {}}
                                     draggable={!readOnly}
+                                    tabIndex={0}
+                                    role="listitem"
+                                    aria-label={`Card: ${card.title}${card.description ? '. ' + card.description.substring(0, 50) : ''}`}
                                     onDragStart={(e) => !readOnly && handleDragStart(e, card, column.id)}
                                     onDragEnd={!readOnly ? handleDragEnd : undefined}
                                     onDragOver={!readOnly ? (e) => {
@@ -341,6 +370,15 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                                         e.stopPropagation();
                                         handleDrop(e, column.id, index);
                                     } : undefined}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !readOnly) {
+                                            e.preventDefault();
+                                            setEditingCard(card.id);
+                                        } else if (e.key === 'Delete' && !readOnly) {
+                                            e.preventDefault();
+                                            deleteCard(column.id, card.id);
+                                        }
+                                    }}
                                 >
                                     {!readOnly && editingCard === card.id ? (
                                         <KanbanCardEditor

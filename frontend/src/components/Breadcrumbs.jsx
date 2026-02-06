@@ -209,6 +209,7 @@ export default function Breadcrumbs({
           <li 
             key={item.ellipsis ? 'ellipsis' : item.id}
             className={`breadcrumb-item ${item.current ? 'current' : ''} ${!item.accessible ? 'inaccessible' : ''}`}
+            {...(item.current && !item.ellipsis ? { 'aria-current': 'page' } : {})}
           >
             {item.ellipsis ? (
               <span className="breadcrumb-ellipsis">...</span>

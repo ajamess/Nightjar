@@ -531,10 +531,14 @@ async function startBackendWithLoadingScreen() {
             if (loadingWindow && !loadingWindow.isDestroyed()) {
                 const msg = LOADING_MESSAGES[Math.min(step, LOADING_MESSAGES.length - 1)];
                 const progress = Math.min(100, Math.round((step / 7) * 100));
+                // Use textContent instead of innerHTML to prevent XSS
+                // Escape single quotes in messages to prevent JS injection
+                const escapedFunny = (customFunny || msg.funny).replace(/'/g, "\\'");
+                const escapedReal = (customReal || msg.real).replace(/'/g, "\\'");
                 loadingWindow.webContents.executeJavaScript(`
                     document.getElementById('progress').style.width = '${progress}%';
-                    document.getElementById('funny').innerHTML = '${customFunny || msg.funny}<span class="dots"></span>';
-                    document.getElementById('real').innerText = '${customReal || msg.real}';
+                    document.getElementById('funny').textContent = '${escapedFunny}';
+                    document.getElementById('real').textContent = '${escapedReal}';
                 `).catch(() => {});
             }
         };
@@ -620,6 +624,26 @@ async function startBackendWithLoadingScreen() {
         console.log(`[Backend] Packaged: ${app.isPackaged}`);
         console.log(`[Backend] Resources path: ${process.resourcesPath}`);
         console.log(`[Backend] Sidecar env ELECTRON_RUN_AS_NODE: ${spawnEnv.ELECTRON_RUN_AS_NODE}`);
+        console.log(`[Backend] Node executable path: ${nodeExecutable}`);
+        console.log(`[Backend] Node executable exists: ${require('fs').existsSync(nodeExecutable)}`);
+        
+        // On Windows packaged apps, add diagnostics
+        if (process.platform === 'win32' && app.isPackaged) {
+            const fs = require('fs');
+            console.log(`[Backend] Win: app.asar.unpacked path: ${sidecarCwd}`);
+            console.log(`[Backend] Win: sidecar path exists: ${fs.existsSync(sidecarPath)}`);
+            
+            const unpackedNodeModules = path.join(sidecarCwd, 'node_modules');
+            console.log(`[Backend] Win: unpacked node_modules exists: ${fs.existsSync(unpackedNodeModules)}`);
+            
+            // List contents of resources folder
+            try {
+                const resourcesContents = fs.readdirSync(process.resourcesPath);
+                console.log(`[Backend] Win: resources contents: ${resourcesContents.join(', ')}`);
+            } catch (e) {
+                console.error(`[Backend] Win: Failed to list resources: ${e.message}`);
+            }
+        }
         
         // On macOS packaged apps, check for additional paths
         if (process.platform === 'darwin' && app.isPackaged) {

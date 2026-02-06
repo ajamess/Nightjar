@@ -18,6 +18,12 @@
 
 import nacl from 'tweetnacl';
 import { Buffer } from 'buffer';
+import {
+  MAX_PIN_ATTEMPTS,
+  PIN_LENGTH,
+  DEFAULT_LOCK_TIMEOUT_MINUTES,
+  ATTEMPT_RESET_HOURS
+} from '../config/constants';
 
 // Storage keys
 const IDENTITIES_KEY = 'nightjar_identities';
@@ -27,11 +33,39 @@ const ACTIVE_IDENTITY_KEY = 'nightjar_active_identity';
 const SESSION_KEY = 'nightjar_session';
 const LOCK_TIMEOUT_KEY = 'nightjar_lock_timeout';
 
-// Security constants
-const MAX_PIN_ATTEMPTS = 10;
-const ATTEMPT_RESET_HOURS = 1;
-const DEFAULT_LOCK_TIMEOUT_MINUTES = 15;
-const PIN_LENGTH = 6;
+// In-memory fallback for sessionStorage (used when sessionStorage is unavailable)
+let memorySessionStorage = {};
+
+/**
+ * Safe wrapper for sessionStorage operations
+ * Falls back to in-memory storage if sessionStorage is unavailable
+ */
+const safeSessionStorage = {
+    getItem(key) {
+        try {
+            return sessionStorage.getItem(key);
+        } catch (err) {
+            console.warn('[IdentityManager] sessionStorage not available, using memory fallback');
+            return memorySessionStorage[key] || null;
+        }
+    },
+    setItem(key, value) {
+        try {
+            sessionStorage.setItem(key, value);
+        } catch (err) {
+            console.warn('[IdentityManager] sessionStorage not available, using memory fallback');
+            memorySessionStorage[key] = value;
+        }
+    },
+    removeItem(key) {
+        try {
+            sessionStorage.removeItem(key);
+        } catch (err) {
+            console.warn('[IdentityManager] sessionStorage not available, using memory fallback');
+            delete memorySessionStorage[key];
+        }
+    }
+};
 
 /**
  * Convert base64 to base64url (browser-compatible)
@@ -154,6 +188,20 @@ function decryptData(encryptedString, key) {
 
 /**
  * Get list of all identities (metadata only, not encrypted data)
+ * 
+ * Returns the public metadata for all stored identities without
+ * decrypting any sensitive data. Each identity includes:
+ * - id: Unique identifier
+ * - handle: Display name
+ * - icon: Emoji icon
+ * - color: Theme color
+ * - createdAt: Creation timestamp
+ * - docCount: Number of associated documents
+ * 
+ * @returns {Array<{id: string, handle: string, icon: string, color: string, createdAt: number, docCount: number}>} Array of identity metadata objects
+ * @example
+ * const identities = listIdentities();
+ * identities.forEach(id => console.log(id.handle));
  */
 export function listIdentities() {
     try {
@@ -196,7 +244,7 @@ function setActiveIdentityId(id) {
  * Check if session is valid (not timed out)
  */
 export function isSessionValid() {
-    const session = sessionStorage.getItem(SESSION_KEY);
+    const session = safeSessionStorage.getItem(SESSION_KEY);
     if (!session) return false;
     
     try {
@@ -214,7 +262,7 @@ export function isSessionValid() {
  * Get session decryption key (if session is valid)
  */
 export function getSessionKey() {
-    const session = sessionStorage.getItem(SESSION_KEY);
+    const session = safeSessionStorage.getItem(SESSION_KEY);
     if (!session) return null;
     
     try {
@@ -248,27 +296,27 @@ function createSession(identityId, encryptionKey) {
         unlockedAt: Date.now(),
         timeoutMinutes
     };
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    safeSessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
 /**
  * Clear the current session (lock the app)
  */
 export function clearSession() {
-    sessionStorage.removeItem(SESSION_KEY);
+    safeSessionStorage.removeItem(SESSION_KEY);
 }
 
 /**
  * Refresh session timeout (call on user activity)
  */
 export function refreshSession() {
-    const session = sessionStorage.getItem(SESSION_KEY);
+    const session = safeSessionStorage.getItem(SESSION_KEY);
     if (!session) return;
     
     try {
         const parsed = JSON.parse(session);
         parsed.unlockedAt = Date.now();
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
+        safeSessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
     } catch {
         // Invalid session
     }
@@ -297,6 +345,19 @@ export function setLockTimeout(minutes) {
 
 /**
  * Validate PIN format
+ * 
+ * Checks if the provided PIN meets the security requirements:
+ * - Must be a string
+ * - Must be exactly 6 digits
+ * - Must contain only numeric characters
+ * 
+ * @param {string} pin - The PIN to validate
+ * @returns {{valid: boolean, error?: string}} Validation result with optional error message
+ * @example
+ * const result = validatePin('123456');
+ * if (!result.valid) {
+ *   console.error(result.error);
+ * }
  */
 export function validatePin(pin) {
     if (typeof pin !== 'string') return { valid: false, error: 'PIN must be a string' };
@@ -307,6 +368,27 @@ export function validatePin(pin) {
 
 /**
  * Create a new identity with PIN
+ * 
+ * Creates a new encrypted identity with the provided data and PIN.
+ * The PIN is used to derive an encryption key via PBKDF2, and the
+ * identity data is encrypted before storage. A session is automatically
+ * created for the new identity.
+ * 
+ * @async
+ * @param {Object} identityData - The identity data to store
+ * @param {string} identityData.handle - Display name for the identity
+ * @param {string} [identityData.icon='👤'] - Emoji icon for the identity
+ * @param {string} [identityData.color='#6366f1'] - Theme color for the identity
+ * @param {Object} [identityData.keypair] - Optional cryptographic keypair
+ * @param {string} pin - 6-digit PIN to encrypt the identity
+ * @returns {Promise<{id: string, metadata: Object, identityData: Object}>} Created identity info
+ * @throws {Error} If PIN validation fails
+ * @example
+ * const identity = await createIdentity({
+ *   handle: 'Alice',
+ *   icon: '🦊',
+ *   color: '#ff6b6b'
+ * }, '123456');
  */
 export async function createIdentity(identityData, pin) {
     const validation = validatePin(pin);
@@ -501,7 +583,21 @@ export function updateDocCount(count) {
 }
 
 /**
- * Delete an identity (requires confirmation)
+ * Delete an identity and all associated data
+ * 
+ * Permanently removes an identity and all data scoped to it.
+ * This includes the encrypted identity data and all workspace/document
+ * data associated with the identity. If this is the active identity,
+ * the session is cleared.
+ * 
+ * @async
+ * @param {string} id - The identity ID to delete
+ * @param {boolean} [force=false] - If true, skip validation (used for security lockout)
+ * @returns {Promise<boolean>} True if deletion was successful
+ * @throws {Error} If identity not found and force is false
+ * @example
+ * await deleteIdentity('abc123');
+ * // Identity and all associated data removed
  */
 export async function deleteIdentity(id, force = false) {
     const identities = listIdentities();
