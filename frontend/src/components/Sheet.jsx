@@ -413,8 +413,33 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, readOnly 
         }
 
         provider.on('sync', handleSync);
-        return () => provider.off('sync', handleSync);
-    }, [provider]);
+        
+        // Fallback: Initialize with defaults after timeout if provider never syncs
+        // This handles the case when sidecar is down or connection fails
+        const fallbackTimeout = setTimeout(() => {
+            if (!isInitialized && !hasSyncedRef.current) {
+                console.log('[Sheet] Provider sync timeout, initializing with defaults');
+                hasSyncedRef.current = true;
+                if (ysheetRef.current && !ysheetRef.current.get('sheets')) {
+                    const defaultSheets = [{ ...DEFAULT_SHEET, id: generateSheetId() }];
+                    ysheetRef.current.set('sheets', defaultSheets);
+                    ysheetRef.current.set('pendingOps', []);
+                    setData(defaultSheets);
+                    setIsInitialized(true);
+                } else if (!data) {
+                    // Even if ysheetRef is not ready, initialize local state
+                    const defaultSheets = [{ ...DEFAULT_SHEET, id: generateSheetId() }];
+                    setData(defaultSheets);
+                    setIsInitialized(true);
+                }
+            }
+        }, 3000); // 3 second fallback
+        
+        return () => {
+            provider.off('sync', handleSync);
+            clearTimeout(fallbackTimeout);
+        };
+    }, [provider, isInitialized, data]);
 
     // Helper to convert Fortune Sheet's 2D data array to celldata sparse format
     const convertDataToCelldata = useCallback((sheets) => {
