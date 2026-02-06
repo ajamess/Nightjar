@@ -1859,6 +1859,11 @@ async function initializeP2P(force = false) {
                 
                 await p2pBridge.initialize(p2pIdentity);
                 p2pInitialized = true;
+                
+                // Update connection status to reflect P2P is active
+                connectionStatus = 'connected';
+                broadcastStatus();
+                
                 console.log('[Sidecar] P2P initialized with identity:', userIdentity.handle);
                 
                 // Set up Yjs sync bridging via P2P
