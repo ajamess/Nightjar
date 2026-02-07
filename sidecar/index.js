@@ -22,7 +22,7 @@ const crypto = require('crypto');
 // const { createLibp2pNode } = require('../backend/p2p');
 let createLibp2pNode = null;
 const Y = require('yjs');
-const { setupWSConnection, docs } = require('y-websocket/bin/utils');
+const { setupWSConnection, docs, getYDoc } = require('y-websocket/bin/utils');
 const { encryptUpdate, decryptUpdate, isValidKey } = require('../backend/crypto');
 const { Level } = require('level');
 const TorControl = require('tor-control');
@@ -1383,6 +1383,16 @@ async function handleMetadataMessage(ws, parsed) {
                             for (const peerKey of bootstrapPeers) {
                                 try {
                                     console.log(`[Sidecar] Attempting to connect to peer: ${peerKey.slice(0, 16)}...`);
+                                    // Queue sync for after identity verification
+                                    if (topicHash) {
+                                        let pendingTopics = pendingSyncRequests.get(peerKey);
+                                        if (!pendingTopics) {
+                                            pendingTopics = new Set();
+                                            pendingSyncRequests.set(peerKey, pendingTopics);
+                                        }
+                                        pendingTopics.add(topicHash);
+                                        console.log(`[Sidecar] Queued sync-request for ${peerKey.slice(0, 16)}...`);
+                                    }
                                     await p2pBridge.connectToPeer(peerKey);
                                     console.log(`[Sidecar] âœ“ Connected to bootstrap peer: ${peerKey.slice(0, 16)}...`);
                                 } catch (e) {
@@ -1390,23 +1400,22 @@ async function handleMetadataMessage(ws, parsed) {
                                 }
                             }
                             
-                            // Request full state from bootstrap peers (initial sync)
-                            // Wait a short delay for connections to stabilize
-                            const topicForSync = topicHash;
-                            const peersForSync = [...bootstrapPeers];
-                            setTimeout(() => {
-                                if (topicForSync && p2pBridge.hyperswarm) {
-                                    console.log(`[Sidecar] Requesting initial sync from peers...`);
-                                    for (const peerKey of peersForSync) {
-                                        try {
-                                            p2pBridge.hyperswarm.sendSyncRequest(peerKey, topicForSync);
-                                            console.log(`[Sidecar] Sent sync-request to ${peerKey.slice(0, 16)}...`);
-                                        } catch (e) {
-                                            console.error(`[Sidecar] Failed to send sync-request to ${peerKey.slice(0, 16)}:`, e.message);
+                            // Try immediate sync for peers that might already be connected
+                            // (e.g., from DHT discovery happening before join-workspace)
+                            if (topicHash && p2pBridge.hyperswarm) {
+                                setTimeout(() => {
+                                    for (const peerKey of bootstrapPeers) {
+                                        const conn = p2pBridge.hyperswarm.connections.get(peerKey);
+                                        if (conn && conn.authenticated) {
+                                            console.log(`[Sidecar] Peer ${peerKey.slice(0, 16)}... already verified, sending sync-request now`);
+                                            p2pBridge.hyperswarm.sendSyncRequest(peerKey, topicHash);
+                                            // Remove from pending since we just sent it
+                                            const pending = pendingSyncRequests.get(peerKey);
+                                            if (pending) pending.delete(topicHash);
                                         }
                                     }
-                                }
-                            }, 1000); // 1 second delay for connection stabilization
+                                }, 500); // Short delay for connection to register
+                            }
                         } else {
                             console.warn('[Sidecar] âš  No bootstrap peers provided');
                         }
@@ -2180,6 +2189,10 @@ async function initializeMesh() {
 // Map of topicHash -> workspaceId for reverse lookup
 const topicToWorkspace = new Map();
 
+// Map of peerId -> Set of topicHex that need sync after identity is verified
+// This ensures we only send sync-request after the peer handshake is complete
+const pendingSyncRequests = new Map();
+
 function setupYjsP2PBridge() {
     if (!p2pBridge || !p2pBridge.hyperswarm) {
         console.warn('[Sidecar] Cannot setup Yjs P2P bridge - P2P not initialized');
@@ -2228,9 +2241,9 @@ async function handleSyncStateRequest(peerId, topicHex) {
             console.log(`[P2P-SYNC-STATE] Doc not in memory, loading from persistence...`);
             const key = getKeyForDocument(roomName);
             if (key) {
-                doc = new Y.Doc();
+                // Use getYDoc to create proper WSSharedDoc with awareness
+                doc = getYDoc(roomName);
                 await loadPersistedData(roomName, doc, key);
-                docs.set(roomName, doc);
                 console.log(`[P2P-SYNC-STATE] ✓ Loaded doc from persistence`);
             } else {
                 console.warn(`[P2P-SYNC-STATE] ✗ Doc not found and no key for: ${roomName}`);
@@ -2287,12 +2300,12 @@ function handleSyncStateReceived(peerId, topicHex, data) {
             return;
         }
         
-        // Get the Yjs doc
+        // Get or create the Yjs doc using getYDoc to ensure proper WSSharedDoc with awareness
+        // This is critical - using Y.Doc directly causes crashes when WebSocket clients connect
         let doc = docs.get(roomName);
         if (!doc) {
-            doc = new Y.Doc();
-            docs.set(roomName, doc);
-            console.log(`[P2P-SYNC-STATE] Created new Yjs doc for: ${roomName}`);
+            doc = getYDoc(roomName);
+            console.log(`[P2P-SYNC-STATE] Created new WSSharedDoc for: ${roomName}`);
         }
         
         // Apply the full state update with 'p2p' origin to prevent re-broadcasting
@@ -2351,8 +2364,7 @@ function handleP2PSyncMessage(peerId, topicHex, data) {
         // Get or create the Yjs doc for the specified room
         let doc = docs.get(roomName);
         if (!doc) {
-            doc = new Y.Doc();
-            docs.set(roomName, doc);
+            doc = getYDoc(roomName);
             console.log(`[P2P-SYNC] âœ“ Created new Yjs doc for: ${roomName}`);
         } else {
             console.log(`[P2P-SYNC] âœ“ Found existing Yjs doc for: ${roomName}`);
@@ -2439,8 +2451,25 @@ function setupPeerPersistence() {
     const hyperswarm = p2pBridge.hyperswarm;
     
     // When we verify a peer's identity, persist them for this workspace
+    // AND send any pending sync requests that were waiting for this peer
     hyperswarm.on('peer-identity', async ({ peerId, identity }) => {
         try {
+            // Check if we have pending sync requests for this peer
+            const pendingTopics = pendingSyncRequests.get(peerId);
+            if (pendingTopics && pendingTopics.size > 0) {
+                console.log(`[Sidecar] Peer ${peerId.slice(0, 16)}... verified, sending ${pendingTopics.size} pending sync-request(s)`);
+                for (const topicHex of pendingTopics) {
+                    try {
+                        hyperswarm.sendSyncRequest(peerId, topicHex);
+                        console.log(`[Sidecar] ✓ Sent pending sync-request to ${peerId.slice(0, 16)}... for topic ${topicHex.slice(0, 16)}...`);
+                    } catch (e) {
+                        console.error(`[Sidecar] ✗ Failed to send pending sync-request:`, e.message);
+                    }
+                }
+                // Clear pending requests for this peer
+                pendingSyncRequests.delete(peerId);
+            }
+            
             // Find all workspaces this peer might be connected to
             // by checking which topics they're in
             const conn = hyperswarm.connections.get(peerId);

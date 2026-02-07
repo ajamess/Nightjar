@@ -822,11 +822,11 @@ function App() {
         ydocsRef.current.set(docId, { ydoc, provider, indexeddbProvider, type: docType });
 
         // Add to shared document list (syncs to all connected clients)
-        // Use Yjs sync for: web mode OR Electron with remote workspace
-        if (!isElectronMode || isRemoteWorkspace) {
-            syncAddDocument(document);
-        } else {
-            // Electron local mode: update local state
+        // ALWAYS use Yjs sync so documents are available for P2P sharing
+        syncAddDocument(document);
+        
+        // In Electron local mode, also update local state immediately for UI responsiveness
+        if (isElectronMode && !isRemoteWorkspace) {
             setDocuments(prev => {
                 if (prev.some(d => d.id === docId)) return prev;
                 return [...prev, document];
@@ -928,11 +928,8 @@ function App() {
     const deleteDocument = useCallback((docId) => {
         closeDocument(docId);
 
-        // Remove from shared document list (syncs to all clients)
-        // Use Yjs sync for: web mode OR Electron with remote workspace
-        if (!isElectronMode || isRemoteWorkspace) {
-            syncRemoveDocument(docId);
-        }
+        // ALWAYS remove from shared document list so P2P peers see the deletion
+        syncRemoveDocument(docId);
 
         // Notify sidecar - Electron local mode only
         if (isElectronMode && !isRemoteWorkspace && metaSocketRef.current?.readyState === WebSocket.OPEN) {
@@ -946,19 +943,17 @@ function App() {
 
     // Move document to a folder (or to root if folderId is null)
     const handleMoveDocument = useCallback((documentId, folderId) => {
-        // Update via sync (web mode or remote workspace) or local state (Electron local)
-        if (!isElectronMode || isRemoteWorkspace) {
-            syncUpdateDocument(documentId, { folderId: folderId || null });
-        } else {
+        // ALWAYS update via Yjs sync for P2P sharing
+        syncUpdateDocument(documentId, { folderId: folderId || null });
+        
+        // In Electron local mode, also update local state immediately
+        if (isElectronMode && !isRemoteWorkspace) {
             setDocuments(prev => prev.map(d => 
                 d.id === documentId 
                     ? { ...d, folderId: folderId || null }
                     : d
             ));
-        }
-        
-        // Also call the FolderContext function to sync with sidecar (Electron local only)
-        if (isElectronMode && !isRemoteWorkspace) {
+            // Also call the FolderContext function to sync with sidecar
             moveDocumentToFolder(documentId, folderId);
         }
     }, [moveDocumentToFolder, isElectronMode, isRemoteWorkspace, syncUpdateDocument]);
@@ -967,10 +962,11 @@ function App() {
     const renameDocument = useCallback((docId, newName) => {
         if (!newName?.trim()) return;
         
-        // Update via sync (web mode or remote workspace) or local state (Electron local)
-        if (!isElectronMode || isRemoteWorkspace) {
-            syncUpdateDocument(docId, { name: newName.trim() });
-        } else {
+        // ALWAYS update via Yjs sync for P2P sharing
+        syncUpdateDocument(docId, { name: newName.trim() });
+        
+        // In Electron local mode, also update local state immediately
+        if (isElectronMode && !isRemoteWorkspace) {
             setDocuments(prev => prev.map(d => 
                 d.id === docId 
                     ? { ...d, name: newName.trim() }
