@@ -39,6 +39,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   const [folders, setFolders] = useState([]);
   const [workspaceInfo, setWorkspaceInfo] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [synced, setSynced] = useState(false);
   // Workspace-level collaborator tracking
   const [collaborators, setCollaborators] = useState([]);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -62,12 +63,14 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   useEffect(() => {
     // Always reset kicked state when workspace changes
     setIsKicked(false);
-    
+    setSynced(false);
+
     if (!workspaceId) {
       setDocuments([]);
       setFolders([]);
       setWorkspaceInfo(null);
       setConnected(false);
+      setSynced(false);
       setCollaborators([]);
       setOnlineCount(0);
       setTotalCount(0);
@@ -338,6 +341,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     // Wait for initial sync before setting info (to check if remote has data)
     provider.on('synced', () => {
       console.log(`[WorkspaceSync] synced event - resyncing all data to React state`);
+      setSynced(true);
       // Re-sync all data to React state after provider sync
       syncDocuments();
       syncFolders();
@@ -347,6 +351,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     
     // Also try immediately in case we're already synced
     if (provider.synced) {
+      setSynced(true);
       trySetInitialInfo();
     }
     
@@ -534,6 +539,12 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       lastActive: Date.now(),
     });
   }, [userProfile?.name, userProfile?.color, userProfile?.icon]);
+  
+  // Get raw Yjs document count (for migration check - avoids React state lag)
+  const getYjsDocumentCount = useCallback(() => {
+    if (!yDocumentsRef.current) return 0;
+    return yDocumentsRef.current.toArray().length;
+  }, []);
   
   // Add a document to the workspace
   const addDocument = useCallback((doc) => {
@@ -727,6 +738,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     folders,
     workspaceInfo,
     connected,
+    synced,
     // Workspace-level collaborator tracking (legacy)
     collaborators,
     onlineCount,
@@ -740,6 +752,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     provider: providerRef.current,
     getYdoc,
     getProvider,
+    getYjsDocumentCount,
     // Document/folder operations
     addDocument,
     removeDocument,

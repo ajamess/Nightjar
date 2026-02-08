@@ -218,6 +218,8 @@ function App() {
         updateDocument: syncUpdateDocument,
         updateWorkspaceInfo: syncUpdateWorkspaceInfo,
         connected: workspaceSyncConnected,
+        synced: workspaceSyncSynced,
+        getYjsDocumentCount,
         // Workspace-level collaborator tracking
         collaborators: workspaceCollaborators,
         onlineCount: workspaceOnlineCount,
@@ -248,21 +250,27 @@ function App() {
     // In Electron mode, documents are stored in sidecar's metadata DB.
     // They need to be synced to Yjs so they can be shared via P2P.
     useEffect(() => {
+        // Get the actual Yjs document count (not React state which may lag)
+        const yjsDocsCount = getYjsDocumentCount ? getYjsDocumentCount() : 0;
+        
         // Debug: log all conditions on every run
         console.log('[P2P-Migration] Effect check:', JSON.stringify({
             isElectronMode,
             isRemoteWorkspace,
             workspaceSyncConnected,
+            workspaceSyncSynced,
             localDocsCount: localDocuments.length,
             syncedDocsCount: syncedDocuments.length,
+            yjsDocsCount,
             alreadyMigrated: localDocsMigratedRef.current,
             hasSyncAddDocument: !!syncAddDocument,
         }));
         
         // Only run in Electron local mode (not remote workspace)
         if (!isElectronMode || isRemoteWorkspace) return;
-        // Need workspace sync to be connected
-        if (!workspaceSyncConnected) return;
+        // IMPORTANT: Wait for sync to complete, not just connection
+        // This ensures we have the latest state from other peers before deciding to migrate
+        if (!workspaceSyncSynced) return;
         // Need local documents to migrate
         if (localDocuments.length === 0) return;
         // Don't migrate if we've already done it this session
@@ -270,8 +278,9 @@ function App() {
         // Need syncAddDocument function
         if (!syncAddDocument) return;
         
-        // Check if Yjs already has documents (don't overwrite existing P2P state)
-        if (syncedDocuments.length > 0) {
+        // Check if Yjs already has documents using the direct count (not React state)
+        // This avoids race conditions where React state hasn't updated yet
+        if (yjsDocsCount > 0) {
             console.log('[P2P-Migration] Yjs already has documents, skipping migration');
             localDocsMigratedRef.current = true;
             return;
@@ -287,7 +296,7 @@ function App() {
         }
         
         console.log('[P2P-Migration] Migration complete');
-    }, [isElectronMode, isRemoteWorkspace, workspaceSyncConnected, localDocuments, syncedDocuments, syncAddDocument]);
+    }, [isElectronMode, isRemoteWorkspace, workspaceSyncConnected, workspaceSyncSynced, localDocuments, syncedDocuments, syncAddDocument, getYjsDocumentCount]);
     
     // Reset migration flag when workspace changes
     useEffect(() => {
