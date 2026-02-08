@@ -1177,8 +1177,10 @@ export function validateSignedInvite(link) {
       ...parsed,
     };
   } catch (e) {
-    secureError('Failed to validate signed invite:', e);
-    return { valid: false, error: e.message };
+    // Ensure we capture the actual error message (Error objects don't stringify well)
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    secureError('Failed to validate signed invite:', errorMessage);
+    return { valid: false, error: errorMessage };
   }
 }
 

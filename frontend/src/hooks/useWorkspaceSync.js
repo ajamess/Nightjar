@@ -285,20 +285,52 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     yMembersRef.current = yMembers;
     yKickedRef.current = yKicked;
     
-    // Sync documents from Yjs to React state
+    // Sync documents from Yjs to React state (with deduplication)
     const syncDocuments = () => {
       if (cleanedUp) return; // Prevent state updates after cleanup
-      const docs = yDocuments.toArray();
-      console.log(`[WorkspaceSync] syncDocuments called, count: ${docs.length}`);
-      setDocuments(docs);
+      const rawDocs = yDocuments.toArray();
+      
+      // Deduplicate by document ID (keep first occurrence)
+      const seenIds = new Set();
+      const dedupedDocs = [];
+      for (const doc of rawDocs) {
+        if (doc.id && !seenIds.has(doc.id)) {
+          seenIds.add(doc.id);
+          dedupedDocs.push(doc);
+        }
+      }
+      
+      // Log if duplicates were found
+      if (rawDocs.length !== dedupedDocs.length) {
+        console.warn(`[WorkspaceSync] Deduplicated documents: ${rawDocs.length} -> ${dedupedDocs.length}`);
+      }
+      
+      console.log(`[WorkspaceSync] syncDocuments called, count: ${dedupedDocs.length}`);
+      setDocuments(dedupedDocs);
     };
     
-    // Sync folders from Yjs to React state
+    // Sync folders from Yjs to React state (with deduplication)
     const syncFolders = () => {
       if (cleanedUp) return; // Prevent state updates after cleanup
-      const flds = yFolders.toArray();
-      console.log(`[WorkspaceSync] syncFolders called, count: ${flds.length}`);
-      setFolders(flds);
+      const rawFolders = yFolders.toArray();
+      
+      // Deduplicate by folder ID (keep first occurrence)
+      const seenIds = new Set();
+      const dedupedFolders = [];
+      for (const folder of rawFolders) {
+        if (folder.id && !seenIds.has(folder.id)) {
+          seenIds.add(folder.id);
+          dedupedFolders.push(folder);
+        }
+      }
+      
+      // Log if duplicates were found
+      if (rawFolders.length !== dedupedFolders.length) {
+        console.warn(`[WorkspaceSync] Deduplicated folders: ${rawFolders.length} -> ${dedupedFolders.length}`);
+      }
+      
+      console.log(`[WorkspaceSync] syncFolders called, count: ${dedupedFolders.length}`);
+      setFolders(dedupedFolders);
     };
     
     // Sync workspace info from Yjs to React state
@@ -347,6 +379,58 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       }
     };
     
+    // Clean up duplicate documents and folders in the Yjs arrays (one-time per session)
+    let hasCleanedDuplicates = false;
+    const cleanupDuplicates = () => {
+      if (hasCleanedDuplicates) return;
+      hasCleanedDuplicates = true;
+      
+      // Clean duplicate documents
+      const rawDocs = yDocuments.toArray();
+      const seenDocIds = new Set();
+      const duplicateDocIndices = [];
+      
+      for (let i = 0; i < rawDocs.length; i++) {
+        const doc = rawDocs[i];
+        if (doc.id && seenDocIds.has(doc.id)) {
+          duplicateDocIndices.push(i);
+        } else if (doc.id) {
+          seenDocIds.add(doc.id);
+        }
+      }
+      
+      // Clean duplicate folders
+      const rawFolders = yFolders.toArray();
+      const seenFolderIds = new Set();
+      const duplicateFolderIndices = [];
+      
+      for (let i = 0; i < rawFolders.length; i++) {
+        const folder = rawFolders[i];
+        if (folder.id && seenFolderIds.has(folder.id)) {
+          duplicateFolderIndices.push(i);
+        } else if (folder.id) {
+          seenFolderIds.add(folder.id);
+        }
+      }
+      
+      // Delete duplicates in a single transaction
+      if (duplicateDocIndices.length > 0 || duplicateFolderIndices.length > 0) {
+        console.warn(`[WorkspaceSync] Cleaning up duplicates: ${duplicateDocIndices.length} docs, ${duplicateFolderIndices.length} folders`);
+        
+        ydoc.transact(() => {
+          // Delete from highest index to lowest to avoid index shifting
+          for (let i = duplicateDocIndices.length - 1; i >= 0; i--) {
+            yDocuments.delete(duplicateDocIndices[i], 1);
+          }
+          for (let i = duplicateFolderIndices.length - 1; i >= 0; i--) {
+            yFolders.delete(duplicateFolderIndices[i], 1);
+          }
+        });
+        
+        console.log(`[WorkspaceSync] Cleanup complete. Docs: ${rawDocs.length} -> ${yDocuments.toArray().length}, Folders: ${rawFolders.length} -> ${yFolders.toArray().length}`);
+      }
+    };
+    
     // Wait for initial sync before setting info (to check if remote has data)
     provider.on('synced', () => {
       console.log(`[WorkspaceSync] ========== SYNC RECEIVED ==========`);
@@ -373,6 +457,9 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
         kickedCount: receivedKickedCount,
       }, null, 2));
       console.log(`[WorkspaceSync] ==================================`);
+      
+      // Clean up any duplicate documents/folders in the Yjs arrays (one-time)
+      cleanupDuplicates();
       
       setSynced(true);
       // Re-sync all data to React state after provider sync
