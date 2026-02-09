@@ -1,13 +1,10 @@
 name: E2E Cross-Network Tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    # Run full matrix nightly at 2 AM UTC
-    - cron: '0 2 * * *'
+  # Only run on manual trigger - disabled scheduled runs
+  # schedule:
+  #   # Run full matrix nightly at 2 AM UTC
+  #   - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       test_tier:
