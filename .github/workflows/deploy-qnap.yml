@@ -12,14 +12,15 @@
 name: Build & Deploy to QNAP
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'frontend/**'
-      - 'server/**'
-      - 'Dockerfile*'
-      - '.github/workflows/deploy-qnap.yml'
-  workflow_dispatch:  # Allow manual trigger
+  # Only run on manual trigger - disabled automatic push deploy
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'frontend/**'
+  #     - 'server/**'
+  #     - 'Dockerfile*'
+  #     - '.github/workflows/deploy-qnap.yml'
+  workflow_dispatch:  # Manual trigger only
 
 env:
   REGISTRY: ghcr.io
