@@ -363,12 +363,28 @@ export function IdentityProvider({ children }) {
     
     // Sync identity from identityManager (multi-identity system)
     // This should be called when an identity is unlocked from the new system
-    const syncFromIdentityManager = useCallback((identityData) => {
+    const syncFromIdentityManager = useCallback(async (identityData) => {
         if (identityData) {
             secureLog('[Identity] Syncing identity from identityManager:', identityData.handle);
             setIdentity(identityData);
             setNeedsOnboarding(false);
             setHasExistingIdentity(true);
+            
+            // CRITICAL: Sync to sidecar for workspace isolation
+            // The sidecar filters workspaces by publicKeyBase62
+            try {
+                if (window.electronAPI?.identity) {
+                    await window.electronAPI.identity.store(identityData);
+                    secureLog('[Identity] Synced identity to sidecar');
+                }
+                
+                // Dispatch event to notify other contexts that identity changed
+                // WorkspaceContext listens for this to reload workspace list
+                window.dispatchEvent(new CustomEvent('identity-created', { detail: identityData }));
+                secureLog('[Identity] Dispatched identity-created event for P2P reinit');
+            } catch (e) {
+                secureError('[Identity] Failed to sync to sidecar:', e);
+            }
         }
     }, []);
     

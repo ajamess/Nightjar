@@ -173,6 +173,15 @@
     animation: pulse 1.5s infinite;
 }
 
+/* Warning state (connected but no peers) */
+.connection-status.warning .status-dot {
+    background: var(--warning-color, #f59e0b);
+}
+
+.connection-status.warning {
+    color: var(--warning-color, #f59e0b);
+}
+
 /* IP Address Display */
 .ip-display {
     font-size: 0.7rem;
@@ -197,6 +206,81 @@
     border-radius: 12px;
     font-size: 0.75rem;
     color: var(--text-secondary, #a1a1aa);
+}
+
+/* Warning state for peer counts when no active peers */
+.peer-counts.warning {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Peer ratio display (active / total) */
+.peer-counts .peer-ratio {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-family: monospace;
+    font-weight: 600;
+}
+
+.peer-counts .active-peers {
+    color: var(--success-color, #22c55e);
+}
+
+.peer-counts .peer-ratio.zero-peers .active-peers {
+    color: var(--warning-color, #f59e0b);
+}
+
+.peer-counts .peer-separator {
+    color: var(--text-muted, #71717a);
+    font-weight: normal;
+}
+
+.peer-counts .total-peers {
+    color: var(--text-secondary, #a1a1aa);
+}
+
+.peer-counts .relay-indicator {
+    font-size: 0.7rem;
+    margin-left: 2px;
+}
+
+/* Retry sync button */
+.peer-counts .retry-sync-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin-left: 4px;
+    background: var(--surface-3, #3d3d5c);
+    border: 1px solid var(--border-color, #4d4d6c);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.7rem;
+    color: var(--text-secondary, #a1a1aa);
+    transition: all 0.2s ease;
+}
+
+.peer-counts .retry-sync-btn:hover:not(:disabled) {
+    background: var(--accent-color, #7c3aed);
+    border-color: var(--accent-color, #7c3aed);
+    color: white;
+}
+
+.peer-counts .retry-sync-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.peer-counts .retry-sync-btn.retrying {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .peer-counts .online-count,

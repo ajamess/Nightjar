@@ -818,13 +818,18 @@ class HyperswarmManager extends EventEmitter {
    * Broadcast a sync message to all peers on a topic
    * @param {string} topicHex - Topic to broadcast on
    * @param {Buffer|Uint8Array} data - Sync data
+   * @param {number} retryCount - Internal retry counter
    */
-  broadcastSync(topicHex, data) {
+  broadcastSync(topicHex, data, retryCount = 0) {
     const dataStr = Buffer.isBuffer(data) ? data.toString('base64') : 
                     data instanceof Uint8Array ? Buffer.from(data).toString('base64') : data;
 
-    console.log(`[Hyperswarm] broadcastSync called - topic: ${topicHex.slice(0, 8)}...`);
-    console.log(`[Hyperswarm] Data type: ${typeof data}, size: ${dataStr.length}`);
+    if (retryCount === 0) {
+      console.log(`[Hyperswarm] broadcastSync called - topic: ${topicHex.slice(0, 8)}...`);
+      console.log(`[Hyperswarm] Data type: ${typeof data}, size: ${dataStr.length}`);
+    } else {
+      console.log(`[Hyperswarm] broadcastSync retry ${retryCount} - topic: ${topicHex.slice(0, 8)}...`);
+    }
     
     let sentCount = 0;
     let skippedCount = 0;
@@ -849,7 +854,13 @@ class HyperswarmManager extends EventEmitter {
     console.log(`[Hyperswarm] broadcastSync complete - sent to ${sentCount} peer(s), skipped ${skippedCount}`);
     
     if (sentCount === 0) {
-      console.warn(`[Hyperswarm] ⚠ No peers on topic ${topicHex.slice(0, 8)}... to receive broadcast!`);
+      // Retry up to 3 times with 300ms delay - peers may not have exchanged join-topic yet
+      if (retryCount < 3) {
+        console.log(`[Hyperswarm] No peers on topic yet, retrying in 300ms (attempt ${retryCount + 1}/3)...`);
+        setTimeout(() => this.broadcastSync(topicHex, dataStr, retryCount + 1), 300);
+        return;
+      }
+      console.warn(`[Hyperswarm] ⚠ No peers on topic ${topicHex.slice(0, 8)}... to receive broadcast after ${retryCount} retries`);
       const topicsWithPeers = [];
       for (const [peerId, conn] of this.connections) {
         topicsWithPeers.push(...Array.from(conn.topics).map(t => t.slice(0, 8)));

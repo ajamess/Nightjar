@@ -26,6 +26,8 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
   const [error, setError] = useState(null);
   const [unlocking, setUnlocking] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deletePin, setDeletePin] = useState('');
+  const [deletingIdentity, setDeletingIdentity] = useState(false);
 
   // Load identities on mount
   useEffect(() => {
@@ -101,6 +103,7 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
     e.stopPropagation();
     setSelectedIdentity(identity);
     setDeleteConfirmName('');
+    setDeletePin('');
     setError(null);
     setView(VIEWS.DELETE_CONFIRM);
   };
@@ -108,17 +111,60 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
   const handleConfirmDelete = async () => {
     if (!selectedIdentity) return;
     
+    // Require typing the handle name
     if (deleteConfirmName !== selectedIdentity.handle) {
       setError(`Type "${selectedIdentity.handle}" to confirm deletion`);
       return;
     }
+    
+    // Require valid PIN
+    if (deletePin.length !== 6) {
+      setError('Enter your 6-digit PIN to confirm deletion');
+      return;
+    }
+    
+    setDeletingIdentity(true);
+    setError(null);
 
     try {
+      // Verify PIN by checking against the stored hash
+      const identities = identityManager.listIdentities();
+      const metadata = identities.find(i => i.id === selectedIdentity.id);
+      
+      if (!metadata) {
+        throw new Error('Identity not found');
+      }
+      
+      // Hash the provided PIN and compare
+      const pinHash = await identityManager.hashPin(deletePin, metadata.salt);
+      
+      if (pinHash !== metadata.pinHash) {
+        // Increment failed attempts
+        metadata.pinAttempts = (metadata.pinAttempts || 0) + 1;
+        const remaining = 5 - metadata.pinAttempts;
+        
+        if (remaining <= 0) {
+          // Too many attempts - force delete for security
+          await identityManager.deleteIdentity(selectedIdentity.id, true);
+          loadIdentities();
+          setView(VIEWS.LIST);
+          return;
+        }
+        
+        setError(`Incorrect PIN. ${remaining} attempts remaining.`);
+        setDeletePin('');
+        return;
+      }
+      
+      // PIN verified - proceed with deletion
       await identityManager.deleteIdentity(selectedIdentity.id);
       loadIdentities();
       setView(VIEWS.LIST);
     } catch (err) {
       setError(err.message);
+      setDeletePin('');
+    } finally {
+      setDeletingIdentity(false);
     }
   };
 
@@ -228,16 +274,36 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
               value={deleteConfirmName}
               onChange={(e) => setDeleteConfirmName(e.target.value)}
               placeholder={selectedIdentity.handle}
-              autoFocus
+              disabled={deletingIdentity}
+            />
+          </div>
+          
+          <div className="identity-selector__delete-pin">
+            <label>Enter your PIN to confirm:</label>
+            <PinInput
+              value={deletePin}
+              onChange={setDeletePin}
+              onComplete={() => {}}
+              disabled={deletingIdentity || deleteConfirmName !== selectedIdentity.handle}
+              error={null}
+              label=""
             />
           </div>
           
           {error && <div className="identity-selector__error-message">{error}</div>}
           
+          {deletingIdentity && (
+            <div className="identity-selector__unlocking">
+              <div className="identity-selector__spinner" />
+              Verifying...
+            </div>
+          )}
+          
           <div className="identity-selector__delete-actions">
             <button 
               className="identity-selector__btn identity-selector__btn--secondary"
               onClick={() => setView(VIEWS.LIST)}
+              disabled={deletingIdentity}
               type="button"
             >
               Cancel
@@ -245,7 +311,7 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
             <button 
               className="identity-selector__btn identity-selector__btn--danger"
               onClick={handleConfirmDelete}
-              disabled={deleteConfirmName !== selectedIdentity.handle}
+              disabled={deleteConfirmName !== selectedIdentity.handle || deletePin.length !== 6 || deletingIdentity}
               type="button"
             >
               Delete Identity

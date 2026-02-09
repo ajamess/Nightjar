@@ -167,6 +167,32 @@ export const DEFAULT_LOCK_TIMEOUT_MINUTES = 15;
 export const ATTEMPT_RESET_HOURS = 1;
 
 // =============================================================================
+// P2P/Peer Status Constants
+// =============================================================================
+
+/**
+ * Default peer status polling interval in milliseconds
+ * Configurable via settings
+ */
+export const PEER_STATUS_POLL_INTERVAL_MS = 10000;
+
+/**
+ * Maximum number of "ever seen" peers to track per workspace
+ * Prevents unbounded growth of peer lists
+ */
+export const MAX_SEEN_PEERS_CAP = 100;
+
+/**
+ * Retry delay for manual peer sync (exponential backoff base)
+ */
+export const PEER_SYNC_RETRY_BASE_MS = 2000;
+
+/**
+ * Maximum retry delay for peer sync
+ */
+export const PEER_SYNC_RETRY_MAX_MS = 30000;
+
+// =============================================================================
 // Default Export (for convenient importing)
 // =============================================================================
 
@@ -205,4 +231,10 @@ export default {
   PIN_LENGTH,
   DEFAULT_LOCK_TIMEOUT_MINUTES,
   ATTEMPT_RESET_HOURS,
+  
+  // P2P/Peer Status
+  PEER_STATUS_POLL_INTERVAL_MS,
+  MAX_SEEN_PEERS_CAP,
+  PEER_SYNC_RETRY_BASE_MS,
+  PEER_SYNC_RETRY_MAX_MS,
 };

@@ -31,6 +31,7 @@ import identityManager from './utils/identityManager';
 import { useAuthorAttribution } from './hooks/useAuthorAttribution';
 import { useChangelogObserver } from './hooks/useChangelogObserver';
 import { useWorkspaceSync } from './hooks/useWorkspaceSync';
+import { useWorkspacePeerStatus } from './hooks/useWorkspacePeerStatus';
 import { useWorkspaces } from './contexts/WorkspaceContext';
 import { useFolders } from './contexts/FolderContext';
 import { usePermissions } from './contexts/PermissionContext';
@@ -234,74 +235,30 @@ function App() {
         transferOwnership: syncTransferOwnership,
     } = useWorkspaceSync(currentWorkspaceId, initialWorkspaceInfo, workspaceUserProfile, workspaceServerUrl, userIdentity, currentWorkspace?.myPermission);
     
+    // --- P2P Peer Status (Electron only) ---
+    const {
+        activePeers,
+        totalSeenPeers,
+        relayConnected,
+        requestSync: requestPeerSync,
+        isRetrying: isPeerSyncRetrying,
+    } = useWorkspacePeerStatus(currentWorkspaceId);
+    
     // Use synced documents, fall back to local state for Electron mode
     // Exception: In Electron mode, if we have a serverUrl (remote workspace), use synced docs
     const isElectronMode = isElectron();
     const isRemoteWorkspace = !!workspaceServerUrl;
     const [localDocuments, setLocalDocuments] = useState([]);
-    // Track if we've migrated local docs to Yjs this session
-    const localDocsMigratedRef = useRef(false);
-    // Use syncedDocuments for: 1) web mode, 2) Electron joining remote workspace
-    // Use localDocuments for: Electron with local workspace (no serverUrl)
-    const documents = (isElectronMode && !isRemoteWorkspace) ? localDocuments : syncedDocuments;
-    const setDocuments = (isElectronMode && !isRemoteWorkspace) ? setLocalDocuments : () => {}; // No-op for synced mode
-    
-    // --- Migrate local documents to Yjs for P2P sync ---
-    // In Electron mode, documents are stored in sidecar's metadata DB.
-    // They need to be synced to Yjs so they can be shared via P2P.
-    useEffect(() => {
-        // Get the actual Yjs document count (not React state which may lag)
-        const yjsDocsCount = getYjsDocumentCount ? getYjsDocumentCount() : 0;
-        
-        // Debug: log all conditions on every run
-        console.log('[P2P-Migration] Effect check:', JSON.stringify({
-            isElectronMode,
-            isRemoteWorkspace,
-            workspaceSyncConnected,
-            workspaceSyncSynced,
-            localDocsCount: localDocuments.length,
-            syncedDocsCount: syncedDocuments.length,
-            yjsDocsCount,
-            alreadyMigrated: localDocsMigratedRef.current,
-            hasSyncAddDocument: !!syncAddDocument,
-        }));
-        
-        // Only run in Electron local mode (not remote workspace)
-        if (!isElectronMode || isRemoteWorkspace) return;
-        // IMPORTANT: Wait for sync to complete, not just connection
-        // This ensures we have the latest state from other peers before deciding to migrate
-        if (!workspaceSyncSynced) return;
-        // Need local documents to migrate
-        if (localDocuments.length === 0) return;
-        // Don't migrate if we've already done it this session
-        if (localDocsMigratedRef.current) return;
-        // Need syncAddDocument function
-        if (!syncAddDocument) return;
-        
-        // Check if Yjs already has documents using the direct count (not React state)
-        // This avoids race conditions where React state hasn't updated yet
-        if (yjsDocsCount > 0) {
-            console.log('[P2P-Migration] Yjs already has documents, skipping migration');
-            localDocsMigratedRef.current = true;
-            return;
-        }
-        
-        console.log(`[P2P-Migration] Migrating ${localDocuments.length} local documents to Yjs for P2P sync`);
-        localDocsMigratedRef.current = true;
-        
-        // Add each local document to Yjs (syncAddDocument checks for duplicates)
-        for (const doc of localDocuments) {
-            console.log(`[P2P-Migration] Adding document: ${doc.id} - ${doc.name}`);
-            syncAddDocument(doc);
-        }
-        
-        console.log('[P2P-Migration] Migration complete');
-    }, [isElectronMode, isRemoteWorkspace, workspaceSyncConnected, workspaceSyncSynced, localDocuments, syncedDocuments, syncAddDocument, getYjsDocumentCount]);
-    
-    // Reset migration flag when workspace changes
-    useEffect(() => {
-        localDocsMigratedRef.current = false;
-    }, [currentWorkspaceId]);
+    // Use syncedDocuments for:
+    // 1) Web mode (always)
+    // 2) Electron joining remote workspace (has serverUrl)
+    // 3) Electron joining P2P workspace (not owner - documents come from Yjs sync)
+    // Use localDocuments for: Electron with local workspace that we OWN
+    const isWorkspaceOwner = currentWorkspace?.myPermission === 'owner';
+    const useLocalDocs = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    // Documents are workspace-scoped - sidecar returns only docs for current workspace
+    const documents = useLocalDocs ? localDocuments : syncedDocuments;
+    const setDocuments = useLocalDocs ? setLocalDocuments : () => {}; // No-op for synced mode
     
     // --- Document State ---
     const [openTabs, setOpenTabs] = useState([]);
@@ -351,6 +308,9 @@ function App() {
                 // New multi-identity system with PIN
                 const result = await identityManager.createIdentity(identity, identity.pin);
                 console.log('[App] Identity created with PIN:', result.id);
+                
+                // CRITICAL: Clear any locked state since we just created a new identity with valid session
+                setIsLocked(false);
                 
                 // Also create legacy identity for backward compatibility
                 const success = await createIdentity(identity);
@@ -605,6 +565,28 @@ function App() {
         isProcessingRemoteUpdate.current = false;
     }, [currentWorkspaceId]);
     
+    // Load documents when workspace changes (documents are workspace-scoped)
+    // Only load from sidecar for workspaces we OWN - joined workspaces get docs via Yjs sync
+    useEffect(() => {
+        if (!currentWorkspaceId) {
+            // No workspace selected - clear documents
+            setLocalDocuments([]);
+            return;
+        }
+        if (!isElectronMode) return; // Web mode uses synced documents
+        if (isRemoteWorkspace) return; // Remote workspaces use synced documents
+        if (!isWorkspaceOwner) return; // Joined workspaces use synced documents from Yjs
+        
+        // Request documents for this workspace (owner only)
+        if (metaSocketRef.current?.readyState === WebSocket.OPEN) {
+            console.log(`[App] Requesting documents for owned workspace: ${currentWorkspaceId}`);
+            metaSocketRef.current.send(JSON.stringify({ 
+                type: 'list-documents', 
+                workspaceId: currentWorkspaceId 
+            }));
+        }
+    }, [currentWorkspaceId, isElectronMode, isRemoteWorkspace, isWorkspaceOwner]);
+    
     useEffect(() => {
         // When synced workspace info arrives and differs from local, update it
         if (syncedWorkspaceInfo && currentWorkspace && !isElectronMode) {
@@ -720,7 +702,8 @@ function App() {
                         type: 'set-key', 
                         payload: uint8ArrayToString(key, 'base64') 
                     }));
-                    metaSocket.send(JSON.stringify({ type: 'list-documents' }));
+                    // Documents are workspace-scoped - will be loaded when workspace is selected
+                    // See currentWorkspaceId effect below for document loading
                 };
 
                 metaSocket.onmessage = (event) => {
@@ -893,16 +876,16 @@ function App() {
         // ALWAYS use Yjs sync so documents are available for P2P sharing
         syncAddDocument(document);
         
-        // In Electron local mode, also update local state immediately for UI responsiveness
-        if (isElectronMode && !isRemoteWorkspace) {
-            setDocuments(prev => {
+        // In Electron owned workspace mode, also update local state for UI responsiveness
+        if (useLocalDocs) {
+            setLocalDocuments(prev => {
                 if (prev.some(d => d.id === docId)) return prev;
                 return [...prev, document];
             });
         }
 
-        // Notify sidecar (for persistence) - Electron local mode only
-        if (isElectronMode && !isRemoteWorkspace && metaSocketRef.current?.readyState === WebSocket.OPEN) {
+        // Notify sidecar (for persistence) - Electron owned workspace only
+        if (useLocalDocs && metaSocketRef.current?.readyState === WebSocket.OPEN) {
             metaSocketRef.current.send(JSON.stringify({ 
                 type: 'create-document', 
                 document 
@@ -999,24 +982,24 @@ function App() {
         // ALWAYS remove from shared document list so P2P peers see the deletion
         syncRemoveDocument(docId);
 
-        // Notify sidecar - Electron local mode only
-        if (isElectronMode && !isRemoteWorkspace && metaSocketRef.current?.readyState === WebSocket.OPEN) {
+        // Notify sidecar - owned workspace only
+        if (useLocalDocs && metaSocketRef.current?.readyState === WebSocket.OPEN) {
             metaSocketRef.current.send(JSON.stringify({ 
                 type: 'delete-document', 
                 docId 
             }));
         }
         showToast('Document deleted', 'success');
-    }, [closeDocument, isElectronMode, isRemoteWorkspace, syncRemoveDocument, showToast]);
+    }, [closeDocument, useLocalDocs, syncRemoveDocument, showToast]);
 
     // Move document to a folder (or to root if folderId is null)
     const handleMoveDocument = useCallback((documentId, folderId) => {
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(documentId, { folderId: folderId || null });
         
-        // In Electron local mode, also update local state immediately
-        if (isElectronMode && !isRemoteWorkspace) {
-            setDocuments(prev => prev.map(d => 
+        // In owned workspace mode, also update local state immediately
+        if (useLocalDocs) {
+            setLocalDocuments(prev => prev.map(d => 
                 d.id === documentId 
                     ? { ...d, folderId: folderId || null }
                     : d
@@ -1024,7 +1007,7 @@ function App() {
             // Also call the FolderContext function to sync with sidecar
             moveDocumentToFolder(documentId, folderId);
         }
-    }, [moveDocumentToFolder, isElectronMode, isRemoteWorkspace, syncUpdateDocument]);
+    }, [moveDocumentToFolder, useLocalDocs, syncUpdateDocument]);
 
     // Rename document
     const renameDocument = useCallback((docId, newName) => {
@@ -1033,9 +1016,9 @@ function App() {
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(docId, { name: newName.trim() });
         
-        // In Electron local mode, also update local state immediately
-        if (isElectronMode && !isRemoteWorkspace) {
-            setDocuments(prev => prev.map(d => 
+        // In owned workspace mode, also update local state immediately
+        if (useLocalDocs) {
+            setLocalDocuments(prev => prev.map(d => 
                 d.id === docId 
                     ? { ...d, name: newName.trim() }
                     : d
@@ -1603,6 +1586,11 @@ function App() {
                     collaborators={collaborators}
                     onlineCount={workspaceOnlineCount}
                     totalCollaborators={workspaceTotalCount}
+                    activePeers={activePeers}
+                    totalSeenPeers={totalSeenPeers}
+                    relayConnected={relayConnected}
+                    onRequestSync={requestPeerSync}
+                    isRetrying={isPeerSyncRetrying}
                     documentType={activeDocType}
                     onStartChatWith={(user) => setChatTargetUser(user)}
                 />

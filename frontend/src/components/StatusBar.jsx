@@ -19,6 +19,12 @@ const StatusBar = ({
     collaborators,
     onlineCount = 0,
     totalCollaborators = 0,
+    // New peer status props
+    activePeers = 0,
+    totalSeenPeers = 0,
+    relayConnected = false,
+    onRequestSync,
+    isRetrying = false,
     documentType = 'text',
     onStartChatWith,
     onFollowUser
@@ -79,10 +85,13 @@ const StatusBar = ({
     // Connection status - unified across platforms with detailed peer info
     const getConnectionStatus = () => {
         if (p2pStatus === 'connected') {
-            if (onlineCount > 0) {
-                return { label: `${onlineCount} peer${onlineCount !== 1 ? 's' : ''} connected`, className: 'connected' };
+            // Use activePeers if provided (new behavior), otherwise fall back to onlineCount
+            const currentActivePeers = activePeers > 0 ? activePeers : onlineCount;
+            if (currentActivePeers > 0) {
+                return { label: `${currentActivePeers} peer${currentActivePeers !== 1 ? 's' : ''} connected`, className: 'connected' };
             }
-            return { label: 'Online', className: 'connected' };
+            // Connected to P2P but no active peers - show warning
+            return { label: 'Offline copy', className: 'warning' };
         }
         if (p2pStatus === 'connecting') {
             return { label: 'Connecting...', className: 'connecting' };
@@ -196,18 +205,34 @@ const StatusBar = ({
                     )}
                 </div>
 
-                {/* Peer counts display - only show if there are peers */}
-                {totalCollaborators > 0 && (onlineCount > 0 || totalCollaborators > 0) && (
-                    <div className="peer-counts" title={`${onlineCount} online now · ${totalCollaborators} total collaborators`}>
-                        <span className="online-count">
-                            <span className="online-dot">🟢</span>
-                            {onlineCount}
+                {/* Peer counts display - show active / total format */}
+                {(totalSeenPeers > 0 || totalCollaborators > 0) && (
+                    <div 
+                        className={`peer-counts ${activePeers === 0 && !relayConnected ? 'warning' : ''}`}
+                        title={
+                            activePeers === 0 && !relayConnected
+                                ? 'Editing offline copy - changes will sync when a peer connects'
+                                : `${activePeers} active · ${totalSeenPeers || totalCollaborators} total seen${relayConnected ? ' · Relay connected' : ''}`
+                        }
+                    >
+                        <span className={`peer-ratio ${activePeers === 0 ? 'zero-peers' : ''}`}>
+                            <span className="active-peers">{activePeers}</span>
+                            <span className="peer-separator">/</span>
+                            <span className="total-peers">{totalSeenPeers || totalCollaborators}</span>
                         </span>
-                        <span className="count-separator">·</span>
-                        <span className="total-count">
-                            <span className="total-icon">👤</span>
-                            {totalCollaborators}
-                        </span>
+                        {relayConnected && (
+                            <span className="relay-indicator" title="Connected to relay server">📡</span>
+                        )}
+                        {activePeers === 0 && !relayConnected && onRequestSync && (
+                            <button 
+                                className={`retry-sync-btn ${isRetrying ? 'retrying' : ''}`}
+                                onClick={onRequestSync}
+                                disabled={isRetrying}
+                                title="Retry connecting to peers"
+                            >
+                                {isRetrying ? '⟳' : '↻'}
+                            </button>
+                        )}
                     </div>
                 )}
                 

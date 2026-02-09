@@ -22,6 +22,9 @@ const DEFAULT_SETTINGS = {
   lineHeight: 1.6,
   spellCheck: true,
   wordWrap: true,
+  
+  // P2P / Network
+  peerStatusPollIntervalMs: 10000, // How often to check peer status (ms)
 };
 
 // Font options
@@ -213,6 +216,63 @@ export default function AppSettings({ isOpen, onClose }) {
     }
   }, [confirm]);
 
+  // Factory reset - wipe ALL local data
+  const handleFactoryReset = useCallback(async () => {
+    const confirmed = await confirm({
+      title: '⚠️ Factory Reset',
+      message: 'This will DELETE ALL local data including:\n\n• All identities and their keys\n• All workspaces\n• All documents\n• All settings\n\nThis action CANNOT be undone. The app will restart after reset.',
+      confirmText: 'Delete Everything',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (!confirmed) return;
+    
+    // Double-confirm for safety
+    const doubleConfirmed = await confirm({
+      title: '🚨 Final Confirmation',
+      message: 'Are you ABSOLUTELY SURE? All your data will be permanently deleted.',
+      confirmText: 'Yes, Delete All Data',
+      cancelText: 'No, Keep My Data',
+      variant: 'danger'
+    });
+    
+    if (!doubleConfirmed) return;
+    
+    try {
+      // 1. Clear localStorage
+      localStorage.clear();
+      
+      // 2. Clear sessionStorage
+      sessionStorage.clear();
+      
+      // 3. Send factory-reset command to sidecar (if Electron)
+      if (isElectron && window.electronAPI?.invoke) {
+        try {
+          await window.electronAPI.invoke('factory-reset');
+        } catch (e) {
+          console.warn('[FactoryReset] Sidecar reset failed:', e);
+        }
+      }
+      
+      // 4. Clear IndexedDB databases
+      if (window.indexedDB) {
+        const databases = await window.indexedDB.databases?.() || [];
+        for (const db of databases) {
+          if (db.name) {
+            window.indexedDB.deleteDatabase(db.name);
+          }
+        }
+      }
+      
+      // 5. Reload the app
+      window.location.reload();
+    } catch (err) {
+      console.error('[FactoryReset] Error:', err);
+      alert('Factory reset failed: ' + err.message);
+    }
+  }, [confirm, isElectron]);
+
   // Handle keyboard
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
@@ -230,6 +290,7 @@ export default function AppSettings({ isOpen, onClose }) {
     { id: 'general', label: '⚙️ General', icon: '⚙️' },
     { id: 'editor', label: '✏️ Editor', icon: '✏️' },
     { id: 'privacy', label: '🔒 Privacy', icon: '🔒' },
+    ...(isElectron ? [{ id: 'network', label: '🌐 Network', icon: '🌐' }] : []),
     { id: 'shortcuts', label: '⌨️ Shortcuts', icon: '⌨️' },
     { id: 'advanced', label: '🛠️ Advanced', icon: '🛠️' },
     ...(isElectron ? [{ id: 'desktop', label: '🖥️ Desktop', icon: '🖥️' }] : []),
@@ -502,6 +563,49 @@ export default function AppSettings({ isOpen, onClose }) {
               </div>
             )}
 
+            {/* Network Tab (Electron only) */}
+            {activeTab === 'network' && isElectron && (
+              <div className="app-settings__section">
+                <h3 className="app-settings__section-title">P2P Network Settings</h3>
+                
+                <div className="app-settings__control">
+                  <div className="app-settings__control-header">
+                    <label htmlFor="peer-poll-interval">Peer Status Check Interval</label>
+                    <span className="app-settings__control-hint">How often to check for connected peers</span>
+                  </div>
+                  <div className="app-settings__select-wrapper">
+                    <select
+                      id="peer-poll-interval"
+                      value={settings.peerStatusPollIntervalMs}
+                      onChange={(e) => updateSetting('peerStatusPollIntervalMs', parseInt(e.target.value, 10))}
+                    >
+                      <option value="5000">5 seconds (frequent)</option>
+                      <option value="10000">10 seconds (recommended)</option>
+                      <option value="15000">15 seconds</option>
+                      <option value="30000">30 seconds (battery saver)</option>
+                      <option value="60000">60 seconds (minimal)</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="app-settings__info-box">
+                  <span className="app-settings__info-icon">💡</span>
+                  <div>
+                    <strong>Peer Status</strong>
+                    <p>The status bar shows "{`{active} / {total}`}" where active is currently connected peers and total is all peers ever seen for this workspace.</p>
+                  </div>
+                </div>
+                
+                <div className="app-settings__info-box">
+                  <span className="app-settings__info-icon">📡</span>
+                  <div>
+                    <strong>Relay Fallback</strong>
+                    <p>When no direct P2P peers are available, Nightjar will automatically attempt to connect via relay servers for sync.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Shortcuts Tab */}
             {activeTab === 'shortcuts' && (
               <div className="app-settings__section">
@@ -572,6 +676,20 @@ export default function AppSettings({ isOpen, onClose }) {
                   >
                     Reset All Settings
                   </button>
+                  
+                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,0,0,0.2)' }}>
+                    <p style={{ fontSize: '12px', color: '#ff6b6b', marginBottom: '8px' }}>
+                      ⚠️ <strong>Factory Reset</strong> - This will delete ALL local data including all identities, workspaces, and documents. This action cannot be undone.
+                    </p>
+                    <button 
+                      type="button"
+                      className="app-settings__btn-danger"
+                      style={{ backgroundColor: '#8b0000' }}
+                      onClick={handleFactoryReset}
+                    >
+                      🗑️ Factory Reset - Delete Everything
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
