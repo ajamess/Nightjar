@@ -191,9 +191,20 @@ export function WorkspaceProvider({ children }) {
         setWorkspaces(data.workspaces || []);
         setLoading(false);
         
-        // Auto-select first workspace if none selected
+        // Auto-select first workspace, or clear if current is not in list
         if (data.workspaces?.length > 0) {
-          setCurrentWorkspaceId(prev => prev || data.workspaces[0].id);
+          setCurrentWorkspaceId(prev => {
+            // Check if current workspace is in the new list
+            const currentInList = prev && data.workspaces.some(w => w.id === prev);
+            if (currentInList) {
+              return prev; // Keep current selection
+            }
+            // Otherwise select the first workspace
+            return data.workspaces[0].id;
+          });
+        } else {
+          // No workspaces - clear selection
+          setCurrentWorkspaceId(null);
         }
         
         // Restore keychains for all loaded workspaces (async)
@@ -496,9 +507,23 @@ export function WorkspaceProvider({ children }) {
   // This ensures P2P is ready after user completes onboarding
   useEffect(() => {
     const handleIdentityCreated = async () => {
-      secureLog('[WorkspaceContext] Identity created, reinitializing P2P...');
+      secureLog('[WorkspaceContext] Identity created/switched, reinitializing P2P...');
+      
+      // CRITICAL: Clear current workspace state BEFORE requesting new list
+      // This ensures we don't show old workspace data from a different identity
+      secureLog('[WorkspaceContext] Clearing workspace state for new identity');
+      setWorkspaces([]);
+      setCurrentWorkspaceId(null);
+      setLoading(true);
+      
       if (metaSocket.current?.readyState === WebSocket.OPEN) {
+        // Reinitialize P2P with new identity
         metaSocket.current.send(JSON.stringify({ type: 'reinitialize-p2p' }));
+        
+        // CRITICAL: Reload workspace list to filter by new identity's public key
+        // The sidecar uses identity.loadIdentity().publicKeyBase62 to filter workspaces
+        metaSocket.current.send(JSON.stringify({ type: 'list-workspaces' }));
+        secureLog('[WorkspaceContext] Requested workspace list refresh after identity switch');
       }
     };
     
@@ -551,8 +576,12 @@ export function WorkspaceProvider({ children }) {
       folderKeys: {},
     });
     
-    // Get user identity for owner info (prefer context, fallback to IPC)
-    const userIdentity = publicIdentity || window.electronAPI?.identity?.getPublic?.() || {
+    // Get user identity for owner info
+    // Use publicIdentity from IdentityContext (via useIdentity hook) - single source of truth
+    const userIdentity = publicIdentity ? {
+      publicKey: publicIdentity.publicKey,
+      handle: publicIdentity.handle || 'You',
+    } : {
       publicKey: 'local-user',
       handle: 'You',
     };
@@ -596,13 +625,23 @@ export function WorkspaceProvider({ children }) {
    * @param {Object} updates - Updates to apply
    */
   const updateWorkspace = useCallback(async (workspaceId, updates) => {
-    sendMessage({ type: 'update-workspace', workspaceId, updates });
+    // Find the current workspace and create full merged object
+    // This ensures fields like joinedBy are preserved in the backend
+    const currentWorkspace = workspaces.find(w => w.id === workspaceId);
+    if (currentWorkspace) {
+      // Send full workspace object to backend for proper merge
+      const fullWorkspace = { ...currentWorkspace, ...updates };
+      sendMessage({ type: 'update-workspace', workspace: fullWorkspace });
+    } else {
+      // Fallback: send partial updates if workspace not found locally
+      sendMessage({ type: 'update-workspace', workspaceId, updates });
+    }
     
     // Optimistic update
     setWorkspaces(prev => prev.map(w => 
       w.id === workspaceId ? { ...w, ...updates } : w
     ));
-  }, [sendMessage]);
+  }, [sendMessage, workspaces]);
 
   /**
    * Delete a workspace (owner OR only member)

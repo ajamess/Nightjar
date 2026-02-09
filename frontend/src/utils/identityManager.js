@@ -833,6 +833,7 @@ export default {
     getLockTimeout,
     setLockTimeout,
     validatePin,
+    hashPin,
     createIdentity,
     unlockIdentity,
     getUnlockedIdentity,

@@ -537,12 +537,12 @@ async function persistUpdate(docName, update, origin) {
 }
 
 async function loadPersistedData(docName, doc, key) {
-    if (DEBUG_MODE) console.log(`[Sidecar] Loading persisted data for document: ${docName}`);
+    console.log(`[Sidecar] Loading persisted data for document: ${docName}`);
     
     // Wait for database to be ready
     await dbReady;
     
-    if (DEBUG_MODE) console.log(`[Sidecar] DB range query starting for prefix: ${docName}:`);
+    console.log(`[Sidecar] DB range query starting for prefix: ${docName}:`);
     let count = 0;
     let errors = 0;
     let orphaned = 0;
@@ -668,6 +668,55 @@ async function loadDocumentList() {
     return documents;
 }
 
+// Cleanup orphan documents that have no valid workspaceId
+// This prevents old documents from polluting new workspaces
+async function cleanupOrphanDocuments() {
+    await metadataDbReady;
+    console.log('[Sidecar] Checking for orphan documents...');
+    
+    try {
+        // Get all documents and workspaces
+        const documents = await loadDocumentList();
+        const workspaces = await loadWorkspaceListInternal();
+        const validWorkspaceIds = new Set(workspaces.map(w => w.id));
+        
+        let deletedCount = 0;
+        for (const doc of documents) {
+            // Delete documents with no workspaceId or workspaceId that doesn't exist
+            if (!doc.workspaceId || !validWorkspaceIds.has(doc.workspaceId)) {
+                await metadataDb.del(`doc:${doc.id}`);
+                console.log(`[Sidecar] Deleted orphan document: ${doc.id} (${doc.name}) - workspace: ${doc.workspaceId || 'none'}`);
+                deletedCount++;
+            }
+        }
+        
+        if (deletedCount > 0) {
+            console.log(`[Sidecar] Cleaned up ${deletedCount} orphan documents`);
+        } else {
+            console.log('[Sidecar] No orphan documents found');
+        }
+    } catch (err) {
+        console.error('[Sidecar] Error cleaning up orphan documents:', err.message);
+    }
+}
+
+// Internal version of loadWorkspaceList that doesn't filter by identity
+// Used for orphan cleanup
+async function loadWorkspaceListInternal() {
+    await metadataDbReady;
+    const workspaces = [];
+    try {
+        for await (const [key, value] of metadataDb.iterator()) {
+            if (key.startsWith('workspace:')) {
+                workspaces.push(value);
+            }
+        }
+    } catch (err) {
+        console.error('[Sidecar] Error loading workspace list:', err);
+    }
+    return workspaces;
+}
+
 // Save document metadata
 async function saveDocumentMetadata(docId, metadata) {
     await metadataDbReady;
@@ -756,6 +805,119 @@ async function saveFolderMetadata(folderId, metadata) {
     }
 }
 
+// Delete folder metadata
+async function deleteFolderMetadata(folderId) {
+    await metadataDbReady;
+    
+    try {
+        await metadataDb.del(`folder:${folderId}`);
+        console.log(`[Sidecar] Deleted metadata for folder: ${folderId}`);
+    } catch (err) {
+        if (err.code === 'LEVEL_NOT_FOUND') {
+            console.log(`[Sidecar] Folder ${folderId} already deleted or not found`);
+            return;
+        }
+        console.error('[Sidecar] Failed to delete folder metadata:', err);
+        throw err;
+    }
+}
+
+// --- Yjs Folder Sync Functions ---
+// These ensure folder changes in LevelDB are also synced to Yjs for P2P sharing
+
+// Add folder to Yjs workspace-meta doc
+function addFolderToYjs(workspaceId, folder) {
+    const roomName = `workspace-meta:${workspaceId}`;
+    const doc = docs.get(roomName);
+    
+    if (!doc) {
+        console.log(`[Sidecar] Yjs doc not found for folder sync: ${roomName}`);
+        return false;
+    }
+    
+    try {
+        const yFolders = doc.getArray('folders');
+        
+        // Check if folder already exists
+        const existing = yFolders.toArray().find(f => f.id === folder.id);
+        if (existing) {
+            console.log(`[Sidecar] Folder ${folder.id} already in Yjs, skipping add`);
+            return true;
+        }
+        
+        yFolders.push([folder]);
+        console.log(`[Sidecar] Added folder ${folder.id} to Yjs for P2P sync`);
+        return true;
+    } catch (err) {
+        console.error(`[Sidecar] Failed to add folder to Yjs:`, err);
+        return false;
+    }
+}
+
+// Update folder in Yjs workspace-meta doc
+function updateFolderInYjs(workspaceId, folder) {
+    const roomName = `workspace-meta:${workspaceId}`;
+    const doc = docs.get(roomName);
+    
+    if (!doc) {
+        console.log(`[Sidecar] Yjs doc not found for folder update: ${roomName}`);
+        return false;
+    }
+    
+    try {
+        const yFolders = doc.getArray('folders');
+        const folders = yFolders.toArray();
+        const index = folders.findIndex(f => f.id === folder.id);
+        
+        if (index === -1) {
+            // Folder not found, add it
+            yFolders.push([folder]);
+            console.log(`[Sidecar] Folder ${folder.id} not found, added to Yjs`);
+            return true;
+        }
+        
+        // Update by removing and re-adding at same position
+        doc.transact(() => {
+            yFolders.delete(index, 1);
+            yFolders.insert(index, [folder]);
+        });
+        console.log(`[Sidecar] Updated folder ${folder.id} in Yjs for P2P sync`);
+        return true;
+    } catch (err) {
+        console.error(`[Sidecar] Failed to update folder in Yjs:`, err);
+        return false;
+    }
+}
+
+// Remove folder from Yjs workspace-meta doc
+function removeFolderFromYjs(workspaceId, folderId) {
+    const roomName = `workspace-meta:${workspaceId}`;
+    const doc = docs.get(roomName);
+    
+    if (!doc) {
+        console.log(`[Sidecar] Yjs doc not found for folder removal: ${roomName}`);
+        return false;
+    }
+    
+    try {
+        const yFolders = doc.getArray('folders');
+        const folders = yFolders.toArray();
+        const index = folders.findIndex(f => f.id === folderId);
+        
+        if (index === -1) {
+            console.log(`[Sidecar] Folder ${folderId} not found in Yjs`);
+            return true; // Not an error, folder already removed
+        }
+        
+        yFolders.delete(index, 1);
+        console.log(`[Sidecar] Removed folder ${folderId} from Yjs for P2P sync`);
+        return true;
+    } catch (err) {
+        console.error(`[Sidecar] Failed to remove folder from Yjs:`, err);
+        return false;
+    }
+}
+
 // --- Workspace Metadata Functions ---
 
 // Load all workspaces
@@ -779,11 +941,24 @@ async function loadWorkspaceList() {
         for await (const [key, value] of metadataDb.iterator()) {
             console.log(`[Sidecar] DB key: ${key}`);
             if (key.startsWith('workspace:')) {
-                console.log(`[Sidecar] Found workspace: ${value?.name || value?.id}, ownerPublicKey: ${value?.ownerPublicKey}`);
+                // Determine the owner of this workspace
+                // Check multiple fields for compatibility: ownerPublicKey, owners[0], createdBy
+                const workspaceOwner = value?.ownerPublicKey || value?.owners?.[0] || value?.createdBy;
+                // For joined workspaces, check if this identity joined it
+                const joinedByMe = value?.joinedBy === currentPublicKey;
                 
-                // Only include workspaces owned by current identity
-                // If no ownerPublicKey (legacy), include it for backward compatibility
-                if (!value?.ownerPublicKey || value.ownerPublicKey === currentPublicKey) {
+                console.log(`[Sidecar] Found workspace: ${value?.name || value?.id}, owner: ${workspaceOwner}, joinedBy: ${value?.joinedBy}`);
+                
+                // Include workspace if:
+                // 1. Current identity owns it (created it)
+                // 2. Current identity joined it
+                // 3. Legacy workspace with no owner info (backward compatibility - very old workspaces)
+                // NOTE: We removed the "local-user" legacy fallback as it incorrectly showed
+                // old workspaces to newly created identities after factory reset
+                const isOwner = workspaceOwner === currentPublicKey;
+                const isLegacy = !workspaceOwner && !value?.joinedBy;
+                
+                if (isOwner || joinedByMe || isLegacy) {
                     workspaces.push(value);
                     
                     // Preload encryption key for workspace-meta document if available
@@ -809,7 +984,7 @@ async function loadWorkspaceList() {
                         }
                     }
                 } else {
-                    console.log(`[Sidecar] Skipping workspace owned by different identity: ${value.ownerPublicKey}`);
+                    console.log(`[Sidecar] Skipping workspace - belongs to different identity (owner: ${workspaceOwner}, joined: ${value?.joinedBy})`);
                 }
             }
         }
@@ -890,6 +1065,14 @@ async function saveWorkspaceMetadata(workspaceId, metadata) {
     try {
         const key = `workspace:${workspaceId}`;
         console.log(`[Sidecar] Saving workspace with key: ${key}`);
+        
+        // Ensure ownerPublicKey is set for proper identity filtering
+        // For created workspaces, use owners[0] or createdBy if ownerPublicKey not set
+        if (!metadata.ownerPublicKey && !metadata.joinedBy) {
+            metadata.ownerPublicKey = metadata.owners?.[0] || metadata.createdBy;
+            console.log(`[Sidecar] Set ownerPublicKey from owners/createdBy: ${metadata.ownerPublicKey}`);
+        }
+        
         await metadataDb.put(key, metadata);
         console.log(`[Sidecar] Saved metadata for workspace: ${workspaceId}`);
         
@@ -898,6 +1081,23 @@ async function saveWorkspaceMetadata(workspaceId, metadata) {
         console.log(`[Sidecar] Verified workspace saved: ${saved?.name}`);
     } catch (err) {
         console.error('[Sidecar] Failed to save workspace metadata:', err);
+        throw err;
+    }
+}
+
+// Load single workspace metadata by ID
+async function loadWorkspaceMetadata(workspaceId) {
+    await metadataDbReady;
+    
+    try {
+        const key = `workspace:${workspaceId}`;
+        const workspace = await metadataDb.get(key);
+        return workspace;
+    } catch (err) {
+        if (err.code === 'LEVEL_NOT_FOUND') {
+            return null;
+        }
+        console.error('[Sidecar] Failed to load workspace metadata:', err);
         throw err;
     }
 }
@@ -1135,8 +1335,12 @@ async function handleMetadataMessage(ws, parsed) {
                     
                     // If this document is already loaded, reload its data with the correct key
                     if (docs.has(sanitizedDocName)) {
+                        console.log(`[Sidecar] Doc exists for ${sanitizedDocName}, loading persisted data now...`);
                         const doc = docs.get(sanitizedDocName);
-                        await loadPersistedData(sanitizedDocName, doc, key);
+                        const result = await loadPersistedData(sanitizedDocName, doc, key);
+                        console.log(`[Sidecar] Loaded persisted data result:`, result);
+                    } else {
+                        console.log(`[Sidecar] Doc does not exist yet for ${sanitizedDocName}, will load when created`);
                     }
                     
                     // Flush any pending updates for this document
@@ -1180,8 +1384,17 @@ async function handleMetadataMessage(ws, parsed) {
             break;
         
         case 'list-documents':
-            const documents = await loadDocumentList();
-            ws.send(JSON.stringify({ type: 'document-list', documents }));
+            // Documents are workspace-scoped - filter by workspaceId if provided
+            const listDocsWsId = workspaceId || parsed.payload?.workspaceId;
+            let allDocuments = await loadDocumentList();
+            let filteredDocuments = allDocuments;
+            if (listDocsWsId) {
+                filteredDocuments = allDocuments.filter(d => d.workspaceId === listDocsWsId);
+                console.log(`[Sidecar] Filtered to ${filteredDocuments.length} documents for workspace: ${listDocsWsId}`);
+            } else {
+                console.log(`[Sidecar] Returning all ${allDocuments.length} documents (no workspace filter)`);
+            }
+            ws.send(JSON.stringify({ type: 'document-list', documents: filteredDocuments }));
             break;
         
         case 'toggle-tor':
@@ -1234,6 +1447,14 @@ async function handleMetadataMessage(ws, parsed) {
             console.log('[Sidecar] create-workspace received:', wsData?.id, wsData?.name);
             if (wsData) {
                 try {
+                    // Ensure ownerPublicKey is set to current identity's public key
+                    // This is critical for workspace filtering on restart
+                    const creatorIdentity = identity.loadIdentity();
+                    if (creatorIdentity?.publicKeyBase62) {
+                        wsData.ownerPublicKey = creatorIdentity.publicKeyBase62;
+                        console.log(`[Sidecar] Set ownerPublicKey to current identity: ${creatorIdentity.publicKeyBase62.slice(0, 16)}...`);
+                    }
+                    
                     await saveWorkspaceMetadata(wsData.id, wsData);
                     console.log('[Sidecar] Workspace saved successfully');
                     
@@ -1283,14 +1504,32 @@ async function handleMetadataMessage(ws, parsed) {
         
         case 'update-workspace':
             const updateWsData = workspace || parsed.payload?.workspace;
-            if (updateWsData) {
-                try {
-                    await saveWorkspaceMetadata(updateWsData.id, updateWsData);
-                    ws.send(JSON.stringify({ type: 'workspace-updated', workspace: updateWsData }));
-                } catch (err) {
-                    console.error('[Sidecar] Failed to update workspace:', err);
-                    ws.send(JSON.stringify({ type: 'error', message: err.message }));
+            const updateWsId = workspaceId || parsed.payload?.workspaceId;
+            const partialUpdates = updates || parsed.payload?.updates;
+            
+            try {
+                if (updateWsData) {
+                    // Full workspace object provided - merge with existing to preserve fields like joinedBy
+                    const existing = await loadWorkspaceMetadata(updateWsData.id);
+                    const merged = { ...existing, ...updateWsData };
+                    await saveWorkspaceMetadata(updateWsData.id, merged);
+                    ws.send(JSON.stringify({ type: 'workspace-updated', workspace: merged }));
+                } else if (updateWsId && partialUpdates) {
+                    // Partial update via workspaceId + updates
+                    const existing = await loadWorkspaceMetadata(updateWsId);
+                    if (!existing) {
+                        ws.send(JSON.stringify({ type: 'error', message: 'Workspace not found' }));
+                        break;
+                    }
+                    const merged = { ...existing, ...partialUpdates };
+                    await saveWorkspaceMetadata(updateWsId, merged);
+                    ws.send(JSON.stringify({ type: 'workspace-updated', workspace: merged }));
+                } else {
+                    ws.send(JSON.stringify({ type: 'error', message: 'No workspace data provided' }));
                 }
+            } catch (err) {
+                console.error('[Sidecar] Failed to update workspace:', err);
+                ws.send(JSON.stringify({ type: 'error', message: err.message }));
             }
             break;
         
@@ -1313,6 +1552,13 @@ async function handleMetadataMessage(ws, parsed) {
             if (joinWsData) {
                 try {
                     console.log('[Sidecar] join-workspace: Processing workspace', joinWsData.id);
+                    
+                    // Get current identity to track who joined this workspace
+                    const joiningIdentity = identity.loadIdentity();
+                    if (joiningIdentity?.publicKeyBase62) {
+                        joinWsData.joinedBy = joiningIdentity.publicKeyBase62;
+                        console.log(`[Sidecar] join-workspace: Marked as joined by ${joiningIdentity.publicKeyBase62.slice(0, 16)}...`);
+                    }
                     
                     // Save or update workspace metadata
                     await saveWorkspaceMetadata(joinWsData.id, joinWsData);
@@ -1461,6 +1707,12 @@ async function handleMetadataMessage(ws, parsed) {
             if (folderData) {
                 try {
                     await saveFolderMetadata(folderData.id, folderData);
+                    
+                    // CRITICAL: Also sync to Yjs for P2P sharing
+                    if (folderData.workspaceId) {
+                        addFolderToYjs(folderData.workspaceId, folderData);
+                    }
+                    
                     ws.send(JSON.stringify({ type: 'folder-created', folder: folderData }));
                 } catch (err) {
                     console.error('[Sidecar] Failed to create folder:', err);
@@ -1474,6 +1726,12 @@ async function handleMetadataMessage(ws, parsed) {
             if (updateFolderData) {
                 try {
                     await saveFolderMetadata(updateFolderData.id, updateFolderData);
+                    
+                    // CRITICAL: Also sync to Yjs for P2P sharing
+                    if (updateFolderData.workspaceId) {
+                        updateFolderInYjs(updateFolderData.workspaceId, updateFolderData);
+                    }
+                    
                     ws.send(JSON.stringify({ type: 'folder-updated', folder: updateFolderData }));
                 } catch (err) {
                     console.error('[Sidecar] Failed to update folder:', err);
@@ -1484,9 +1742,16 @@ async function handleMetadataMessage(ws, parsed) {
         
         case 'delete-folder':
             const deleteFolderId = folderId || parsed.payload?.folderId;
+            const deleteFolderWsId = workspaceId || parsed.payload?.workspaceId;
             if (deleteFolderId) {
                 try {
                     await deleteFolderMetadata(deleteFolderId);
+                    
+                    // CRITICAL: Also remove from Yjs for P2P sharing
+                    if (deleteFolderWsId) {
+                        removeFolderFromYjs(deleteFolderWsId, deleteFolderId);
+                    }
+                    
                     ws.send(JSON.stringify({ type: 'folder-deleted', folderId: deleteFolderId }));
                 } catch (err) {
                     console.error('[Sidecar] Failed to delete folder:', err);
@@ -1849,6 +2114,249 @@ async function handleMetadataMessage(ws, parsed) {
             }
             break;
         
+        // --- Workspace Peer Status ---
+        case 'get-workspace-peer-status':
+            try {
+                const statusWsId = workspaceId || parsed.payload?.workspaceId;
+                if (!statusWsId) {
+                    ws.send(JSON.stringify({
+                        type: 'workspace-peer-status',
+                        error: 'No workspace ID provided'
+                    }));
+                    return;
+                }
+                
+                // Get workspace metadata for lastKnownPeers
+                const wsMetadata = await loadWorkspaceMetadata(statusWsId);
+                const lastKnownPeers = wsMetadata?.lastKnownPeers || [];
+                
+                // Count active peers for this workspace's topic
+                let activePeers = 0;
+                const topicHash = getWorkspaceTopicHex(statusWsId);
+                
+                if (p2pBridge.isInitialized && p2pBridge.hyperswarm) {
+                    const connections = p2pBridge.hyperswarm.connections;
+                    if (connections) {
+                        for (const [, conn] of connections) {
+                            if (conn.authenticated && conn.topics && conn.topics.has(topicHash)) {
+                                activePeers++;
+                            }
+                        }
+                    }
+                }
+                
+                // Check relay connection status
+                const relayConnected = relayBridge && relayBridge.connections.has(`workspace-meta:${statusWsId}`);
+                
+                // Cap the total seen peers at MAX_SEEN_PEERS_CAP (100)
+                const MAX_SEEN_PEERS_CAP = 100;
+                const totalSeenPeers = Math.min(lastKnownPeers.length, MAX_SEEN_PEERS_CAP);
+                
+                ws.send(JSON.stringify({
+                    type: 'workspace-peer-status',
+                    workspaceId: statusWsId,
+                    activePeers,
+                    totalSeenPeers,
+                    relayConnected,
+                    p2pInitialized
+                }));
+            } catch (err) {
+                console.error('[Sidecar] get-workspace-peer-status error:', err);
+                ws.send(JSON.stringify({
+                    type: 'workspace-peer-status',
+                    error: err.message
+                }));
+            }
+            break;
+        
+        case 'request-peer-sync':
+            try {
+                const syncWsId = workspaceId || parsed.payload?.workspaceId;
+                if (!syncWsId) {
+                    ws.send(JSON.stringify({
+                        type: 'peer-sync-result',
+                        success: false,
+                        error: 'No workspace ID provided'
+                    }));
+                    return;
+                }
+                
+                console.log(`[Sidecar] Manual peer sync requested for workspace ${syncWsId.slice(0, 8)}...`);
+                
+                const topicHash = getWorkspaceTopicHex(syncWsId);
+                let syncAttempts = 0;
+                let syncSuccess = false;
+                
+                // Try to sync from connected peers
+                if (p2pBridge.isInitialized && p2pBridge.hyperswarm) {
+                    const connections = p2pBridge.hyperswarm.connections;
+                    if (connections) {
+                        for (const [peerKey, conn] of connections) {
+                            if (conn.authenticated && conn.topics && conn.topics.has(topicHash)) {
+                                try {
+                                    p2pBridge.hyperswarm.sendSyncRequest(peerKey, topicHash);
+                                    syncAttempts++;
+                                    syncSuccess = true;
+                                    console.log(`[Sidecar] Sent sync request to peer ${peerKey.slice(0, 16)}...`);
+                                } catch (e) {
+                                    console.warn(`[Sidecar] Failed to send sync request to ${peerKey.slice(0, 16)}:`, e.message);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Try relay as fallback if no direct peers
+                if (syncAttempts === 0 && relayBridge) {
+                    const roomName = `workspace-meta:${syncWsId}`;
+                    const doc = docs.get(roomName);
+                    if (doc) {
+                        try {
+                            await relayBridge.connect(roomName, doc);
+                            syncSuccess = true;
+                            console.log(`[Sidecar] Connected to relay for ${roomName}`);
+                        } catch (e) {
+                            console.warn(`[Sidecar] Relay connection failed:`, e.message);
+                        }
+                    }
+                }
+                
+                // Try to connect to last known peers if no current connections
+                if (syncAttempts === 0) {
+                    const wsMetadata = await loadWorkspaceMetadata(syncWsId);
+                    const lastKnownPeers = wsMetadata?.lastKnownPeers || [];
+                    
+                    for (const peer of lastKnownPeers.slice(0, 5)) { // Try first 5
+                        if (peer.publicKey) {
+                            try {
+                                await p2pBridge.connectToPeer(peer.publicKey);
+                                // Queue sync request for when identity is verified
+                                let pendingTopics = pendingSyncRequests.get(peer.publicKey);
+                                if (!pendingTopics) {
+                                    pendingTopics = new Set();
+                                    pendingSyncRequests.set(peer.publicKey, pendingTopics);
+                                }
+                                pendingTopics.add(topicHash);
+                                syncAttempts++;
+                            } catch (e) {
+                                // Peer may be offline
+                            }
+                        }
+                    }
+                }
+                
+                ws.send(JSON.stringify({
+                    type: 'peer-sync-result',
+                    success: syncSuccess || syncAttempts > 0,
+                    syncAttempts,
+                    message: syncSuccess 
+                        ? `Sync requested from ${syncAttempts} peer(s)` 
+                        : syncAttempts > 0 
+                            ? `Connecting to ${syncAttempts} peer(s)...`
+                            : 'No peers available'
+                }));
+            } catch (err) {
+                console.error('[Sidecar] request-peer-sync error:', err);
+                ws.send(JSON.stringify({
+                    type: 'peer-sync-result',
+                    success: false,
+                    error: err.message
+                }));
+            }
+            break;
+        
+        // --- Factory Reset: Delete ALL local data ---
+        case 'factory-reset':
+            try {
+                console.log('[Sidecar] FACTORY RESET requested - deleting all local data...');
+                
+                // 1. Close P2P connections
+                if (p2pBridge.isInitialized) {
+                    try {
+                        await p2pBridge.destroy();
+                        console.log('[Sidecar] P2P bridge destroyed');
+                    } catch (e) {
+                        console.warn('[Sidecar] Error destroying P2P bridge:', e.message);
+                    }
+                }
+                
+                // 2. Close mesh participant
+                if (meshParticipant) {
+                    try {
+                        await meshParticipant.close();
+                        console.log('[Sidecar] Mesh participant closed');
+                    } catch (e) {
+                        console.warn('[Sidecar] Error closing mesh:', e.message);
+                    }
+                }
+                
+                // 3. Clear all Yjs docs in memory
+                docs.clear();
+                console.log('[Sidecar] In-memory Yjs docs cleared');
+                
+                // 4. Clear the main document database
+                console.log('[Sidecar] Clearing main document database...');
+                const keysToDelete = [];
+                for await (const key of db.keys()) {
+                    keysToDelete.push(key);
+                }
+                for (const key of keysToDelete) {
+                    await db.del(key);
+                }
+                console.log(`[Sidecar] Deleted ${keysToDelete.length} entries from document DB`);
+                
+                // 5. Clear the metadata database
+                console.log('[Sidecar] Clearing metadata database...');
+                await metadataDbReady;
+                const metaKeysToDelete = [];
+                for await (const key of metadataDb.keys()) {
+                    metaKeysToDelete.push(key);
+                }
+                for (const key of metaKeysToDelete) {
+                    await metadataDb.del(key);
+                }
+                console.log(`[Sidecar] Deleted ${metaKeysToDelete.length} entries from metadata DB`);
+                
+                // 6. Delete identity files
+                const identityDir = path.join(USER_DATA_PATH, 'identity');
+                const fs = require('fs');
+                if (fs.existsSync(identityDir)) {
+                    const files = fs.readdirSync(identityDir);
+                    for (const file of files) {
+                        try {
+                            fs.unlinkSync(path.join(identityDir, file));
+                            console.log(`[Sidecar] Deleted identity file: ${file}`);
+                        } catch (e) {
+                            console.warn(`[Sidecar] Could not delete ${file}:`, e.message);
+                        }
+                    }
+                }
+                
+                // 7. Clear document encryption keys from memory
+                documentKeys.clear();
+                console.log('[Sidecar] Document encryption keys cleared');
+                
+                // 8. Reset P2P initialized flag
+                p2pInitialized = false;
+                console.log('[Sidecar] P2P state reset');
+                
+                console.log('[Sidecar] FACTORY RESET complete');
+                
+                ws.send(JSON.stringify({
+                    type: 'factory-reset-complete',
+                    success: true,
+                    message: 'All local data has been deleted. Please restart the application.'
+                }));
+            } catch (err) {
+                console.error('[Sidecar] Factory reset error:', err);
+                ws.send(JSON.stringify({
+                    type: 'factory-reset-complete',
+                    success: false,
+                    error: err.message
+                }));
+            }
+            break;
+        
         default:
             // Unknown message type - log but don't error
             console.log(`[Sidecar] Unknown message type: ${type}`);
@@ -2066,6 +2574,9 @@ async function startServers() {
         console.log('[Sidecar] uint8arrays loaded, initializing document keys...');
         initializeDocumentKeys();
         console.log('[Sidecar] Document keys initialized');
+        
+        // Cleanup orphan documents after keys are initialized
+        return cleanupOrphanDocuments();
     }).catch(err => {
         console.warn('[Sidecar] uint8arrays/document keys init warning:', err.message);
     });
@@ -2269,11 +2780,67 @@ async function handleSyncStateRequest(peerId, topicHex) {
         const messageStr = JSON.stringify(message);
         p2pBridge.hyperswarm.sendSyncState(peerId, topicHex, messageStr);
         
-        console.log(`[P2P-SYNC-STATE] ✓ Sent full state to ${peerId.slice(0, 16)}...`);
+        console.log(`[P2P-SYNC-STATE] ✓ Sent workspace-meta state to ${peerId.slice(0, 16)}...`);
+        
+        // CRITICAL: Also sync all document contents for this workspace
+        // This ensures joiners get the actual document data, not just the list
+        await syncAllDocumentsForWorkspace(peerId, topicHex, workspaceId, doc);
+        
         console.log(`[P2P-SYNC-STATE] ==========================================`);
     } catch (err) {
         console.error(`[P2P-SYNC-STATE] ✗ Error:`, err.message);
         console.log(`[P2P-SYNC-STATE] ==========================================`);
+    }
+}
+
+// Sync all document contents for a workspace to a peer
+async function syncAllDocumentsForWorkspace(peerId, topicHex, workspaceId, metaDoc) {
+    try {
+        // Get the documents array from workspace-meta
+        const yDocuments = metaDoc.getArray('documents');
+        const documents = yDocuments.toArray();
+        
+        if (documents.length === 0) {
+            console.log(`[P2P-SYNC-STATE] No documents to sync for workspace ${workspaceId.slice(0, 16)}...`);
+            return;
+        }
+        
+        console.log(`[P2P-SYNC-STATE] Syncing ${documents.length} document(s) content for workspace`);
+        
+        for (const docMeta of documents) {
+            const docId = docMeta.id;
+            if (!docId) continue;
+            
+            let contentDoc = docs.get(docId);
+            
+            // If doc not in memory, try to load from persistence
+            if (!contentDoc) {
+                const key = getKeyForDocument(docId);
+                if (key) {
+                    contentDoc = getYDoc(docId);
+                    await loadPersistedData(docId, contentDoc, key);
+                    console.log(`[P2P-SYNC-STATE] Loaded document ${docId} from persistence`);
+                } else {
+                    console.log(`[P2P-SYNC-STATE] No key for document ${docId}, skipping`);
+                    continue;
+                }
+            }
+            
+            // Encode and send the document content
+            const docUpdate = Y.encodeStateAsUpdate(contentDoc);
+            if (docUpdate.length > 2) { // Skip empty docs (Yjs empty state is 2 bytes)
+                const docMessage = {
+                    roomName: docId,
+                    update: Buffer.from(docUpdate).toString('base64')
+                };
+                p2pBridge.hyperswarm.sendSyncState(peerId, topicHex, JSON.stringify(docMessage));
+                console.log(`[P2P-SYNC-STATE] ✓ Sent document ${docId} (${docUpdate.length} bytes)`);
+            }
+        }
+        
+        console.log(`[P2P-SYNC-STATE] ✓ Finished syncing all document contents`);
+    } catch (err) {
+        console.error(`[P2P-SYNC-STATE] Error syncing documents:`, err.message);
     }
 }
 
@@ -2312,10 +2879,33 @@ function handleSyncStateReceived(peerId, topicHex, data) {
             console.log(`[P2P-SYNC-STATE] Created new WSSharedDoc for: ${roomName}`);
         }
         
+        // For document content (doc-xxx), get the encryption key from workspace-meta
+        if (roomName.startsWith('doc-')) {
+            const metaRoomName = `workspace-meta:${workspaceId}`;
+            const metaDoc = docs.get(metaRoomName);
+            if (metaDoc) {
+                const yDocuments = metaDoc.getArray('documents');
+                const documents = yDocuments.toArray();
+                const docMeta = documents.find(d => d.id === roomName);
+                if (docMeta && docMeta.encryptionKey) {
+                    // Set the key for this document so it can be persisted
+                    documentKeys.set(roomName, docMeta.encryptionKey);
+                    console.log(`[P2P-SYNC-STATE] Set encryption key for document ${roomName}`);
+                }
+            }
+        }
+        
         // Apply the full state update with 'p2p' origin to prevent re-broadcasting
         Y.applyUpdate(doc, updateData, 'p2p');
         
         console.log(`[P2P-SYNC-STATE] ✓ Applied full state to ${roomName}`);
+        
+        // Also persist the update if we have a key
+        const key = getKeyForDocument(roomName);
+        if (key) {
+            persistUpdate(roomName, updateData, 'p2p');
+            console.log(`[P2P-SYNC-STATE] ✓ Persisted update for ${roomName}`);
+        }
         
         // Also broadcast to local WebSocket clients so they get the sync
         const wss = require('y-websocket/bin/utils').docs;
@@ -2364,6 +2954,21 @@ function handleP2PSyncMessage(peerId, topicHex, data) {
         }
         
         console.log(`[P2P-SYNC] Update size: ${updateData?.length} bytes`);
+
+        // For document content (doc-xxx), get the encryption key from workspace-meta
+        if (roomName.startsWith('doc-')) {
+            const metaRoomName = `workspace-meta:${workspaceId}`;
+            const metaDoc = docs.get(metaRoomName);
+            if (metaDoc) {
+                const yDocuments = metaDoc.getArray('documents');
+                const documents = yDocuments.toArray();
+                const docMeta = documents.find(d => d.id === roomName);
+                if (docMeta && docMeta.encryptionKey && !documentKeys.has(roomName)) {
+                    documentKeys.set(roomName, docMeta.encryptionKey);
+                    console.log(`[P2P-SYNC] Set encryption key for document ${roomName}`);
+                }
+            }
+        }
         
         // Get or create the Yjs doc for the specified room
         let doc = docs.get(roomName);
@@ -2378,6 +2983,13 @@ function handleP2PSyncMessage(peerId, topicHex, data) {
         Y.applyUpdate(doc, updateData, 'p2p');
         
         console.log(`[P2P-SYNC] âœ“ Successfully applied update to ${roomName}`);
+        
+        // Also persist the update if we have a key
+        const key = getKeyForDocument(roomName);
+        if (key) {
+            persistUpdate(roomName, updateData, 'p2p');
+            console.log(`[P2P-SYNC] Persisted update for ${roomName}`);
+        }
         console.log(`[P2P-SYNC] ==========================================`);
     } catch (err) {
         console.error('[P2P-SYNC] âœ— Error handling sync:', err.message);
@@ -2588,16 +3200,35 @@ async function autoRejoinWorkspaces() {
                     // Register for Yjs P2P bridging
                     registerWorkspaceTopic(ws.id, canonicalTopicHash);
                     
-                    // Try to connect to last known peers
+                    // Try to connect to last known peers and request fresh sync
                     if (ws.lastKnownPeers && Array.isArray(ws.lastKnownPeers)) {
                         for (const peer of ws.lastKnownPeers) {
                             if (peer.publicKey) {
                                 try {
                                     await p2pBridge.connectToPeer(peer.publicKey);
+                                    // Queue sync request for when identity is verified
+                                    let pendingTopics = pendingSyncRequests.get(peer.publicKey);
+                                    if (!pendingTopics) {
+                                        pendingTopics = new Set();
+                                        pendingSyncRequests.set(peer.publicKey, pendingTopics);
+                                    }
+                                    pendingTopics.add(canonicalTopicHash);
+                                    console.log(`[Sidecar] Queued fresh sync request for peer ${peer.publicKey.slice(0, 16)}...`);
                                 } catch (e) {
                                     // Peer may be offline, continue
                                 }
                             }
+                        }
+                    }
+                    
+                    // Also try relay as fallback for fresh sync
+                    if (relayBridge) {
+                        const roomName = `workspace-meta:${ws.id}`;
+                        const doc = docs.get(roomName);
+                        if (doc) {
+                            relayBridge.connect(roomName, doc).catch(err => {
+                                console.warn(`[Sidecar] Relay connection for ${ws.id.slice(0, 8)}... failed:`, err.message);
+                            });
                         }
                     }
                 } catch (e) {
@@ -2896,7 +3527,7 @@ docs.on('doc-added', async (doc, docName) => {
         
         // Listen for updates and persist them with document name prefix
         const updateHandler = (update, origin) => {
-            console.log(`[Sidecar] >>> Update handler fired for ${docName}`);
+            console.log(`[Sidecar] >>> Update handler fired for ${docName}, origin: ${origin?.constructor?.name || origin}, update size: ${update?.length}`);
             // Don't re-persist updates that came from persistence or P2P
             if (origin === 'persistence' || origin === 'p2p') {
                 console.log(`[Sidecar] Skipping update with origin: ${origin}`);
@@ -2907,12 +3538,13 @@ docs.on('doc-added', async (doc, docName) => {
             
             const key = getKeyForDocument(docName);
             if (key) {
+                console.log(`[Sidecar] Persisting update for ${docName}...`);
                 persistUpdate(docName, update, origin);
                 
                 // Also broadcast to P2P if this document belongs to a workspace
-                // Extract document ID from docName (format is "doc:123abc")
-                if (docName.startsWith('doc:')) {
-                    const docId = docName.slice(4);
+                // Extract document ID from docName (format is "doc-123abc" with dash, not colon)
+                if (docName.startsWith('doc-')) {
+                    const docId = docName; // docId is the full docName like "doc-123abc"
                     // Find the workspace this document belongs to
                     loadDocumentList().then(documents => {
                         const docMeta = documents.find(d => d.id === docId);
@@ -2932,8 +3564,9 @@ docs.on('doc-added', async (doc, docName) => {
                 }
             } else {
                 // Queue the update for when key is available
-                console.log(`[Sidecar] Queuing update for ${docName} (no key yet)`);
+                console.log(`[Sidecar] Queuing update for ${docName} (no key yet), queue size before: ${pendingUpdates.get(docName)?.length || 0}`);
                 pendingUpdates.get(docName).push({ update, origin, timestamp: Date.now() });
+                console.log(`[Sidecar] Queue size after: ${pendingUpdates.get(docName)?.length}`);
             }
         };
         

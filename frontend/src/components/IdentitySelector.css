@@ -351,6 +351,18 @@
   border-color: #6366f1;
 }
 
+.identity-selector__delete-pin {
+  margin-bottom: 24px;
+}
+
+.identity-selector__delete-pin label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #374151;
+  text-align: center;
+}
+
 .identity-selector__delete-actions {
   display: flex;
   gap: 12px;
