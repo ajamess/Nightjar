@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import * as Y from 'yjs';
+import { getChangelog, getChangelogCount, getMaxEntriesSetting, setMaxEntriesSetting, clearChangelog, loadChangelogSync, saveChangelogSync } from '../utils/changelogStore';
 import './Changelog.css';
 
 // Changelog entry structure
@@ -9,45 +10,22 @@ import './Changelog.css';
 //     author: { name, color, icon },
 //     type: 'edit' | 'add' | 'delete',
 //     summary: string,
-//     snapshot: Uint8Array (encoded ydoc state for rollback)
+//     documentType: 'text' | 'sheet' | 'kanban',
+//     stateSnapshot: base64 string (encoded ydoc state for rollback)
 // }
-
-// Storage key prefix for changelog
-const CHANGELOG_STORAGE_KEY = 'Nightjar-changelog-';
-
-// Convert Uint8Array to base64 for storage
-const uint8ToBase64 = (arr) => {
-    return btoa(String.fromCharCode.apply(null, arr));
-};
 
 // Convert base64 back to Uint8Array
 const base64ToUint8 = (str) => {
-    const binary = atob(str);
-    const arr = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-        arr[i] = binary.charCodeAt(i);
-    }
-    return arr;
-};
-
-// Load changelog from localStorage
-const loadChangelog = (docId) => {
     try {
-        const stored = localStorage.getItem(CHANGELOG_STORAGE_KEY + docId);
-        return stored ? JSON.parse(stored) : [];
+        const binary = atob(str);
+        const arr = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            arr[i] = binary.charCodeAt(i);
+        }
+        return arr;
     } catch (e) {
-        console.error('Failed to load changelog:', e);
-        return [];
-    }
-};
-
-// Save changelog to localStorage (keep last 50 entries - snapshots are larger)
-const saveChangelog = (docId, changelog) => {
-    try {
-        const trimmed = changelog.slice(-50);
-        localStorage.setItem(CHANGELOG_STORAGE_KEY + docId, JSON.stringify(trimmed));
-    } catch (e) {
-        console.error('Failed to save changelog:', e);
+        console.error('Failed to decode base64:', e);
+        return null;
     }
 };
 
@@ -213,9 +191,29 @@ const ChangelogPanel = ({
     currentUser 
 }) => {
     const [changelog, setChangelog] = useState([]);
+    const [totalCount, setTotalCount] = useState(0);
     const [selectedEntry, setSelectedEntry] = useState(null);
+    const [selectedIndex, setSelectedIndex] = useState(null); // For timeline slider
     const [diff, setDiff] = useState([]);
     const [showConfirmRollback, setShowConfirmRollback] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
+    const [maxEntries, setMaxEntries] = useState(0); // 0 = unlimited
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Load changelog from IndexedDB
+    const loadChangelogAsync = useCallback(async () => {
+        if (!docId) return;
+        setIsLoading(true);
+        try {
+            const entries = await getChangelog(docId, { newestFirst: true });
+            const count = await getChangelogCount(docId);
+            setChangelog(entries);
+            setTotalCount(count);
+        } catch (e) {
+            console.error('Failed to load changelog:', e);
+        }
+        setIsLoading(false);
+    }, [docId]);
 
     // Handle escape key to close
     useEffect(() => {
@@ -225,6 +223,8 @@ const ChangelogPanel = ({
             if (e.key === 'Escape') {
                 if (showConfirmRollback) {
                     setShowConfirmRollback(false);
+                } else if (showSettings) {
+                    setShowSettings(false);
                 } else {
                     onClose();
                 }
@@ -233,35 +233,30 @@ const ChangelogPanel = ({
         
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose, showConfirmRollback]);
+    }, [isOpen, onClose, showConfirmRollback, showSettings]);
 
-    // Load changelog when opening or when docId changes
-    useEffect(() => {
-        if (docId) {
-            setChangelog(loadChangelog(docId));
-        }
-    }, [docId]);
-
-    // Refresh changelog periodically when open (to pick up new entries from the App-level observer)
+    // Load settings and changelog when opening
     useEffect(() => {
         if (!isOpen || !docId) return;
         
-        // Reload immediately when opening
-        setChangelog(loadChangelog(docId));
+        // Load settings
+        getMaxEntriesSetting().then(setMaxEntries);
         
-        // Poll for new entries every second while open
-        const interval = setInterval(() => {
-            setChangelog(loadChangelog(docId));
-        }, 1000);
+        // Load changelog immediately
+        loadChangelogAsync();
+        
+        // Poll for new entries every 2 seconds while open
+        const interval = setInterval(loadChangelogAsync, 2000);
         
         return () => clearInterval(interval);
-    }, [isOpen, docId]);
+    }, [isOpen, docId, loadChangelogAsync]);
 
     // Show diff for selected entry
     useEffect(() => {
         if (selectedEntry) {
-            const prevSnapshot = selectedEntry.previousTextSnapshot || '';
-            const currentSnapshot = selectedEntry.textSnapshot || selectedEntry.snapshot || '';
+            // Use contentSnapshot (new format) or fall back to textSnapshot (old format)
+            const prevSnapshot = selectedEntry.previousContentSnapshot || selectedEntry.previousTextSnapshot || '';
+            const currentSnapshot = selectedEntry.contentSnapshot || selectedEntry.textSnapshot || '';
             const diffResult = computeDiff(prevSnapshot, currentSnapshot);
             setDiff(diffResult);
         } else {
@@ -269,18 +264,47 @@ const ChangelogPanel = ({
         }
     }, [selectedEntry]);
 
+    // Handle timeline slider change
+    const handleSliderChange = useCallback((e) => {
+        const index = parseInt(e.target.value, 10);
+        setSelectedIndex(index);
+        if (changelog[index]) {
+            setSelectedEntry(changelog[index]);
+        }
+    }, [changelog]);
+
+    // Handle selecting an entry from the list
+    const handleSelectEntry = useCallback((entry, index) => {
+        setSelectedEntry(entry);
+        setSelectedIndex(index);
+    }, []);
+
     const handleRollback = useCallback(() => {
         if (selectedEntry && onRollback && selectedEntry.stateSnapshot) {
-            onRollback(base64ToUint8(selectedEntry.stateSnapshot));
-            setShowConfirmRollback(false);
-            setSelectedEntry(null);
-        } else if (selectedEntry && onRollback && selectedEntry.textSnapshot) {
-            // Fallback for old entries that only have text
-            onRollback(selectedEntry.textSnapshot);
-            setShowConfirmRollback(false);
-            setSelectedEntry(null);
+            const stateBytes = base64ToUint8(selectedEntry.stateSnapshot);
+            if (stateBytes) {
+                onRollback(stateBytes);
+                setShowConfirmRollback(false);
+                setSelectedEntry(null);
+                setSelectedIndex(null);
+            }
         }
     }, [selectedEntry, onRollback]);
+
+    const handleSaveSettings = useCallback(async () => {
+        await setMaxEntriesSetting(maxEntries);
+        setShowSettings(false);
+    }, [maxEntries]);
+
+    const handleClearHistory = useCallback(async () => {
+        if (window.confirm('Are you sure you want to clear all changelog history for this document? This cannot be undone.')) {
+            await clearChangelog(docId);
+            setChangelog([]);
+            setTotalCount(0);
+            setSelectedEntry(null);
+            setSelectedIndex(null);
+        }
+    }, [docId]);
 
     const formatTime = (timestamp) => {
         const date = new Date(timestamp);
@@ -295,6 +319,10 @@ const ChangelogPanel = ({
         return date.toLocaleDateString();
     };
 
+    const formatFullTime = (timestamp) => {
+        return new Date(timestamp).toLocaleString();
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -303,82 +331,125 @@ const ChangelogPanel = ({
             <div className="changelog-panel" role="dialog" aria-modal="true" aria-label="Document changelog">
                 <div className="changelog-header">
                     <h3>📜 Changelog</h3>
-                    <button type="button" className="close-btn" onClick={onClose} title="Close" aria-label="Close changelog">×</button>
+                    <div className="header-actions">
+                        <button 
+                            type="button" 
+                            className="settings-btn" 
+                            onClick={() => setShowSettings(true)} 
+                            title="Settings"
+                            aria-label="Changelog settings"
+                        >
+                            ⚙️
+                        </button>
+                        <button type="button" className="close-btn" onClick={onClose} title="Close" aria-label="Close changelog">×</button>
+                    </div>
                 </div>
 
-            <div className="changelog-content">
-                <div className="changelog-list">
-                    {changelog.length === 0 ? (
-                        <div className="empty-state">
-                            <p>No changes recorded yet</p>
-                            <p className="hint">Changes will appear here as you edit</p>
+                {/* Timeline slider for quick navigation */}
+                {totalCount > 1 && (
+                    <div className="changelog-timeline">
+                        <span className="timeline-label">History: {totalCount} changes</span>
+                        <div className="timeline-slider-container">
+                            <span className="timeline-oldest">Oldest</span>
+                            <input
+                                type="range"
+                                min="0"
+                                max={totalCount - 1}
+                                value={selectedIndex !== null ? selectedIndex : totalCount - 1}
+                                onChange={handleSliderChange}
+                                className="timeline-slider"
+                                aria-label="Navigate changelog history"
+                            />
+                            <span className="timeline-newest">Newest</span>
                         </div>
-                    ) : (
-                        [...changelog].reverse().map((entry) => (
-                            <div 
-                                key={entry.id}
-                                className={`changelog-entry ${selectedEntry?.id === entry.id ? 'selected' : ''}`}
-                                onClick={() => setSelectedEntry(entry)}
-                            >
-                                <div className="entry-header">
-                                    <span 
-                                        className="author-avatar"
-                                        style={{ backgroundColor: entry.author?.color || '#888' }}
-                                    >
-                                        {entry.author?.icon || entry.author?.name?.charAt(0) || '?'}
-                                    </span>
-                                    <span className="author-name">{entry.author?.name || 'Unknown'}</span>
-                                    <span className="entry-time">{formatTime(entry.timestamp)}</span>
-                                </div>
-                                <div className="entry-summary">
-                                    <span className={`change-type ${entry.type}`}>
-                                        {entry.type === 'add' ? '+' : entry.type === 'delete' ? '-' : '~'}
-                                    </span>
-                                    {entry.summary}
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                {selectedEntry && (
-                    <div className="diff-view">
-                        <div className="diff-header">
-                            <span>Changes from {formatTime(selectedEntry.timestamp)}</span>
-                            {onRollback && (
-                                <button 
-                                    type="button"
-                                    className="rollback-btn"
-                                    onClick={() => setShowConfirmRollback(true)}
-                                >
-                                    ↩ Rollback
-                                </button>
-                            )}
-                        </div>
-                        <div className="diff-content">
-                            {diff.length === 0 ? (
-                                <div className="empty-diff">No visible changes</div>
-                            ) : (
-                                diff.map((line, idx) => (
-                                    <div key={idx} className={`diff-line ${line.type}`}>
-                                        {line.type === 'separator' ? (
-                                            <span className="separator">... {line.count} unchanged lines ...</span>
-                                        ) : (
-                                            <>
-                                                <span className="line-num">{line.lineNum || ''}</span>
-                                                <span className="line-prefix">
-                                                    {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ' '}
-                                                </span>
-                                                <span className="line-content">{line.content}</span>
-                                            </>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
+                        {selectedEntry && (
+                            <span className="timeline-current">{formatFullTime(selectedEntry.timestamp)}</span>
+                        )}
                     </div>
                 )}
-            </div>
+
+                {isLoading ? (
+                    <div className="changelog-loading">
+                        <span>Loading changelog...</span>
+                    </div>
+                ) : (
+                    <div className="changelog-content">
+                        <div className="changelog-list">
+                            {changelog.length === 0 ? (
+                                <div className="empty-state">
+                                    <p>No changes recorded yet</p>
+                                    <p className="hint">Changes will appear here as you edit</p>
+                                </div>
+                            ) : (
+                                [...changelog].reverse().map((entry, idx) => {
+                                    const actualIndex = changelog.length - 1 - idx;
+                                    return (
+                                        <div 
+                                            key={entry.id}
+                                            className={`changelog-entry ${selectedEntry?.id === entry.id ? 'selected' : ''}`}
+                                            onClick={() => handleSelectEntry(entry, actualIndex)}
+                                        >
+                                            <div className="entry-header">
+                                                <span 
+                                                    className="author-avatar"
+                                                    style={{ backgroundColor: entry.author?.color || '#888' }}
+                                                >
+                                                    {entry.author?.icon || entry.author?.name?.charAt(0) || '?'}
+                                                </span>
+                                                <span className="author-name">{entry.author?.name || 'Unknown'}</span>
+                                                <span className="entry-time">{formatTime(entry.timestamp)}</span>
+                                            </div>
+                                            <div className="entry-summary">
+                                                <span className={`change-type ${entry.type}`}>
+                                                    {entry.type === 'add' ? '+' : entry.type === 'delete' ? '-' : '~'}
+                                                </span>
+                                                {entry.summary}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {selectedEntry && (
+                            <div className="diff-view">
+                                <div className="diff-header">
+                                    <span>Changes from {formatTime(selectedEntry.timestamp)}</span>
+                                    {onRollback && (
+                                        <button 
+                                            type="button"
+                                            className="rollback-btn"
+                                            onClick={() => setShowConfirmRollback(true)}
+                                        >
+                                            ↩ Rollback
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="diff-content">
+                                    {diff.length === 0 ? (
+                                        <div className="empty-diff">No visible changes</div>
+                                    ) : (
+                                        diff.map((line, idx) => (
+                                            <div key={idx} className={`diff-line ${line.type}`}>
+                                                {line.type === 'separator' ? (
+                                                    <span className="separator">... {line.count} unchanged lines ...</span>
+                                                ) : (
+                                                    <>
+                                                        <span className="line-num">{line.lineNum || ''}</span>
+                                                        <span className="line-prefix">
+                                                            {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ' '}
+                                                        </span>
+                                                        <span className="line-content">{line.content}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
             {showConfirmRollback && (
                 <div className="rollback-confirm">
@@ -395,10 +466,60 @@ const ChangelogPanel = ({
                     </div>
                 </div>
             )}
-        </div>
+
+            {showSettings && (
+                <div className="settings-modal-backdrop" onClick={() => setShowSettings(false)}>
+                    <div className="settings-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+                        <div className="settings-header">
+                            <h4>Changelog Settings</h4>
+                            <button type="button" className="close-btn" onClick={() => setShowSettings(false)}>×</button>
+                        </div>
+                        <div className="settings-content">
+                            <div className="setting-row">
+                                <label htmlFor="maxEntries">Maximum entries to keep:</label>
+                                <div className="setting-input">
+                                    <input
+                                        type="range"
+                                        id="maxEntries"
+                                        min="0"
+                                        max="10000"
+                                        step="100"
+                                        value={maxEntries}
+                                        onChange={(e) => setMaxEntries(parseInt(e.target.value))}
+                                    />
+                                    <span className="setting-value">
+                                        {maxEntries === 0 ? 'Unlimited' : maxEntries.toLocaleString()}
+                                    </span>
+                                </div>
+                                <p className="setting-hint">
+                                    Set to 0 for unlimited history. Higher values use more storage.
+                                </p>
+                            </div>
+                            <div className="setting-row">
+                                <label>Current storage:</label>
+                                <span>{totalCount.toLocaleString()} entries</span>
+                            </div>
+                        </div>
+                        <div className="settings-actions">
+                            <button 
+                                type="button" 
+                                className="danger-btn"
+                                onClick={handleClearHistory}
+                            >
+                                🗑️ Clear All History
+                            </button>
+                            <button type="button" onClick={() => setShowSettings(false)}>Cancel</button>
+                            <button type="button" className="primary-btn" onClick={handleSaveSettings}>
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            </div>
         </>
     );
 };
 
 export default ChangelogPanel;
-export { loadChangelog, saveChangelog, computeDiff };
+export { loadChangelogSync as loadChangelog, saveChangelogSync as saveChangelog, computeDiff };

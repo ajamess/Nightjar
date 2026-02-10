@@ -1,9 +1,13 @@
 // frontend/src/contexts/PresenceContext.jsx
 // React context for presence/awareness management
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 import { useIdentity } from './IdentityContext';
+import { generateIdentityColor } from '../utils/colorUtils';
+
+// Presence update throttle in milliseconds (matches sidecar AWARENESS_THROTTLE_MS)
+const PRESENCE_THROTTLE_MS = 100;
 
 const PresenceContext = createContext(null);
 
@@ -15,6 +19,28 @@ export function usePresence() {
     return context;
 }
 
+// Simple throttle function
+function throttle(func, limit) {
+    let inThrottle = false;
+    let lastArgs = null;
+    
+    return function(...args) {
+        lastArgs = args;
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => {
+                inThrottle = false;
+                // Execute with last args if any were queued
+                if (lastArgs) {
+                    func.apply(this, lastArgs);
+                    lastArgs = null;
+                }
+            }, limit);
+        }
+    };
+}
+
 export function PresenceProvider({ children, awareness }) {
     const { publicIdentity } = useIdentity();
     const [peers, setPeers] = useState(new Map());
@@ -24,17 +50,23 @@ export function PresenceProvider({ children, awareness }) {
     const isMountedRef = useRef(true);
     
     // Update local awareness state when identity changes
+    // Use deterministic color based on publicKey for consistent identity colors
     useEffect(() => {
         if (!awareness || !publicIdentity) return;
+        
+        // Generate deterministic color from publicKey
+        const identityColor = publicIdentity.color || generateIdentityColor(publicIdentity.publicKey);
         
         const localState = {
             user: {
                 id: publicIdentity.publicKey,
                 name: publicIdentity.handle,
-                color: publicIdentity.color,
+                color: identityColor,
                 icon: publicIdentity.icon,
                 deviceId: publicIdentity.deviceId,
-                deviceName: publicIdentity.deviceName
+                deviceName: publicIdentity.deviceName,
+                publicKey: publicIdentity.publicKey, // Include publicKey for DM routing
+                lastActive: Date.now()
             },
             cursor: null,
             selection: null,
@@ -65,7 +97,8 @@ export function PresenceProvider({ children, awareness }) {
                         cursor: state.cursor,
                         selection: state.selection,
                         isTyping: state.isTyping || false,
-                        lastSeen: state.lastSeen || Date.now()
+                        lastSeen: state.lastSeen || Date.now(),
+                        openDocumentId: state.openDocumentId || null
                     });
                 }
             });
@@ -81,16 +114,42 @@ export function PresenceProvider({ children, awareness }) {
         };
     }, [awareness]);
     
-    // Update cursor position
-    const updateCursor = useCallback((position) => {
+    // Update cursor position with optional documentId for per-document filtering
+    // Throttled to 100ms to match sidecar and prevent excessive network traffic
+    const updateCursorRaw = useCallback((position, documentId = null) => {
         if (!awareness) return;
         awareness.setLocalStateField('cursor', position);
+        if (documentId) {
+            awareness.setLocalStateField('openDocumentId', documentId);
+        }
     }, [awareness]);
     
-    // Update selection
-    const updateSelection = useCallback((selection) => {
+    // Memoize throttled version
+    const updateCursor = useMemo(
+        () => throttle(updateCursorRaw, PRESENCE_THROTTLE_MS),
+        [updateCursorRaw]
+    );
+    
+    // Update selection with optional documentId for per-document filtering
+    // Throttled to 100ms to match sidecar and prevent excessive network traffic
+    const updateSelectionRaw = useCallback((selection, documentId = null) => {
         if (!awareness) return;
         awareness.setLocalStateField('selection', selection);
+        if (documentId) {
+            awareness.setLocalStateField('openDocumentId', documentId);
+        }
+    }, [awareness]);
+    
+    // Memoize throttled version
+    const updateSelection = useMemo(
+        () => throttle(updateSelectionRaw, PRESENCE_THROTTLE_MS),
+        [updateSelectionRaw]
+    );
+    
+    // Update which document is currently open (for presence indicators)
+    const updateOpenDocument = useCallback((documentId) => {
+        if (!awareness) return;
+        awareness.setLocalStateField('openDocumentId', documentId);
     }, [awareness]);
     
     // Set typing indicator
@@ -139,6 +198,14 @@ export function PresenceProvider({ children, awareness }) {
     // Get typing peers
     const typingPeers = Array.from(peers.values()).filter(p => p.isTyping);
     
+    // Get peers on a specific document
+    const getPeersOnDocument = useCallback((documentId) => {
+        if (!documentId) return [];
+        return Array.from(peers.values()).filter(p => 
+            p.openDocumentId === documentId
+        );
+    }, [peers]);
+    
     const value = {
         peers,
         onlinePeersCount,
@@ -146,8 +213,10 @@ export function PresenceProvider({ children, awareness }) {
         isTyping,
         updateCursor,
         updateSelection,
+        updateOpenDocument,
         setTypingIndicator,
-        updateLastSeen
+        updateLastSeen,
+        getPeersOnDocument
     };
     
     return (

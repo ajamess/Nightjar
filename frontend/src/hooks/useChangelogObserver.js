@@ -1,36 +1,25 @@
 import { useEffect, useRef } from 'react';
 import * as Y from 'yjs';
-
-// Storage key prefix for changelog
-const CHANGELOG_STORAGE_KEY = 'Nightjar-changelog-';
+import { addChangelogEntry, loadChangelogSync, saveChangelogSync } from '../utils/changelogStore';
 
 // Convert Uint8Array to base64 for storage
 const uint8ToBase64 = (arr) => {
-    return btoa(String.fromCharCode.apply(null, arr));
-};
-
-// Load changelog from localStorage
-const loadChangelog = (docId) => {
     try {
-        const stored = localStorage.getItem(CHANGELOG_STORAGE_KEY + docId);
-        return stored ? JSON.parse(stored) : [];
+        // Handle large arrays by chunking to avoid call stack size exceeded
+        const chunkSize = 8192;
+        let result = '';
+        for (let i = 0; i < arr.length; i += chunkSize) {
+            const chunk = arr.subarray(i, i + chunkSize);
+            result += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(result);
     } catch (e) {
-        console.error('Failed to load changelog:', e);
-        return [];
+        console.warn('[ChangelogObserver] Failed to encode state:', e);
+        return '';
     }
 };
 
-// Save changelog to localStorage (keep last 50 entries)
-const saveChangelog = (docId, changelog) => {
-    try {
-        const trimmed = changelog.slice(-50);
-        localStorage.setItem(CHANGELOG_STORAGE_KEY + docId, JSON.stringify(trimmed));
-    } catch (e) {
-        console.error('Failed to save changelog:', e);
-    }
-};
-
-// Helper to get text content from XmlFragment
+// Helper to get text content from XmlFragment (for text documents)
 const getTextFromFragment = (fragment) => {
     if (!fragment) return '';
     try {
@@ -93,111 +82,167 @@ const getTextFromFragment = (fragment) => {
     }
 };
 
-// Generate a diff summary
-const generateDiffSummary = (oldText, newText) => {
-    const oldLen = oldText?.length || 0;
-    const newLen = newText?.length || 0;
-    const diff = newLen - oldLen;
-    
-    if (diff > 0) {
-        return `Added ${diff} characters`;
-    } else if (diff < 0) {
-        return `Removed ${Math.abs(diff)} characters`;
-    } else {
-        return 'Modified content';
+// Get summary text from sheet data
+const getSheetSummary = (ysheet) => {
+    if (!ysheet) return '';
+    try {
+        const sheets = ysheet.get('sheets');
+        if (!sheets || !Array.isArray(sheets)) return '';
+        
+        // Count cells with data
+        let cellCount = 0;
+        let sheetNames = [];
+        for (const sheet of sheets) {
+            sheetNames.push(sheet.name || 'Sheet');
+            if (sheet.celldata && Array.isArray(sheet.celldata)) {
+                cellCount += sheet.celldata.length;
+            }
+        }
+        return `${sheetNames.length} sheet(s), ${cellCount} cells`;
+    } catch (e) {
+        return '';
     }
+};
+
+// Get summary text from kanban data  
+const getKanbanSummary = (ykanban) => {
+    if (!ykanban) return '';
+    try {
+        const columns = ykanban.get('columns');
+        if (!columns || !Array.isArray(columns)) return '';
+        
+        let cardCount = 0;
+        let columnNames = [];
+        for (const col of columns) {
+            columnNames.push(col.name || 'Column');
+            if (col.cards && Array.isArray(col.cards)) {
+                cardCount += col.cards.length;
+            }
+        }
+        return `${columns.length} column(s), ${cardCount} cards`;
+    } catch (e) {
+        return '';
+    }
+};
+
+// Generate a diff summary based on document type
+const generateDiffSummary = (docType, oldContent, newContent) => {
+    if (docType === 'text') {
+        const oldLen = oldContent?.length || 0;
+        const newLen = newContent?.length || 0;
+        const diff = newLen - oldLen;
+        
+        if (diff > 0) {
+            return `Added ${diff} characters`;
+        } else if (diff < 0) {
+            return `Removed ${Math.abs(diff)} characters`;
+        } else {
+            return 'Modified content';
+        }
+    } else if (docType === 'sheet') {
+        return `Spreadsheet updated: ${newContent}`;
+    } else if (docType === 'kanban') {
+        return `Kanban updated: ${newContent}`;
+    }
+    return 'Content modified';
 };
 
 /**
  * Hook to observe ydoc changes and record them to changelog.
+ * Supports text documents (prosemirror), sheets, and kanban boards.
  * This should be used at the App level so it runs even when the changelog panel is closed.
+ * 
+ * @param {Y.Doc} ydoc - The Yjs document
+ * @param {string} docId - Document ID
+ * @param {Object} currentUser - Current user info {name, color, icon}
+ * @param {string} documentType - 'text' | 'sheet' | 'kanban'
  */
-export function useChangelogObserver(ydoc, docId, currentUser) {
-    const lastTextRef = useRef('');
+export function useChangelogObserver(ydoc, docId, currentUser, documentType = 'text') {
+    const lastContentRef = useRef('');
     const lastStateSizeRef = useRef(0);
     const debounceTimerRef = useRef(null);
     const currentUserRef = useRef(currentUser);
+    const documentTypeRef = useRef(documentType);
 
-    // Keep currentUser ref updated without re-running the effect
+    // Keep refs updated without re-running the effect
     useEffect(() => {
         currentUserRef.current = currentUser;
     }, [currentUser]);
+    
+    useEffect(() => {
+        documentTypeRef.current = documentType;
+    }, [documentType]);
 
     useEffect(() => {
-        console.log('[ChangelogObserver] Effect running with ydoc:', !!ydoc, 'docId:', docId);
-        
         if (!ydoc || !docId) {
-            console.log('[ChangelogObserver] No ydoc or docId, skipping setup');
             return;
         }
 
-        const fragment = ydoc.get('prosemirror', Y.XmlFragment);
+        const docType = documentTypeRef.current;
+        let getContent;
+        let yDataSource;
         
-        // Debug: log fragment structure
-        console.log('[ChangelogObserver] Fragment type:', fragment?.constructor?.name);
-        console.log('[ChangelogObserver] Fragment toArray length:', fragment?.toArray?.()?.length);
-        if (fragment?.toArray) {
-            const arr = fragment.toArray();
-            if (arr.length > 0) {
-                console.log('[ChangelogObserver] First child type:', arr[0]?.constructor?.name);
-                console.log('[ChangelogObserver] First child toString:', arr[0]?.toString?.());
-            }
+        // Set up content extraction based on document type
+        if (docType === 'sheet') {
+            yDataSource = ydoc.getMap('sheet-data');
+            getContent = () => getSheetSummary(yDataSource);
+        } else if (docType === 'kanban') {
+            yDataSource = ydoc.getMap('kanban');
+            getContent = () => getKanbanSummary(yDataSource);
+        } else {
+            // Default to text (prosemirror)
+            yDataSource = ydoc.get('prosemirror', Y.XmlFragment);
+            getContent = () => getTextFromFragment(yDataSource);
         }
         
-        lastTextRef.current = getTextFromFragment(fragment);
+        lastContentRef.current = getContent();
         lastStateSizeRef.current = Y.encodeStateAsUpdate(ydoc).length;
 
-        console.log('[ChangelogObserver] Setting up for doc:', docId);
-        console.log('[ChangelogObserver] Initial text length:', lastTextRef.current.length);
-        console.log('[ChangelogObserver] Initial text preview:', lastTextRef.current.substring(0, 100));
-        console.log('[ChangelogObserver] ydoc type:', ydoc.constructor?.name);
-        console.log('[ChangelogObserver] ydoc has "on" method:', typeof ydoc.on);
+        console.log(`[ChangelogObserver] Setting up for ${docType} doc: ${docId}`);
 
         const updateHandler = (update, origin) => {
-            console.log('[ChangelogObserver] Update received, origin:', origin, 'type:', typeof origin, 'size:', update?.length);
-            
-            // Don't track changes from persistence or y-websocket provider (remote changes)
-            // Local changes from user typing typically have origin = null or undefined
-            if (origin === 'persistence') {
-                console.log('[ChangelogObserver] Skipping persistence origin');
+            // Don't track changes from persistence or P2P (remote changes)
+            if (origin === 'persistence' || origin === 'p2p') {
                 return;
             }
 
             clearTimeout(debounceTimerRef.current);
-            debounceTimerRef.current = setTimeout(() => {
-                const newText = getTextFromFragment(fragment);
+            debounceTimerRef.current = setTimeout(async () => {
+                const newContent = getContent();
                 const newStateSize = Y.encodeStateAsUpdate(ydoc).length;
 
-                const textChanged = newText !== lastTextRef.current;
+                const contentChanged = newContent !== lastContentRef.current;
                 const sizeChanged = newStateSize !== lastStateSizeRef.current;
 
-                console.log('[ChangelogObserver] Debounced check:', {
-                    textChanged,
-                    sizeChanged,
-                    newTextLen: newText.length,
-                    lastTextLen: lastTextRef.current.length
-                });
-
-                if ((textChanged || sizeChanged) && (newText.length > 0 || lastTextRef.current.length > 0)) {
+                if (contentChanged || sizeChanged) {
                     const stateSnapshot = uint8ToBase64(Y.encodeStateAsUpdate(ydoc));
+                    const currentDocType = documentTypeRef.current;
 
                     const entry = {
                         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
                         timestamp: Date.now(),
                         author: currentUserRef.current || { name: 'Anonymous', color: '#888888' },
-                        type: newText.length > lastTextRef.current.length ? 'add' :
-                              newText.length < lastTextRef.current.length ? 'delete' : 'edit',
-                        summary: generateDiffSummary(lastTextRef.current, newText),
-                        textSnapshot: newText,
-                        previousTextSnapshot: lastTextRef.current,
+                        documentType: currentDocType,
+                        type: newContent.length > lastContentRef.current.length ? 'add' :
+                              newContent.length < lastContentRef.current.length ? 'delete' : 'edit',
+                        summary: generateDiffSummary(currentDocType, lastContentRef.current, newContent),
+                        contentSnapshot: newContent,
+                        previousContentSnapshot: lastContentRef.current,
                         stateSnapshot: stateSnapshot
                     };
 
                     console.log('[ChangelogObserver] Recording entry:', entry.summary);
-                    const updatedChangelog = [...loadChangelog(docId), entry];
-                    saveChangelog(docId, updatedChangelog);
                     
-                    lastTextRef.current = newText;
+                    // Try IndexedDB first, fall back to localStorage
+                    try {
+                        await addChangelogEntry(docId, entry);
+                    } catch (e) {
+                        // Fallback to sync localStorage
+                        const existing = loadChangelogSync(docId);
+                        saveChangelogSync(docId, [...existing, entry]);
+                    }
+                    
+                    lastContentRef.current = newContent;
                     lastStateSizeRef.current = newStateSize;
                 }
             }, 2000);
@@ -206,11 +251,11 @@ export function useChangelogObserver(ydoc, docId, currentUser) {
         ydoc.on('update', updateHandler);
 
         return () => {
-            console.log('[ChangelogObserver] Cleaning up for doc:', docId);
             clearTimeout(debounceTimerRef.current);
             ydoc.off('update', updateHandler);
         };
-    }, [ydoc, docId]); // Removed currentUser from deps - using ref instead
+    }, [ydoc, docId, documentType]);
 }
 
-export { loadChangelog, saveChangelog };
+// Re-export for compatibility
+export { loadChangelogSync as loadChangelog, saveChangelogSync as saveChangelog } from '../utils/changelogStore';

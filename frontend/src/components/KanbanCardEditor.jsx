@@ -26,7 +26,12 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
     };
 
     return (
-        <div className="card-edit" onClick={(e) => e.stopPropagation()}>
+        <div 
+            className="card-edit" 
+            onClick={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+        >
             <input
                 type="text"
                 value={title}
@@ -34,6 +39,8 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
                 onBlur={handleSave}
                 placeholder="Card title"
                 autoFocus
+                draggable={false}
+                onDragStart={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         handleSave();
@@ -56,9 +63,21 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
             <textarea
                 ref={textareaRef}
                 value={description}
+                draggable={false}
+                onDragStart={(e) => e.stopPropagation()}
                 onChange={(e) => {
                     setDescription(e.target.value);
                     onUpdate({ title, description: e.target.value, color: color !== '#6366f1' ? color : null });
+                }}
+                onKeyDown={(e) => {
+                    // Allow Enter key to create new lines - don't let it propagate to parent
+                    if (e.key === 'Enter') {
+                        e.stopPropagation();
+                    }
+                    // Escape closes the editor
+                    if (e.key === 'Escape') {
+                        onClose();
+                    }
                 }}
                 placeholder="Description (Markdown supported)"
                 rows={5}

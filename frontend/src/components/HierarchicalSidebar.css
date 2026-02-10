@@ -503,6 +503,16 @@
     font-size: 0.9rem;
 }
 
+/* Dynamic text color for colored items */
+.tree-item--colored .tree-item__name {
+    color: var(--tree-item-text-color, inherit);
+}
+
+.tree-item--colored .tree-item__arrow {
+    color: var(--tree-item-text-color, inherit);
+    opacity: 0.7;
+}
+
 .tree-item__rename-input {
     flex: 1;
     background: var(--input-bg, #27272a);

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useWorkspaces } from './WorkspaceContext';
+import { useWorkspaceSyncContext } from './WorkspaceSyncContext';
 import { deriveFolderKey, storeKeyChain, getStoredKeyChain } from '../utils/keyDerivation';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
@@ -56,6 +57,21 @@ const getSystemFolders = (workspaceId) => [
 export function FolderProvider({ children }) {
   const { currentWorkspaceId, currentWorkspace, workspaces, metaSocket, connected } = useWorkspaces();
   
+  // Get synced folder data from WorkspaceSyncContext (single source of truth for P2P sync)
+  const syncContext = useWorkspaceSyncContext();
+  const {
+    folders: syncedFolders,
+    documentFolders: syncedDocumentFolders,
+    trashedDocuments: syncedTrashedDocuments,
+    addFolder: syncAddFolder,
+    removeFolder: syncRemoveFolder,
+    updateFolder: syncUpdateFolder,
+    setDocumentFolder: syncSetDocumentFolder,
+    trashDocument: syncTrashDocument,
+    restoreDocument: syncRestoreDocument,
+    permanentlyDeleteDocument: syncPermanentlyDeleteDocument,
+  } = syncContext;
+  
   // Compute isElectron once to avoid function-as-boolean bug
   const isElectronMode = isElectron();
   
@@ -65,7 +81,7 @@ export function FolderProvider({ children }) {
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   
-  // Yjs refs for web mode sync
+  // Yjs refs for web mode sync (now only used for fallback/legacy)
   const ydocRef = useRef(null);
   const providerRef = useRef(null);
   const yFoldersRef = useRef(null);
@@ -80,14 +96,49 @@ export function FolderProvider({ children }) {
   // Use local sidecar mode only for owned workspaces in Electron
   const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
   
+  // Use synced folders from WorkspaceSyncContext when not in local mode
+  // This ensures P2P-synced folders show up correctly
+  useEffect(() => {
+    if (!useLocalMode && currentWorkspaceId && syncedFolders) {
+      console.log(`[FolderContext] Using synced folders from WorkspaceSyncContext: ${syncedFolders.length} folders`);
+      setAllFolders(prev => {
+        // Keep folders from other workspaces, replace folders for this workspace
+        const otherFolders = prev.filter(f => f.workspaceId !== currentWorkspaceId);
+        return [...otherFolders, ...syncedFolders];
+      });
+    }
+  }, [useLocalMode, currentWorkspaceId, syncedFolders]);
+  
+  // Sync document-folder mapping from WorkspaceSyncContext
+  useEffect(() => {
+    if (!useLocalMode && syncedDocumentFolders) {
+      setDocumentFolders(prev => ({ ...prev, ...syncedDocumentFolders }));
+    }
+  }, [useLocalMode, syncedDocumentFolders]);
+  
+  // Sync trashed documents from WorkspaceSyncContext
+  useEffect(() => {
+    if (!useLocalMode && syncedTrashedDocuments) {
+      setTrashedDocuments(syncedTrashedDocuments);
+    }
+  }, [useLocalMode, syncedTrashedDocuments]);
+  
   // Track whether observers have been set up (for StrictMode cleanup safety)
   const observersSetUpRef = useRef(false);
   
+  // LEGACY: This Yjs effect is no longer needed for P2P sync
+  // Folders now come from WorkspaceSyncContext which uses workspace-meta room
+  // This effect is kept only for backward compatibility with workspace-folders room
+  // which may have data in older workspaces
   useEffect(() => {
-    // Skip for local Electron owned workspaces (uses sidecar), but enable for:
-    // 1. Web mode (always uses Yjs)
-    // 2. Electron with remote workspace (cross-platform sharing)
-    // 3. Electron with P2P joined workspace (not owner - folders come from Yjs sync)
+    // Skip entirely - we now use WorkspaceSyncContext for all folder sync
+    // The workspace-meta room is synced via P2P and contains all folder data
+    if (!useLocalMode) {
+      console.log(`[FolderContext] Using WorkspaceSyncContext for folder sync (skipping legacy workspace-folders room)`);
+      return;
+    }
+    
+    // Only local mode (Electron owned workspaces) uses sidecar, not Yjs
     if (useLocalMode || !currentWorkspaceId) {
       return;
     }
@@ -391,14 +442,11 @@ export function FolderProvider({ children }) {
       deletedAt: null,
     };
 
-    // Optimistically add locally (only for Electron local mode, remote/web uses Yjs)
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
-      setAllFolders(prev => [...prev, folder]);
-    }
-
     // Sync via appropriate mechanism
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
+      // Optimistically add locally
+      setAllFolders(prev => [...prev, folder]);
       // Electron local mode: use sidecar metaSocket
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
         console.log('[FolderContext] Sending create-folder to sidecar:', folder.id, folder.name);
@@ -407,17 +455,17 @@ export function FolderProvider({ children }) {
         console.error('[FolderContext] Cannot send create-folder - socket not open. Socket:', !!metaSocket, 'State:', metaSocket?.readyState);
       }
     } else {
-      // Web mode or remote workspace: use Yjs sync
-      if (yFoldersRef.current) {
-        console.log('[FolderContext] Adding folder via Yjs:', folder.id, folder.name);
-        yFoldersRef.current.push([folder]);
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncAddFolder) {
+        console.log('[FolderContext] Adding folder via WorkspaceSyncContext:', folder.id, folder.name);
+        syncAddFolder(folder);
       } else {
-        console.error('[FolderContext] Cannot create folder - Yjs not initialized');
+        console.error('[FolderContext] Cannot create folder - syncAddFolder not available');
       }
     }
 
     return folder.id;
-  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace]);
+  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncAddFolder]);
 
   // Update a folder
   const updateFolder = useCallback((folderId, updates) => {
@@ -431,8 +479,8 @@ export function FolderProvider({ children }) {
     };
 
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       // Optimistically update locally
       setAllFolders(prev => prev.map(f => f.id === folderId ? updatedFolder : f));
       // Sync to sidecar
@@ -440,19 +488,12 @@ export function FolderProvider({ children }) {
         metaSocket.send(JSON.stringify({ type: 'update-folder', folder: updatedFolder }));
       }
     } else {
-      // Web mode or remote workspace: update via Yjs
-      if (yFoldersRef.current && ydocRef.current) {
-        const folders = yFoldersRef.current.toArray();
-        const index = folders.findIndex(f => f.id === folderId);
-        if (index !== -1) {
-          ydocRef.current.transact(() => {
-            yFoldersRef.current.delete(index, 1);
-            yFoldersRef.current.insert(index, [updatedFolder]);
-          });
-        }
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncUpdateFolder) {
+        syncUpdateFolder(folderId, updates);
       }
     }
-  }, [metaSocket, allFolders, isRemoteWorkspace]);
+  }, [metaSocket, allFolders, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
 
   // Rename a folder (convenience wrapper around updateFolder)
   const renameFolder = useCallback((folderId, newName) => {
@@ -473,8 +514,8 @@ export function FolderProvider({ children }) {
     };
 
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       // Optimistically update locally
       setAllFolders(prev => prev.map(f => f.id === folderId ? deletedFolder : f));
       // Sync to sidecar (include workspaceId for Yjs P2P sync)
@@ -487,16 +528,10 @@ export function FolderProvider({ children }) {
         }));
       }
     } else {
-      // Web mode or remote workspace: update via Yjs (soft delete = update with deletedAt)
-      if (yFoldersRef.current && ydocRef.current) {
-        const folders = yFoldersRef.current.toArray();
-        const index = folders.findIndex(f => f.id === folderId);
-        if (index !== -1) {
-          ydocRef.current.transact(() => {
-            yFoldersRef.current.delete(index, 1);
-            yFoldersRef.current.insert(index, [deletedFolder]);
-          });
-        }
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      // Soft delete = update with deletedAt
+      if (syncUpdateFolder) {
+        syncUpdateFolder(folderId, { deletedAt: Date.now(), deletedBy });
       }
     }
 
@@ -504,7 +539,7 @@ export function FolderProvider({ children }) {
     if (selectedFolderId === folderId) {
       setSelectedFolderId(currentWorkspaceId ? `${currentWorkspaceId}:all` : null);
     }
-  }, [metaSocket, allFolders, selectedFolderId, currentWorkspaceId, isRemoteWorkspace]);
+  }, [metaSocket, allFolders, selectedFolderId, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
   
   // Restore a folder from trash
   const restoreFolder = useCallback((folderId) => {
@@ -526,8 +561,8 @@ export function FolderProvider({ children }) {
     }
     
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       // Restore all folders in chain
       setAllFolders(prev => prev.map(f => 
         foldersToRestore.includes(f.id) 
@@ -541,22 +576,14 @@ export function FolderProvider({ children }) {
         });
       }
     } else {
-      // Web mode or remote workspace: update via Yjs
-      if (yFoldersRef.current && ydocRef.current) {
-        ydocRef.current.transact(() => {
-          const folders = yFoldersRef.current.toArray();
-          foldersToRestore.forEach(id => {
-            const index = folders.findIndex(f => f.id === id);
-            if (index !== -1) {
-              const restoredFolder = { ...folders[index], deletedAt: null, deletedBy: null };
-              yFoldersRef.current.delete(index, 1);
-              yFoldersRef.current.insert(index, [restoredFolder]);
-            }
-          });
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncUpdateFolder) {
+        foldersToRestore.forEach(id => {
+          syncUpdateFolder(id, { deletedAt: null, deletedBy: null });
         });
       }
     }
-  }, [metaSocket, allFolders, isRemoteWorkspace]);
+  }, [metaSocket, allFolders, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
   
   // Permanently delete a folder (only from trash)
   const purgeFolder = useCallback((folderId) => {
@@ -577,8 +604,8 @@ export function FolderProvider({ children }) {
     };
     
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       // Remove folder and all its documents
       setAllFolders(prev => prev.filter(f => f.id !== folderId));
       updateDocFolders();
@@ -587,24 +614,20 @@ export function FolderProvider({ children }) {
         metaSocket.send(JSON.stringify({ type: 'purge-folder', folderId }));
       }
     } else {
-      // Web mode or remote workspace: remove via Yjs
-      if (yFoldersRef.current) {
-        const folders = yFoldersRef.current.toArray();
-        const index = folders.findIndex(f => f.id === folderId);
-        if (index !== -1) {
-          yFoldersRef.current.delete(index, 1);
-        }
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncRemoveFolder) {
+        syncRemoveFolder(folderId);
       }
-      // Also update document folders mapping via Yjs
-      if (yDocFoldersRef.current) {
-        yDocFoldersRef.current.forEach((value, key) => {
-          if (value === folderId) {
-            yDocFoldersRef.current.delete(key);
+      // Also remove document folder mappings for documents in this folder
+      if (syncSetDocumentFolder) {
+        Object.entries(documentFolders).forEach(([docId, docFolderId]) => {
+          if (docFolderId === folderId) {
+            syncSetDocumentFolder(docId, null);
           }
         });
       }
     }
-  }, [metaSocket, allFolders, isRemoteWorkspace]);
+  }, [metaSocket, allFolders, isRemoteWorkspace, isWorkspaceOwner, syncRemoveFolder, syncSetDocumentFolder, documentFolders]);
 
   // Move a document to a folder
   const moveDocumentToFolder = useCallback((documentId, folderId) => {
@@ -614,8 +637,8 @@ export function FolderProvider({ children }) {
       : folderId;
     
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       // Optimistically update locally
       setDocumentFolders(prev => {
         if (actualFolderId === null) {
@@ -635,16 +658,12 @@ export function FolderProvider({ children }) {
         }));
       }
     } else {
-      // Web mode or remote workspace: update via Yjs
-      if (yDocFoldersRef.current) {
-        if (actualFolderId === null) {
-          yDocFoldersRef.current.delete(documentId);
-        } else {
-          yDocFoldersRef.current.set(documentId, actualFolderId);
-        }
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncSetDocumentFolder) {
+        syncSetDocumentFolder(documentId, actualFolderId);
       }
     }
-  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace]);
+  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncSetDocumentFolder]);
   
   // Soft delete a document (move to trash)
   const trashDocument = useCallback((document, deletedBy = null) => {
@@ -655,8 +674,8 @@ export function FolderProvider({ children }) {
     };
     
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       setTrashedDocuments(prev => [...prev, trashedDoc]);
       // Sync to sidecar
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
@@ -667,14 +686,14 @@ export function FolderProvider({ children }) {
         }));
       }
     } else {
-      // Web mode or remote workspace: add to Yjs trashed documents
-      if (yTrashedDocsRef.current) {
-        yTrashedDocsRef.current.push([trashedDoc]);
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncTrashDocument) {
+        syncTrashDocument(document, deletedBy);
       }
     }
     
     return trashedDoc;
-  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace]);
+  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncTrashDocument]);
   
   // Restore a document from trash
   const restoreDocument = useCallback((documentId) => {
@@ -691,8 +710,8 @@ export function FolderProvider({ children }) {
     }
     
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       setTrashedDocuments(prev => prev.filter(d => d.id !== documentId));
       // Sync to sidecar
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
@@ -703,26 +722,22 @@ export function FolderProvider({ children }) {
         }));
       }
     } else {
-      // Web mode or remote workspace: remove from Yjs trashed documents
-      if (yTrashedDocsRef.current) {
-        const trashed = yTrashedDocsRef.current.toArray();
-        const index = trashed.findIndex(d => d.id === documentId);
-        if (index !== -1) {
-          yTrashedDocsRef.current.delete(index, 1);
-        }
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncRestoreDocument) {
+        syncRestoreDocument(documentId);
       }
     }
     
     // Return restored document without trash fields
     const { deletedAt, deletedBy, ...restoredDoc } = doc;
     return restoredDoc;
-  }, [metaSocket, trashedDocuments, documentFolders, allFolders, restoreFolder, currentWorkspaceId, isRemoteWorkspace]);
+  }, [metaSocket, trashedDocuments, documentFolders, allFolders, restoreFolder, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncRestoreDocument]);
   
   // Permanently delete a document from trash
   const purgeDocument = useCallback((documentId) => {
     // Sync via appropriate mechanism
-    const useLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    if (useLocalMode) {
+    const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
+    if (shouldUseLocalMode) {
       setTrashedDocuments(prev => prev.filter(d => d.id !== documentId));
       // Sync to sidecar
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
@@ -733,16 +748,12 @@ export function FolderProvider({ children }) {
         }));
       }
     } else {
-      // Web mode or remote workspace: remove from Yjs trashed documents
-      if (yTrashedDocsRef.current) {
-        const trashed = yTrashedDocsRef.current.toArray();
-        const index = trashed.findIndex(d => d.id === documentId);
-        if (index !== -1) {
-          yTrashedDocsRef.current.delete(index, 1);
-        }
+      // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
+      if (syncPermanentlyDeleteDocument) {
+        syncPermanentlyDeleteDocument(documentId);
       }
     }
-  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace]);
+  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncPermanentlyDeleteDocument]);
   
   // Get days remaining before purge for a trashed item
   const getDaysRemaining = useCallback((deletedAt) => {

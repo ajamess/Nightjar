@@ -3,6 +3,7 @@
  * 
  * Provides real-time peer connection status for a workspace.
  * Polls the sidecar for active peer counts and relay status.
+ * Also provides sync verification status and manual retry capabilities.
  * 
  * Returns:
  * - activePeers: Number of currently connected peers
@@ -12,6 +13,10 @@
  * - lastError: Last error message if any
  * - requestSync: Function to manually trigger peer sync
  * - isRetrying: Whether a retry is in progress
+ * - syncStatus: Sync verification status ('idle', 'syncing', 'verifying', 'verified', 'incomplete', 'failed')
+ * - syncDetails: Detailed sync info (documentCount, folderCount, missing items, etc.)
+ * - verifySyncState: Function to trigger sync verification
+ * - forceFullSync: Function to request complete resync from peers
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -59,6 +64,16 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
     const [isRetrying, setIsRetrying] = useState(false);
     const [retryCount, setRetryCount] = useState(0);
     
+    // Sync verification state
+    const [syncStatus, setSyncStatus] = useState('idle'); // 'idle', 'syncing', 'verifying', 'verified', 'incomplete', 'failed', 'no-peers'
+    const [syncDetails, setSyncDetails] = useState({
+        documentCount: 0,
+        folderCount: 0,
+        missingDocuments: 0,
+        missingFolders: 0,
+        lastVerified: null,
+    });
+    
     const wsRef = useRef(null);
     const pollIntervalRef = useRef(null);
     const retryTimeoutRef = useRef(null);
@@ -91,6 +106,7 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
             }
             
             setIsRetrying(true);
+            setSyncStatus('syncing');
             
             // Set up one-time handler for the response
             const handleMessage = (event) => {
@@ -103,6 +119,7 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
                             if (data.success) {
                                 setRetryCount(0);
                                 setLastError(null);
+                                setSyncStatus('verifying');
                             } else {
                                 // Calculate exponential backoff for next retry hint
                                 const nextRetryMs = Math.min(
@@ -111,6 +128,7 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
                                 );
                                 setRetryCount(prev => prev + 1);
                                 setLastError(data.error || data.message || 'Sync failed');
+                                setSyncStatus('failed');
                             }
                         }
                         resolve(data);
@@ -138,9 +156,62 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
         });
     }, [workspaceId, retryCount]);
     
+    // Request sync verification (check manifest against peers)
+    const verifySyncState = useCallback(() => {
+        if (!workspaceId || !isElectron()) return;
+        
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        
+        setSyncStatus('verifying');
+        
+        ws.send(JSON.stringify({
+            type: 'verify-sync-state',
+            workspaceId
+        }));
+    }, [workspaceId]);
+    
+    // Request complete resync from all connected peers
+    const forceFullSync = useCallback(async () => {
+        if (!workspaceId || !isElectron()) {
+            return { success: false, message: 'Not available' };
+        }
+        
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            return { success: false, message: 'Not connected to sidecar' };
+        }
+        
+        setSyncStatus('syncing');
+        
+        ws.send(JSON.stringify({
+            type: 'force-full-sync',
+            workspaceId
+        }));
+        
+        return { success: true, message: 'Full sync requested' };
+    }, [workspaceId]);
+    
     // Set up WebSocket connection and polling
     useEffect(() => {
         mountedRef.current = true;
+        
+        // Reset all state when workspace changes or is cleared
+        setActivePeers(0);
+        setTotalSeenPeers(0);
+        setRelayConnected(false);
+        setP2pInitialized(false);
+        setLastError(null);
+        setIsRetrying(false);
+        setRetryCount(0);
+        setSyncStatus('idle');
+        setSyncDetails({
+            documentCount: 0,
+            folderCount: 0,
+            missingDocuments: 0,
+            missingFolders: 0,
+            lastVerified: null,
+        });
         
         if (!workspaceId || !isElectron()) {
             setIsLoading(false);
@@ -177,6 +248,23 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
                         setLastError(null);
                     }
                     setIsLoading(false);
+                }
+                
+                // Handle sync status updates from sidecar
+                if (data.type === 'sync-status' && data.workspaceId === workspaceId) {
+                    console.log('[PeerStatus] Sync status update:', data.status, data.details);
+                    setSyncStatus(data.status);
+                    
+                    if (data.details) {
+                        setSyncDetails(prev => ({
+                            ...prev,
+                            documentCount: data.details.documentCount ?? prev.documentCount,
+                            folderCount: data.details.folderCount ?? prev.folderCount,
+                            missingDocuments: data.details.missing?.missingDocumentIds?.length ?? 0,
+                            missingFolders: data.details.missing?.missingFolderIds?.length ?? 0,
+                            lastVerified: data.status === 'verified' ? Date.now() : prev.lastVerified,
+                        }));
+                    }
                 }
             } catch (e) {
                 console.warn('[PeerStatus] Failed to parse message:', e);
@@ -235,6 +323,11 @@ export function useWorkspacePeerStatus(workspaceId, pollIntervalOverride = null)
         isRetrying,
         retryCount,
         nextRetryDelayMs,
+        // Sync verification
+        syncStatus,
+        syncDetails,
+        verifySyncState,
+        forceFullSync,
     };
 }
 

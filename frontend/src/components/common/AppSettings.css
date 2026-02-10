@@ -522,6 +522,37 @@
   }
 }
 
+/* Sound Picker Styles */
+.app-settings__sound-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.app-settings__sound-picker .app-settings__select {
+  flex: 1;
+}
+
+.app-settings__btn-test {
+  padding: 8px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* DND Field Highlight */
+.app-settings__field--dnd {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.app-settings__field--dnd .app-settings__toggle-text {
+  font-weight: 600;
+  color: #ef4444;
+}
+
 /* Light mode */
 @media (prefers-color-scheme: light) {
   .app-settings-modal {

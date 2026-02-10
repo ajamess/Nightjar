@@ -507,11 +507,13 @@ class P2PBridge extends EventEmitter {
     // Stop Hyperswarm
     if (this.hyperswarm) {
       await this.hyperswarm.destroy();
+      this.hyperswarm = null;
     }
 
     this.clients.clear();
     this.topics.clear();
     this.peerIdToSocket.clear();
+    this.isInitialized = false;
   }
 
   // --- Public API for sidecar use ---

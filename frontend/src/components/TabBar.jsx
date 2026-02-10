@@ -1,7 +1,28 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import './TabBar.css';
 import UserProfile from './UserProfile';
-import { createColorGradient } from '../utils/colorUtils';
+import { createColorGradient, getDominantColor, getTextColorForBackground } from '../utils/colorUtils';
+
+// Load DND state from notification settings
+const loadDoNotDisturb = () => {
+    try {
+        const saved = localStorage.getItem('Nightjar-notification-settings');
+        if (saved) {
+            return JSON.parse(saved).doNotDisturb || false;
+        }
+    } catch (e) {}
+    return false;
+};
+
+// Save DND state to notification settings
+const saveDoNotDisturb = (dnd) => {
+    try {
+        const saved = localStorage.getItem('Nightjar-notification-settings');
+        const settings = saved ? JSON.parse(saved) : {};
+        settings.doNotDisturb = dnd;
+        localStorage.setItem('Nightjar-notification-settings', JSON.stringify(settings));
+    } catch (e) {}
+};
 
 const TabBar = ({ 
     tabs, 
@@ -16,7 +37,8 @@ const TabBar = ({
     isFullscreen,
     onToggleFullscreen,
     documents = [], // Added for color lookups
-    folders = [] // Added for color lookups
+    folders = [], // Added for color lookups
+    collaboratorsByDocument = {} // Map of documentId -> [{ name, color, icon }]
 }) => {
     const handleTabKeyDown = useCallback((e, tabIndex) => {
         if (e.key === 'ArrowRight') {
@@ -44,10 +66,20 @@ const TabBar = ({
             const folder = doc?.folderId ? folders.find(f => f.id === doc.folderId) : null;
             const folderColor = folder?.color;
             const docColor = doc?.color;
-            const backgroundStyle = folderColor || docColor
+            const hasColor = folderColor || docColor;
+            const backgroundStyle = hasColor
                 ? { background: createColorGradient(folderColor, docColor, 0.25) }
                 : {};
-            map.set(tab.id, backgroundStyle);
+            
+            // Get dynamic text color based on dominant background color
+            const dominantColor = getDominantColor(folderColor, docColor);
+            const textColor = getTextColorForBackground(dominantColor);
+            
+            map.set(tab.id, { 
+                backgroundStyle, 
+                textColor,
+                hasColor 
+            });
         });
         return map;
     }, [tabs, documents, folders]);
@@ -57,13 +89,16 @@ const TabBar = ({
             <div className="tabs-container" role="tablist" aria-label="Document tabs">
                 {tabs.map((tab, tabIndex) => {
                     // Use pre-computed color from memoized map
-                    const backgroundStyle = colorMap.get(tab.id) || {};
+                    const { backgroundStyle, textColor, hasColor } = colorMap.get(tab.id) || {};
                     
                     const isSelected = tab.id === activeTabId;
+                    const tabCollaborators = collaboratorsByDocument[tab.id] || [];
+                    const hasCollaborators = tabCollaborators.length > 0;
+                    
                     return (
                         <div
                             key={tab.id}
-                            className={`tab ${isSelected ? 'active' : ''} ${tab.hasUnsavedChanges ? 'unsaved' : ''}`}
+                            className={`tab ${isSelected ? 'active' : ''} ${tab.hasUnsavedChanges ? 'unsaved' : ''} ${hasColor ? 'tab--colored' : ''}`}
                             onClick={() => onSelectTab(tab.id)}
                             onKeyDown={(e) => handleTabKeyDown(e, tabIndex)}
                             style={backgroundStyle}
@@ -73,7 +108,30 @@ const TabBar = ({
                             tabIndex={isSelected ? 0 : -1}
                             id={`tab-${tab.id}`}
                         >
-                        <span className="tab-name">{tab.name}</span>
+                        {/* Collaborator presence indicator */}
+                        {hasCollaborators && (
+                            <span 
+                                className="tab-presence"
+                                title={tabCollaborators.map(c => c.name).join(', ')}
+                            >
+                                {tabCollaborators.slice(0, 3).map((collab, i) => (
+                                    <span 
+                                        key={collab.publicKey || i}
+                                        className="tab-presence-dot"
+                                        style={{ backgroundColor: collab.color }}
+                                    />
+                                ))}
+                                {tabCollaborators.length > 3 && (
+                                    <span className="tab-presence-more">+{tabCollaborators.length - 3}</span>
+                                )}
+                            </span>
+                        )}
+                        <span 
+                            className="tab-name"
+                            style={textColor ? { color: textColor } : undefined}
+                        >
+                            {tab.name}
+                        </span>
                         {tab.hasUnsavedChanges && <span className="unsaved-indicator">●</span>}
                         <button 
                             type="button"
@@ -93,6 +151,9 @@ const TabBar = ({
             </div>
             
             <div className="tab-bar-actions">
+                {/* Do Not Disturb Toggle */}
+                <DoNotDisturbToggle />
+                
                 <button 
                     type="button"
                     className={`tab-bar-btn ${showComments ? 'active' : ''}`}
@@ -130,6 +191,46 @@ const TabBar = ({
                 />
             </div>
         </div>
+    );
+};
+
+// Do Not Disturb Toggle Component
+const DoNotDisturbToggle = () => {
+    const [doNotDisturb, setDoNotDisturb] = useState(loadDoNotDisturb);
+    
+    // Listen for storage changes from settings panel
+    useEffect(() => {
+        const handleStorageChange = () => {
+            setDoNotDisturb(loadDoNotDisturb());
+        };
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Also check periodically for same-window changes
+        const interval = setInterval(handleStorageChange, 1000);
+        
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(interval);
+        };
+    }, []);
+    
+    const toggleDND = useCallback(() => {
+        const newValue = !doNotDisturb;
+        setDoNotDisturb(newValue);
+        saveDoNotDisturb(newValue);
+    }, [doNotDisturb]);
+    
+    return (
+        <button 
+            type="button"
+            className={`tab-bar-btn tab-bar-btn--dnd ${doNotDisturb ? 'active' : ''}`}
+            onClick={toggleDND}
+            title={doNotDisturb ? 'Do Not Disturb is ON - Click to enable sounds' : 'Click to enable Do Not Disturb'}
+            aria-label={doNotDisturb ? 'Disable Do Not Disturb' : 'Enable Do Not Disturb'}
+            aria-pressed={doNotDisturb}
+        >
+            {doNotDisturb ? '🔕' : '🔔'}
+        </button>
     );
 };
 

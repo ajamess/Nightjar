@@ -19,7 +19,7 @@ import { IfPermitted } from './PermissionGuard';
 import { usePermissions } from '../contexts/PermissionContext';
 import { useWorkspaces } from '../contexts/WorkspaceContext';
 import { useFolders } from '../contexts/FolderContext';
-import { ensureContrastWithWhite, createColorGradient } from '../utils/colorUtils';
+import { ensureContrastWithWhite, createColorGradient, getTextColorForBackground, getDominantColor } from '../utils/colorUtils';
 import NightjarMascot from './NightjarMascot';
 import './HierarchicalSidebar.css';
 
@@ -142,42 +142,64 @@ const TreeItem = React.memo(function TreeItem({
         }
     };
     
-    // Determine background color/gradient based on item type
-    const getBackgroundStyle = () => {
+    // Determine background color/gradient and text color based on item type
+    const getItemStyle = () => {
         // System folders use workspace color
         if (item.isSystem && workspaceColor) {
-            return { background: ensureContrastWithWhite(workspaceColor, 0.3) };
+            return { 
+                background: ensureContrastWithWhite(workspaceColor, 0.3),
+                textColor: getTextColorForBackground(workspaceColor)
+            };
         }
         // Regular folders use their own color
         if (type === 'folder' && item.color) {
-            return { background: ensureContrastWithWhite(item.color, 0.3) };
+            return { 
+                background: ensureContrastWithWhite(item.color, 0.3),
+                textColor: getTextColorForBackground(item.color)
+            };
         }
         // Documents - check for gradient first, then fallback to single color
         if (type === 'document') {
             const folderColor = item.folderColor;
             const docColor = item.color;
+            const dominantColor = getDominantColor(folderColor, docColor);
             
             // Use gradient if both folder and document have colors
             if (folderColor && docColor) {
-                return { background: createColorGradient(folderColor, docColor, 0.25) };
+                return { 
+                    background: createColorGradient(folderColor, docColor, 0.25),
+                    textColor: getTextColorForBackground(dominantColor)
+                };
             }
             // Use document color if available
             else if (docColor) {
-                return { background: ensureContrastWithWhite(docColor, 0.3) };
+                return { 
+                    background: ensureContrastWithWhite(docColor, 0.3),
+                    textColor: getTextColorForBackground(docColor)
+                };
             }
             // Use folder color as fallback
             else if (folderColor) {
-                return { background: ensureContrastWithWhite(folderColor, 0.3) };
+                return { 
+                    background: ensureContrastWithWhite(folderColor, 0.3),
+                    textColor: getTextColorForBackground(folderColor)
+                };
             }
         }
         return {};
     };
     
+    const itemStyle = getItemStyle();
+    
     return (
         <div className="tree-item-wrapper">
             <div
-                className={`tree-item tree-item--${type} ${isSelected ? 'tree-item--selected' : ''} ${isDragOver ? 'tree-item--drag-over' : ''} ${isRenaming ? 'tree-item--renaming' : ''}`}
-                style={{ paddingLeft: `${12 + level * 20}px`, ...getBackgroundStyle() }}
+                className={`tree-item tree-item--${type} ${isSelected ? 'tree-item--selected' : ''} ${isDragOver ? 'tree-item--drag-over' : ''} ${isRenaming ? 'tree-item--renaming' : ''} ${itemStyle.textColor ? 'tree-item--colored' : ''}`}
+                style={{ 
+                    paddingLeft: `${12 + level * 20}px`, 
+                    background: itemStyle.background,
+                    ...(itemStyle.textColor ? { '--tree-item-text-color': itemStyle.textColor } : {})
+                }}
                 onClick={() => !isRenaming && onSelect(item.id, type)}
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDownItem}

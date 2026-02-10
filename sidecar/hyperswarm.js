@@ -652,6 +652,24 @@ class HyperswarmManager extends EventEmitter {
           this.emit('sync-state-received', { peerId, topic: message.topic, data: message.data });
           break;
 
+        case 'sync-manifest-request':
+          // Peer is requesting our sync manifest (doc/folder counts) for verification
+          console.log(`[Hyperswarm] Received sync-manifest-request from ${peerId.slice(0, 16)}... for topic ${message.topic?.slice(0, 16)}...`);
+          this.emit('sync-manifest-request', { peerId, topic: message.topic });
+          break;
+        
+        case 'sync-manifest':
+          // Peer is sending their sync manifest for comparison
+          console.log(`[Hyperswarm] Received sync-manifest from ${peerId.slice(0, 16)}... for topic ${message.topic?.slice(0, 16)}...`);
+          this.emit('sync-manifest-received', { peerId, topic: message.topic, manifest: message.manifest });
+          break;
+        
+        case 'sync-documents-request':
+          // Peer is requesting specific documents by ID
+          console.log(`[Hyperswarm] Received sync-documents-request from ${peerId.slice(0, 16)}... for ${message.documentIds?.length || 0} document(s)`);
+          this.emit('sync-documents-request', { peerId, topic: message.topic, documentIds: message.documentIds });
+          break;
+
         case 'awareness':
           this.emit('awareness-update', { peerId, topic: message.topic, state: message.state });
           break;
@@ -921,6 +939,64 @@ class HyperswarmManager extends EventEmitter {
       type: 'sync-state',
       topic: topicHex,
       data: data
+    });
+  }
+
+  /**
+   * Request sync manifest from a specific peer (for verification)
+   * @param {string} peerId - Target peer's public key hex
+   * @param {string} topicHex - Topic to get manifest for
+   */
+  sendSyncManifestRequest(peerId, topicHex) {
+    const conn = this.connections.get(peerId);
+    if (!conn || !conn.socket) {
+      console.warn(`[Hyperswarm] Cannot send sync-manifest-request - peer ${peerId.slice(0, 16)}... not connected`);
+      return false;
+    }
+    console.log(`[Hyperswarm] Sending sync-manifest-request to ${peerId.slice(0, 16)}... for topic ${topicHex.slice(0, 16)}...`);
+    return this._sendMessage(conn.socket, {
+      type: 'sync-manifest-request',
+      topic: topicHex
+    });
+  }
+
+  /**
+   * Send sync manifest to a specific peer (response to sync-manifest-request)
+   * @param {string} peerId - Target peer's public key hex
+   * @param {string} topicHex - Topic the manifest belongs to
+   * @param {Object} manifest - Manifest object with documentIds, documentCount, folderCount
+   */
+  sendSyncManifest(peerId, topicHex, manifest) {
+    const conn = this.connections.get(peerId);
+    if (!conn || !conn.socket) {
+      console.warn(`[Hyperswarm] Cannot send sync-manifest - peer ${peerId.slice(0, 16)}... not connected`);
+      return false;
+    }
+    console.log(`[Hyperswarm] Sending sync-manifest to ${peerId.slice(0, 16)}... docs: ${manifest?.documentCount}, folders: ${manifest?.folderCount}`);
+    return this._sendMessage(conn.socket, {
+      type: 'sync-manifest',
+      topic: topicHex,
+      manifest: manifest
+    });
+  }
+
+  /**
+   * Request specific documents from a peer (for missing document recovery)
+   * @param {string} peerId - Target peer's public key hex
+   * @param {string} topicHex - Topic the documents belong to
+   * @param {Array<string>} documentIds - List of document IDs to request
+   */
+  sendDocumentsRequest(peerId, topicHex, documentIds) {
+    const conn = this.connections.get(peerId);
+    if (!conn || !conn.socket) {
+      console.warn(`[Hyperswarm] Cannot send sync-documents-request - peer ${peerId.slice(0, 16)}... not connected`);
+      return false;
+    }
+    console.log(`[Hyperswarm] Sending sync-documents-request to ${peerId.slice(0, 16)}... for ${documentIds?.length || 0} document(s)`);
+    return this._sendMessage(conn.socket, {
+      type: 'sync-documents-request',
+      topic: topicHex,
+      documentIds: documentIds
     });
   }
 

@@ -48,181 +48,346 @@ function test(name, fn, options = {}) {
 
 /**
  * Initialize a Kanban board structure
+ * 
+ * Production uses: ydoc.getMap('kanban').get('columns')
+ * This is a Map containing a 'columns' key with an array of column objects,
+ * where each column has an embedded 'cards' array.
  */
 function initKanbanBoard(client, boardId = 'default') {
     const ydoc = client.getYDoc();
-    const columns = ydoc.getArray(`kanban:${boardId}:columns`);
-    const cards = ydoc.getMap(`kanban:${boardId}:cards`);
-    const meta = ydoc.getMap(`kanban:${boardId}:meta`);
+    // Production structure: ydoc.getMap('kanban')
+    const ykanban = ydoc.getMap('kanban');
     
-    return { columns, cards, meta };
+    // For backwards compatibility with tests that use boardId
+    if (boardId !== 'default') {
+        return {
+            columns: ydoc.getArray(`kanban:${boardId}:columns`),
+            cards: ydoc.getMap(`kanban:${boardId}:cards`),
+            meta: ydoc.getMap(`kanban:${boardId}:meta`),
+        };
+    }
+    
+    return { ykanban };
 }
 
 /**
- * Add a column to the board
+ * Add a column to the board (production structure)
  */
 function addColumn(client, boardId, columnId, title, position = -1) {
     const ydoc = client.getYDoc();
-    const columns = ydoc.getArray(`kanban:${boardId}:columns`);
+    
+    if (boardId !== 'default') {
+        // Legacy test structure
+        const columns = ydoc.getArray(`kanban:${boardId}:columns`);
+        const column = {
+            id: columnId,
+            title,
+            cardIds: [],
+            createdAt: Date.now(),
+        };
+        if (position === -1) {
+            columns.push([column]);
+        } else {
+            columns.insert(position, [column]);
+        }
+        return column;
+    }
+    
+    // Production structure: ydoc.getMap('kanban').get('columns')
+    const ykanban = ydoc.getMap('kanban');
+    let columns = ykanban.get('columns') || [];
+    columns = JSON.parse(JSON.stringify(columns)); // Deep clone
     
     const column = {
         id: columnId,
-        title,
-        cardIds: [],
+        name: title, // Production uses 'name' not 'title'
+        color: '#6366f1',
+        cards: [],
         createdAt: Date.now(),
     };
     
     if (position === -1) {
-        columns.push([column]);
+        columns.push(column);
     } else {
-        columns.insert(position, [column]);
+        columns.splice(position, 0, column);
     }
     
+    ykanban.set('columns', columns);
     return column;
 }
 
 /**
- * Get all columns
+ * Get all columns (production structure)
  */
 function getColumns(client, boardId) {
     const ydoc = client.getYDoc();
-    return ydoc.getArray(`kanban:${boardId}:columns`).toArray();
+    
+    if (boardId !== 'default') {
+        // Legacy test structure
+        return ydoc.getArray(`kanban:${boardId}:columns`).toArray();
+    }
+    
+    // Production structure
+    const ykanban = ydoc.getMap('kanban');
+    return ykanban.get('columns') || [];
 }
 
 /**
- * Add a card to a column
+ * Add a card to a column (production structure)
  */
 function addCard(client, boardId, cardId, columnId, content) {
     const ydoc = client.getYDoc();
-    const cards = ydoc.getMap(`kanban:${boardId}:cards`);
-    const columns = ydoc.getArray(`kanban:${boardId}:columns`);
     
-    // Create card
-    cards.set(cardId, {
-        id: cardId,
-        content,
-        columnId,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-    });
+    if (boardId !== 'default') {
+        // Legacy test structure
+        const cards = ydoc.getMap(`kanban:${boardId}:cards`);
+        const columns = ydoc.getArray(`kanban:${boardId}:columns`);
+        
+        // Create card
+        cards.set(cardId, {
+            id: cardId,
+            content,
+            columnId,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        });
+        
+        // Add to column's cardIds
+        const columnsArray = columns.toArray();
+        const colIndex = columnsArray.findIndex(c => c.id === columnId);
+        if (colIndex !== -1) {
+            const col = columnsArray[colIndex];
+            col.cardIds = [...(col.cardIds || []), cardId];
+            columns.delete(colIndex, 1);
+            columns.insert(colIndex, [col]);
+        }
+        return;
+    }
     
-    // Add to column's cardIds
-    const columnsArray = columns.toArray();
-    const colIndex = columnsArray.findIndex(c => c.id === columnId);
+    // Production structure: cards are embedded in columns
+    const ykanban = ydoc.getMap('kanban');
+    let columns = ykanban.get('columns') || [];
+    columns = JSON.parse(JSON.stringify(columns));
+    
+    const colIndex = columns.findIndex(c => c.id === columnId);
     if (colIndex !== -1) {
-        const col = columnsArray[colIndex];
-        col.cardIds = [...(col.cardIds || []), cardId];
-        columns.delete(colIndex, 1);
-        columns.insert(colIndex, [col]);
+        columns[colIndex].cards = columns[colIndex].cards || [];
+        columns[colIndex].cards.push({
+            id: cardId,
+            title: content, // Production uses 'title'
+            description: '',
+            color: '',
+            createdAt: Date.now(),
+        });
+        ykanban.set('columns', columns);
     }
 }
 
 /**
- * Get a card by ID
+ * Get a card by ID (production structure)
  */
 function getCard(client, boardId, cardId) {
     const ydoc = client.getYDoc();
-    return ydoc.getMap(`kanban:${boardId}:cards`).get(cardId);
+    
+    if (boardId !== 'default') {
+        // Legacy test structure
+        return ydoc.getMap(`kanban:${boardId}:cards`).get(cardId);
+    }
+    
+    // Production structure: cards are embedded in columns
+    const ykanban = ydoc.getMap('kanban');
+    const columns = ykanban.get('columns') || [];
+    for (const col of columns) {
+        const card = (col.cards || []).find(c => c.id === cardId);
+        if (card) return card;
+    }
+    return null;
 }
 
 /**
- * Get all cards
+ * Get all cards (production structure)
  */
 function getAllCards(client, boardId) {
     const ydoc = client.getYDoc();
-    const cards = ydoc.getMap(`kanban:${boardId}:cards`);
+    
+    if (boardId !== 'default') {
+        // Legacy test structure
+        const cards = ydoc.getMap(`kanban:${boardId}:cards`);
+        const result = {};
+        cards.forEach((value, key) => {
+            result[key] = value;
+        });
+        return result;
+    }
+    
+    // Production structure: collect cards from all columns
+    const ykanban = ydoc.getMap('kanban');
+    const columns = ykanban.get('columns') || [];
     const result = {};
-    cards.forEach((value, key) => {
-        result[key] = value;
-    });
+    for (const col of columns) {
+        for (const card of (col.cards || [])) {
+            result[card.id] = { ...card, columnId: col.id };
+        }
+    }
     return result;
 }
 
 /**
- * Move a card between columns
+ * Move a card between columns (production structure)
  */
 function moveCard(client, boardId, cardId, fromColumnId, toColumnId, newPosition = -1) {
     const ydoc = client.getYDoc();
-    const cards = ydoc.getMap(`kanban:${boardId}:cards`);
-    const columns = ydoc.getArray(`kanban:${boardId}:columns`);
     
-    // Update card's columnId
-    const card = cards.get(cardId);
-    if (card) {
-        cards.set(cardId, { ...card, columnId: toColumnId, updatedAt: Date.now() });
-    }
-    
-    // Update column cardIds
-    const columnsArray = columns.toArray();
-    
-    // Remove from source
-    const fromIdx = columnsArray.findIndex(c => c.id === fromColumnId);
-    if (fromIdx !== -1) {
-        const fromCol = columnsArray[fromIdx];
-        fromCol.cardIds = (fromCol.cardIds || []).filter(id => id !== cardId);
-        columns.delete(fromIdx, 1);
-        columns.insert(fromIdx, [fromCol]);
-    }
-    
-    // Add to target
-    const columnsArrayUpdated = columns.toArray();
-    const toIdx = columnsArrayUpdated.findIndex(c => c.id === toColumnId);
-    if (toIdx !== -1) {
-        const toCol = columnsArrayUpdated[toIdx];
-        const targetCardIds = [...(toCol.cardIds || [])];
-        if (newPosition === -1 || newPosition >= targetCardIds.length) {
-            targetCardIds.push(cardId);
-        } else {
-            targetCardIds.splice(newPosition, 0, cardId);
+    if (boardId !== 'default') {
+        // Legacy test structure
+        const cards = ydoc.getMap(`kanban:${boardId}:cards`);
+        const columns = ydoc.getArray(`kanban:${boardId}:columns`);
+        
+        // Update card's columnId
+        const card = cards.get(cardId);
+        if (card) {
+            cards.set(cardId, { ...card, columnId: toColumnId, updatedAt: Date.now() });
         }
-        toCol.cardIds = targetCardIds;
-        columns.delete(toIdx, 1);
-        columns.insert(toIdx, [toCol]);
+        
+        // Update column cardIds
+        const columnsArray = columns.toArray();
+        
+        // Remove from source
+        const fromIdx = columnsArray.findIndex(c => c.id === fromColumnId);
+        if (fromIdx !== -1) {
+            const fromCol = columnsArray[fromIdx];
+            fromCol.cardIds = (fromCol.cardIds || []).filter(id => id !== cardId);
+            columns.delete(fromIdx, 1);
+            columns.insert(fromIdx, [fromCol]);
+        }
+        
+        // Add to target
+        const columnsArrayUpdated = columns.toArray();
+        const toIdx = columnsArrayUpdated.findIndex(c => c.id === toColumnId);
+        if (toIdx !== -1) {
+            const toCol = columnsArrayUpdated[toIdx];
+            const targetCardIds = [...(toCol.cardIds || [])];
+            if (newPosition === -1 || newPosition >= targetCardIds.length) {
+                targetCardIds.push(cardId);
+            } else {
+                targetCardIds.splice(newPosition, 0, cardId);
+            }
+            toCol.cardIds = targetCardIds;
+            columns.delete(toIdx, 1);
+            columns.insert(toIdx, [toCol]);
+        }
+        return;
     }
+    
+    // Production structure: cards are embedded in columns
+    const ykanban = ydoc.getMap('kanban');
+    let columns = ykanban.get('columns') || [];
+    columns = JSON.parse(JSON.stringify(columns));
+    
+    // Find and remove card from source column
+    let movedCard = null;
+    const fromColIdx = columns.findIndex(c => c.id === fromColumnId);
+    if (fromColIdx !== -1) {
+        const cardIdx = columns[fromColIdx].cards.findIndex(c => c.id === cardId);
+        if (cardIdx !== -1) {
+            movedCard = columns[fromColIdx].cards.splice(cardIdx, 1)[0];
+        }
+    }
+    
+    // Add to target column
+    if (movedCard) {
+        const toColIdx = columns.findIndex(c => c.id === toColumnId);
+        if (toColIdx !== -1) {
+            if (newPosition === -1 || newPosition >= columns[toColIdx].cards.length) {
+                columns[toColIdx].cards.push(movedCard);
+            } else {
+                columns[toColIdx].cards.splice(newPosition, 0, movedCard);
+            }
+        }
+    }
+    
+    ykanban.set('columns', columns);
 }
 
 /**
- * Delete a card
+ * Delete a card (production structure)
  */
 function deleteCard(client, boardId, cardId) {
     const ydoc = client.getYDoc();
-    const cards = ydoc.getMap(`kanban:${boardId}:cards`);
-    const columns = ydoc.getArray(`kanban:${boardId}:columns`);
     
-    // Remove card
-    const card = cards.get(cardId);
-    cards.delete(cardId);
+    if (boardId !== 'default') {
+        // Legacy test structure
+        const cards = ydoc.getMap(`kanban:${boardId}:cards`);
+        const columns = ydoc.getArray(`kanban:${boardId}:columns`);
+        
+        // Remove card
+        const card = cards.get(cardId);
+        cards.delete(cardId);
+        
+        // Remove from column
+        if (card) {
+            const columnsArray = columns.toArray();
+            const colIdx = columnsArray.findIndex(c => c.id === card.columnId);
+            if (colIdx !== -1) {
+                const col = columnsArray[colIdx];
+                col.cardIds = (col.cardIds || []).filter(id => id !== cardId);
+                columns.delete(colIdx, 1);
+                columns.insert(colIdx, [col]);
+            }
+        }
+        return;
+    }
     
-    // Remove from column
-    if (card) {
-        const columnsArray = columns.toArray();
-        const colIdx = columnsArray.findIndex(c => c.id === card.columnId);
-        if (colIdx !== -1) {
-            const col = columnsArray[colIdx];
-            col.cardIds = (col.cardIds || []).filter(id => id !== cardId);
-            columns.delete(colIdx, 1);
-            columns.insert(colIdx, [col]);
+    // Production structure: cards are embedded in columns
+    const ykanban = ydoc.getMap('kanban');
+    let columns = ykanban.get('columns') || [];
+    columns = JSON.parse(JSON.stringify(columns));
+    
+    for (const col of columns) {
+        const cardIdx = (col.cards || []).findIndex(c => c.id === cardId);
+        if (cardIdx !== -1) {
+            col.cards.splice(cardIdx, 1);
+            break;
         }
     }
+    
+    ykanban.set('columns', columns);
 }
 
 /**
- * Reorder a column
+ * Reorder a column (production structure)
  */
 function reorderColumn(client, boardId, columnId, newPosition) {
     const ydoc = client.getYDoc();
-    const columns = ydoc.getArray(`kanban:${boardId}:columns`);
     
-    const columnsArray = columns.toArray();
-    const currentIdx = columnsArray.findIndex(c => c.id === columnId);
-    
-    if (currentIdx !== -1 && currentIdx !== newPosition) {
-        const [column] = columnsArray.splice(currentIdx, 1);
-        columnsArray.splice(newPosition, 0, column);
+    if (boardId !== 'default') {
+        // Legacy test structure
+        const columns = ydoc.getArray(`kanban:${boardId}:columns`);
         
-        // Recreate array
-        columns.delete(0, columns.length);
-        columns.push(columnsArray);
+        const columnsArray = columns.toArray();
+        const currentIdx = columnsArray.findIndex(c => c.id === columnId);
+        
+        if (currentIdx !== -1 && currentIdx !== newPosition) {
+            const [column] = columnsArray.splice(currentIdx, 1);
+            columnsArray.splice(newPosition, 0, column);
+            
+            // Recreate array
+            columns.delete(0, columns.length);
+            columns.push(columnsArray);
+        }
+        return;
+    }
+    
+    // Production structure
+    const ykanban = ydoc.getMap('kanban');
+    let columns = ykanban.get('columns') || [];
+    columns = JSON.parse(JSON.stringify(columns));
+    
+    const currentIdx = columns.findIndex(c => c.id === columnId);
+    if (currentIdx !== -1 && currentIdx !== newPosition) {
+        const [column] = columns.splice(currentIdx, 1);
+        columns.splice(newPosition, 0, column);
+        ykanban.set('columns', columns);
     }
 }
 
