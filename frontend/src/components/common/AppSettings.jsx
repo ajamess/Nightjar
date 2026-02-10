@@ -110,6 +110,46 @@ const initializeSettings = () => {
 // Run settings initialization immediately
 initializeSettings();
 
+// Load notification settings from localStorage
+const loadNotificationSettings = () => {
+  try {
+    const saved = localStorage.getItem('Nightjar-notification-settings');
+    if (saved) {
+      return { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(saved) };
+    }
+  } catch (e) {
+    console.error('Failed to load notification settings:', e);
+  }
+  return { ...DEFAULT_NOTIFICATION_SETTINGS };
+};
+
+// Default notification settings with all fields
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  enabled: true,
+  soundEnabled: true,
+  soundVolume: 0.5,
+  selectedSound: 'chime',
+  doNotDisturb: false,
+  desktopNotifications: false,
+  showPreview: true,
+  // Per-type sound toggles
+  soundOnDirectMessage: true,
+  soundOnMention: true,
+  soundOnGroupMessage: true,
+  soundOnGeneralMessage: false,
+  defaultChannelSetting: 'all', // 'all', 'mentions', 'muted'
+  channelOverrides: {}, // channelId -> 'all' | 'mentions' | 'muted'
+};
+
+// Save notification settings to localStorage
+const saveNotificationSettings = (settings) => {
+  try {
+    localStorage.setItem('Nightjar-notification-settings', JSON.stringify(settings));
+  } catch (e) {
+    console.error('Failed to save notification settings:', e);
+  }
+};
+
 export default function AppSettings({ isOpen, onClose }) {
   const { isElectron } = useEnvironment();
   const [activeTab, setActiveTab] = useState('general');
@@ -125,6 +165,9 @@ export default function AppSettings({ isOpen, onClose }) {
   const [relayEnabled, setRelayEnabled] = useState(false);
   const [relaySettings, setRelaySettings] = useState({ port: 4445, maxConnections: 10, announceOnDHT: true });
   const [relayStatus, setRelayStatus] = useState({ running: false, activeConnections: 0 });
+  
+  // Notification settings state
+  const [notificationSettings, setNotificationSettings] = useState(loadNotificationSettings);
   
   // Focus trap for modal accessibility
   useFocusTrap(modalRef, isOpen, { onEscape: onClose });
@@ -289,6 +332,7 @@ export default function AppSettings({ isOpen, onClose }) {
   const tabs = [
     { id: 'general', label: '⚙️ General', icon: '⚙️' },
     { id: 'editor', label: '✏️ Editor', icon: '✏️' },
+    { id: 'notifications', label: '🔔 Notifications', icon: '🔔' },
     { id: 'privacy', label: '🔒 Privacy', icon: '🔒' },
     ...(isElectron ? [{ id: 'network', label: '🌐 Network', icon: '🌐' }] : []),
     { id: 'shortcuts', label: '⌨️ Shortcuts', icon: '⌨️' },
@@ -487,6 +531,265 @@ export default function AppSettings({ isOpen, onClose }) {
                   <div>
                     <strong>Real-time Sync</strong>
                     <p>Changes are automatically synced in real-time. No manual saving required.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notifications Tab */}
+            {activeTab === 'notifications' && (
+              <div className="app-settings__section">
+                <h3 className="app-settings__section-title">Notification Settings</h3>
+                
+                {/* Do Not Disturb Mode */}
+                <div className="app-settings__field app-settings__field--toggle app-settings__field--dnd">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.doNotDisturb}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, doNotDisturb: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                    />
+                    <span className="app-settings__toggle-text">🔕 Do Not Disturb</span>
+                  </label>
+                  <span className="app-settings__hint">Silences all sounds and notifications temporarily</span>
+                </div>
+                
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.enabled}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, enabled: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                    />
+                    <span className="app-settings__toggle-text">Enable notifications</span>
+                  </label>
+                  <span className="app-settings__hint">Master toggle for all notification types</span>
+                </div>
+
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.soundEnabled}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, soundEnabled: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled}
+                    />
+                    <span className="app-settings__toggle-text">Sound notifications</span>
+                  </label>
+                </div>
+
+                {/* Sound Picker */}
+                <h3 className="app-settings__section-title">Sound Selection</h3>
+                
+                <div className="app-settings__field">
+                  <label className="app-settings__label">Notification Sound</label>
+                  <div className="app-settings__sound-picker">
+                    <select
+                      className="app-settings__select"
+                      value={notificationSettings.selectedSound || 'chime'}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, selectedSound: e.target.value };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                    >
+                      <option value="chime">🔔 Chime - Gentle bell chime</option>
+                      <option value="pop">💭 Pop - Soft bubble pop</option>
+                      <option value="ding">🛎️ Ding - Single notification ding</option>
+                      <option value="bell">🔔 Bell - Clear bell tone</option>
+                      <option value="subtle">💨 Subtle - Soft whoosh</option>
+                      <option value="ping">📡 Ping - Digital ping</option>
+                      <option value="drop">💧 Drop - Water drop sound</option>
+                      <option value="blip">🎮 Blip - Retro blip</option>
+                      <option value="tap">👆 Tap - Light tap</option>
+                      <option value="sparkle">✨ Sparkle - Magical sparkle</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="app-settings__btn-secondary app-settings__btn-test"
+                      onClick={() => {
+                        const basePath = window.location.protocol === 'file:' ? '.' : '';
+                        const audio = new Audio(`${basePath}/sounds/${notificationSettings.selectedSound || 'chime'}.mp3`);
+                        audio.volume = notificationSettings.soundVolume;
+                        audio.play().catch(() => {});
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                    >
+                      ▶ Test
+                    </button>
+                  </div>
+                </div>
+
+                <div className="app-settings__field">
+                  <label className="app-settings__label">Sound Volume: {Math.round(notificationSettings.soundVolume * 100)}%</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={notificationSettings.soundVolume}
+                    onChange={(e) => {
+                      const newSettings = { ...notificationSettings, soundVolume: parseFloat(e.target.value) };
+                      setNotificationSettings(newSettings);
+                      saveNotificationSettings(newSettings);
+                    }}
+                    className="app-settings__range"
+                    disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                  />
+                </div>
+
+                {/* Per-Message-Type Sound Settings */}
+                <h3 className="app-settings__section-title">Play Sound For</h3>
+                
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.soundOnDirectMessage !== false}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, soundOnDirectMessage: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                    />
+                    <span className="app-settings__toggle-text">💬 Direct messages</span>
+                  </label>
+                </div>
+                
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.soundOnMention !== false}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, soundOnMention: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                    />
+                    <span className="app-settings__toggle-text">@️ Mentions (@username)</span>
+                  </label>
+                </div>
+                
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.soundOnGroupMessage !== false}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, soundOnGroupMessage: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                    />
+                    <span className="app-settings__toggle-text">👥 Group chat messages</span>
+                  </label>
+                </div>
+                
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.soundOnGeneralMessage === true}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, soundOnGeneralMessage: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.soundEnabled}
+                    />
+                    <span className="app-settings__toggle-text">📢 General channel messages</span>
+                  </label>
+                  <span className="app-settings__hint">Can be noisy in active workspaces</span>
+                </div>
+
+                <h3 className="app-settings__section-title">Desktop Notifications</h3>
+
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.desktopNotifications}
+                      onChange={(e) => {
+                        if (e.target.checked && 'Notification' in window) {
+                          Notification.requestPermission().then(permission => {
+                            const enabled = permission === 'granted';
+                            const newSettings = { ...notificationSettings, desktopNotifications: enabled };
+                            setNotificationSettings(newSettings);
+                            saveNotificationSettings(newSettings);
+                          });
+                        } else {
+                          const newSettings = { ...notificationSettings, desktopNotifications: e.target.checked };
+                          setNotificationSettings(newSettings);
+                          saveNotificationSettings(newSettings);
+                        }
+                      }}
+                      disabled={!notificationSettings.enabled}
+                    />
+                    <span className="app-settings__toggle-text">Desktop notifications</span>
+                  </label>
+                  <span className="app-settings__hint">Show native OS notifications for new messages</span>
+                </div>
+
+                <div className="app-settings__field app-settings__field--toggle">
+                  <label className="app-settings__toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.showPreview}
+                      onChange={(e) => {
+                        const newSettings = { ...notificationSettings, showPreview: e.target.checked };
+                        setNotificationSettings(newSettings);
+                        saveNotificationSettings(newSettings);
+                      }}
+                      disabled={!notificationSettings.enabled || !notificationSettings.desktopNotifications}
+                    />
+                    <span className="app-settings__toggle-text">Show message preview</span>
+                  </label>
+                  <span className="app-settings__hint">Display message content in desktop notifications</span>
+                </div>
+
+                <h3 className="app-settings__section-title">Default Channel Behavior</h3>
+                
+                <div className="app-settings__field">
+                  <label className="app-settings__label">Notify for:</label>
+                  <select
+                    className="app-settings__select"
+                    value={notificationSettings.defaultChannelSetting}
+                    onChange={(e) => {
+                      const newSettings = { ...notificationSettings, defaultChannelSetting: e.target.value };
+                      setNotificationSettings(newSettings);
+                      saveNotificationSettings(newSettings);
+                    }}
+                    disabled={!notificationSettings.enabled}
+                  >
+                    <option value="all">All messages</option>
+                    <option value="mentions">Mentions only (@username)</option>
+                    <option value="muted">Nothing (muted)</option>
+                  </select>
+                  <span className="app-settings__hint">This applies to all channels unless overridden</span>
+                </div>
+
+                <div className="app-settings__info-box">
+                  <span className="app-settings__info-icon">💡</span>
+                  <div>
+                    <strong>Per-Channel Settings</strong>
+                    <p>You can override notification settings for individual channels by clicking the ⚙️ icon in the chat panel.</p>
                   </div>
                 </div>
               </div>

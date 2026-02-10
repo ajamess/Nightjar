@@ -12,7 +12,8 @@
 
 const WebSocket = require('ws');
 const Y = require('yjs');
-const { docs } = require('y-websocket/bin/utils');
+const { docs, getYDoc } = require('y-websocket/bin/utils');
+const awarenessProtocol = require('y-protocols/awareness');
 const { BOOTSTRAP_NODES, DEV_BOOTSTRAP_NODES } = require('./mesh-constants');
 
 // RELAY_OVERRIDE allows tests to specify a custom relay URL
@@ -200,6 +201,10 @@ class RelayBridge {
     // Track sync state
     let synced = false;
     
+    // Get awareness from WSSharedDoc (if available)
+    // WSSharedDoc from y-websocket/bin/utils has awareness attached
+    const awareness = ydoc.awareness;
+    
     // Handle incoming messages
     ws.on('message', (data) => {
       try {
@@ -243,7 +248,15 @@ class RelayBridge {
             break;
             
           case 3: // awareness
-            // Awareness updates - we can ignore these for now
+            // Apply incoming awareness updates from relay to local awareness
+            if (awareness) {
+              try {
+                const awarenessUpdate = decoding.readVarUint8Array(decoder);
+                awarenessProtocol.applyAwarenessUpdate(awareness, awarenessUpdate, 'relay');
+              } catch (awarenessErr) {
+                console.error(`[RelayBridge] Failed to apply awareness update for ${roomName}:`, awarenessErr.message);
+              }
+            }
             break;
         }
       } catch (err) {
@@ -256,6 +269,16 @@ class RelayBridge {
     encoding.writeVarUint(encoder, 0); // sync step 1
     syncProtocol.writeSyncStep1(encoder, ydoc);
     ws.send(encoding.toUint8Array(encoder));
+    
+    // Send our current awareness state
+    if (awareness) {
+      const awarenessEncoder = encoding.createEncoder();
+      encoding.writeVarUint(awarenessEncoder, 3); // awareness message
+      encoding.writeVarUint8Array(awarenessEncoder, 
+        awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID])
+      );
+      ws.send(encoding.toUint8Array(awarenessEncoder));
+    }
     
     // Forward local updates to relay
     const updateHandler = (update, origin) => {
@@ -271,10 +294,32 @@ class RelayBridge {
     
     ydoc.on('update', updateHandler);
     
-    // Store handler for cleanup
+    // Forward local awareness changes to relay
+    const awarenessHandler = ({ added, updated, removed }, origin) => {
+      if (origin === 'relay') return; // Don't echo relay awareness back
+      
+      const changedClients = added.concat(updated).concat(removed);
+      if (changedClients.length === 0) return;
+      
+      if (ws.readyState === WebSocket.OPEN) {
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, 3); // awareness message
+        encoding.writeVarUint8Array(encoder, 
+          awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients)
+        );
+        ws.send(encoding.toUint8Array(encoder));
+      }
+    };
+    
+    if (awareness) {
+      awareness.on('update', awarenessHandler);
+    }
+    
+    // Store handlers for cleanup
     const conn = this.connections.get(roomName);
     if (conn) {
       conn.updateHandler = updateHandler;
+      conn.awarenessHandler = awarenessHandler;
     }
   }
 
@@ -289,6 +334,11 @@ class RelayBridge {
     // Clean up update handler
     if (conn.updateHandler && conn.ydoc) {
       conn.ydoc.off('update', conn.updateHandler);
+    }
+    
+    // Clean up awareness handler
+    if (conn.awarenessHandler && conn.ydoc?.awareness) {
+      conn.ydoc.awareness.off('update', conn.awarenessHandler);
     }
     
     // Close WebSocket if still open
@@ -368,6 +418,11 @@ class RelayBridge {
     // Clean up update handler
     if (conn.updateHandler && conn.ydoc) {
       conn.ydoc.off('update', conn.updateHandler);
+    }
+    
+    // Clean up awareness handler
+    if (conn.awarenessHandler && conn.ydoc?.awareness) {
+      conn.ydoc.awareness.off('update', conn.awarenessHandler);
     }
     
     // Close WebSocket

@@ -44,11 +44,29 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   const [collaborators, setCollaborators] = useState([]);
   const [onlineCount, setOnlineCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  // Track which document each collaborator has open (for tab presence indicators)
+  // Map of documentId -> array of { name, color, icon, publicKey }
+  const [collaboratorsByDocument, setCollaboratorsByDocument] = useState({});
   
   // Membership tracking (keyed by publicKey for deduplication)
   const [members, setMembers] = useState({});
   const [kicked, setKicked] = useState({});
   const [isKicked, setIsKicked] = useState(false);
+  
+  // Document-folder mapping and trashed documents (for FolderContext compatibility)
+  const [documentFolders, setDocumentFolders] = useState({}); // Map docId -> folderId
+  const [trashedDocuments, setTrashedDocuments] = useState([]); // Soft-deleted documents
+  
+  // Sync progress tracking for UI feedback
+  const [syncPhase, setSyncPhase] = useState('idle'); // idle, connecting, awaiting-peers, receiving-metadata, receiving-documents, complete, failed, expired
+  const [syncProgress, setSyncProgress] = useState({
+    bytesReceived: 0,
+    documentsReceived: 0,
+    foldersReceived: 0,
+    membersReceived: 0,
+    startTime: null,
+    error: null,
+  });
   
   const ydocRef = useRef(null);
   const providerRef = useRef(null);
@@ -58,12 +76,16 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   const yCollaboratorsRef = useRef(null);
   const yMembersRef = useRef(null);
   const yKickedRef = useRef(null);
+  const yDocFoldersRef = useRef(null); // Map docId -> folderId
+  const yTrashedDocsRef = useRef(null); // Array of trashed documents
   
   // Initialize Yjs sync when workspace changes
   useEffect(() => {
     // Always reset kicked state when workspace changes
     setIsKicked(false);
     setSynced(false);
+    setSyncPhase('idle');
+    setSyncProgress({ bytesReceived: 0, documentsReceived: 0, foldersReceived: 0, membersReceived: 0, startTime: null, error: null });
 
     if (!workspaceId) {
       setDocuments([]);
@@ -74,10 +96,16 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       setCollaborators([]);
       setOnlineCount(0);
       setTotalCount(0);
+      setCollaboratorsByDocument({});
       setMembers({});
       setKicked({});
+      setSyncPhase('idle');
       return;
     }
+    
+    // Start sync - set phase and start time
+    setSyncPhase('connecting');
+    setSyncProgress(prev => ({ ...prev, startTime: Date.now() }));
     
     const roomName = `workspace-meta:${workspaceId}`;
     // Pass serverUrl to getWsUrl for cross-platform workspaces
@@ -154,11 +182,27 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     provider.on('status', (event) => {
       console.log(`[WorkspaceSync] Provider status changed:`, event.status);
       
+      // Update sync phase based on provider status
+      if (event.status === 'connecting') {
+        setSyncPhase('connecting');
+      } else if (event.status === 'connected') {
+        // Connected but not synced yet - awaiting peers or metadata
+        setSyncPhase('awaiting-peers');
+      } else if (event.status === 'disconnected') {
+        // Only mark as failed if we haven't synced yet
+        if (!providerRef.current?.synced) {
+          setSyncPhase(prev => prev === 'complete' ? 'complete' : 'failed');
+          setSyncProgress(prev => ({ ...prev, error: 'Connection lost' }));
+        }
+      }
+      
       // Track failures for remote workspaces
       if (event.status === 'connecting' && connectionFailures > 0 && isRemote) {
         connectionFailures++;
         if (connectionFailures >= maxFailures) {
           console.warn(`[WorkspaceSync] Remote server unreachable after ${maxFailures} attempts, stopping reconnection`);
+          setSyncPhase('failed');
+          setSyncProgress(prev => ({ ...prev, error: `Server unreachable after ${maxFailures} attempts` }));
           provider.disconnect();
         }
       } else if (event.status === 'connected') {
@@ -171,6 +215,8 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       connectionFailures++;
       if (connectionFailures >= maxFailures && isRemote) {
         console.warn(`[WorkspaceSync] Remote server unreachable, stopping reconnection`);
+        setSyncPhase('failed');
+        setSyncProgress(prev => ({ ...prev, error: 'Server unreachable' }));
         provider.disconnect();
       }
     });
@@ -229,6 +275,10 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     const yInfo = ydoc.getMap('workspaceInfo');
     const yCollaborators = ydoc.getArray('workspaceCollaborators');
     
+    // Document-folder mapping and trashed documents (for FolderContext compatibility)
+    const yDocFolders = ydoc.getMap('documentFolders'); // Map docId -> folderId
+    const yTrashedDocs = ydoc.getArray('trashedDocuments'); // Soft-deleted documents
+    
     // Membership maps (keyed by publicKey for deduplication and proper identity)
     const yMembers = ydoc.getMap('members');
     const yKicked = ydoc.getMap('kicked');
@@ -284,6 +334,8 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     yCollaboratorsRef.current = yCollaborators;
     yMembersRef.current = yMembers;
     yKickedRef.current = yKicked;
+    yDocFoldersRef.current = yDocFolders;
+    yTrashedDocsRef.current = yTrashedDocs;
     
     // Sync documents from Yjs to React state (with deduplication)
     const syncDocuments = () => {
@@ -353,22 +405,54 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       }
     };
     
+    // Sync document-folder mapping from Yjs to React state
+    const syncDocFolders = () => {
+      if (cleanedUp) return;
+      const mapping = {};
+      yDocFolders.forEach((value, key) => {
+        mapping[key] = value;
+      });
+      console.log(`[WorkspaceSync] syncDocFolders called, count: ${Object.keys(mapping).length}`);
+      setDocumentFolders(mapping);
+    };
+    
+    // Sync trashed documents from Yjs to React state
+    const syncTrashedDocs = () => {
+      if (cleanedUp) return;
+      const trashed = yTrashedDocs.toArray();
+      console.log(`[WorkspaceSync] syncTrashedDocs called, count: ${trashed.length}`);
+      setTrashedDocuments(trashed);
+    };
+    
     // Initial sync
     syncDocuments();
     syncFolders();
     syncInfo();
+    syncDocFolders();
+    syncTrashedDocs();
     
     // If we have initial info (owner creating workspace), set it ONLY after sync
     // and ONLY if the remote doesn't already have data
+    // CRITICAL FIX: Only set initial info if we're the OWNER.
+    // Non-owners joining get initialWorkspaceInfo set to "Shared Workspace" which would
+    // overwrite the real workspace name if set before P2P sync delivers the real data.
     let hasSetInitialInfo = false;
     const trySetInitialInfo = () => {
       if (hasSetInitialInfo || !initialWorkspaceInfo) return;
+      
+      // CRITICAL: Only set initial info if we're the owner
+      // This prevents joiners from overwriting workspace info with "Shared Workspace"
+      if (myPermission !== 'owner') {
+        console.log(`[WorkspaceSync] trySetInitialInfo - skipping (not owner, permission: ${myPermission})`);
+        return;
+      }
+      
       // Only set if remote is empty (no name set)
       const existingName = yInfo.get('name');
       console.log(`[WorkspaceSync] trySetInitialInfo - existingName: "${existingName}", initialName: "${initialWorkspaceInfo?.name}"`);
       if (!existingName) {
         hasSetInitialInfo = true;
-        console.log(`[WorkspaceSync] Setting initial workspace info (no existing name in Yjs)`);
+        console.log(`[WorkspaceSync] Setting initial workspace info (owner, no existing name in Yjs)`);
         yInfo.set('name', initialWorkspaceInfo.name);
         yInfo.set('icon', initialWorkspaceInfo.icon || '📁');
         yInfo.set('color', initialWorkspaceInfo.color || '#6366f1');
@@ -458,10 +542,21 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       }, null, 2));
       console.log(`[WorkspaceSync] ==================================`);
       
+      // Update sync progress with received data counts
+      setSyncProgress(prev => ({
+        ...prev,
+        documentsReceived: receivedDocs.length,
+        foldersReceived: receivedFolders.length,
+        membersReceived: receivedMembersCount,
+      }));
+      
       // Clean up any duplicate documents/folders in the Yjs arrays (one-time)
       cleanupDuplicates();
       
       setSynced(true);
+      // Mark sync as complete
+      setSyncPhase('complete');
+      
       // Re-sync all data to React state after provider sync
       syncDocuments();
       syncFolders();
@@ -537,6 +632,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     
     // Track online users via awareness
     // Uses publicKey for deduplication to prevent duplicates when users reconnect
+    // Also tracks which document each collaborator has open for tab presence
     const syncOnlineFromAwareness = () => {
       if (cleanedUp) return; // Prevent state updates after cleanup
       const states = provider.awareness.getStates();
@@ -546,18 +642,39 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       
       // Track which publicKeys are currently online
       const onlinePublicKeys = new Set();
+      // Track collaborators by document for tab presence indicators
+      const docCollaborators = {}; // documentId -> [{ name, color, icon, publicKey }]
       
       states.forEach((state, clientId) => {
         if (clientId === myClientId) return;
         if (state?.user?.name) {
-          online++;
+          // Require publicKey for proper identity - skip clients without it
+          const publicKey = state.user.publicKey;
+          if (!publicKey) {
+            // Skip legacy clients without publicKey - they need to update
+            console.log(`[WorkspaceSync] Skipping client ${clientId} without publicKey`);
+            return;
+          }
           
-          // Use publicKey for stable identity, fall back to clientId for legacy clients
-          const publicKey = state.user.publicKey || `legacy-${clientId}`;
+          online++;
           
           // Skip if we've already processed this publicKey (same user, different connection)
           if (onlinePublicKeys.has(publicKey)) return;
           onlinePublicKeys.add(publicKey);
+          
+          // Track which document this user has open (for tab presence)
+          const openDocId = state.openDocumentId || state.user?.openDocumentId;
+          if (openDocId) {
+            if (!docCollaborators[openDocId]) {
+              docCollaborators[openDocId] = [];
+            }
+            docCollaborators[openDocId].push({
+              name: state.user.name,
+              color: state.user.color || '#888888',
+              icon: state.user.icon || '👤',
+              publicKey,
+            });
+          }
           
           // Update the members map (keyed by publicKey for proper deduplication)
           const existingMember = yMembers.get(publicKey);
@@ -591,12 +708,15 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       });
       
       setOnlineCount(online);
+      setCollaboratorsByDocument(docCollaborators);
     };
     
     // Subscribe to changes
     yDocuments.observe(syncDocuments);
     yFolders.observe(syncFolders);
     yInfo.observe(syncInfo);
+    yDocFolders.observe(syncDocFolders);
+    yTrashedDocs.observe(syncTrashedDocs);
     yCollaborators.observe(syncCollaborators);
     yMembers.observe(syncMembers);
     yKicked.observe(syncKicked);
@@ -627,6 +747,8 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       yDocuments.unobserve(syncDocuments);
       yFolders.unobserve(syncFolders);
       yInfo.unobserve(syncInfo);
+      yDocFolders.unobserve(syncDocFolders);
+      yTrashedDocs.unobserve(syncTrashedDocs);
       yCollaborators.unobserve(syncCollaborators);
       yMembers.unobserve(syncMembers);
       yKicked.unobserve(syncKicked);
@@ -644,6 +766,8 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       yCollaboratorsRef.current = null;
       yMembersRef.current = null;
       yKickedRef.current = null;
+      yDocFoldersRef.current = null;
+      yTrashedDocsRef.current = null;
     };
   }, [workspaceId, serverUrl, userIdentity?.publicKeyBase62]);
   
@@ -659,6 +783,14 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       lastActive: Date.now(),
     });
   }, [userProfile?.name, userProfile?.color, userProfile?.icon]);
+  
+  // Set the currently open document ID in awareness (for tab presence indicators)
+  const setOpenDocumentId = useCallback((docId) => {
+    const provider = providerRef.current;
+    if (!provider?.awareness) return;
+    
+    provider.awareness.setLocalStateField('openDocumentId', docId);
+  }, []);
   
   // Get raw Yjs document count (for migration check - avoids React state lag)
   const getYjsDocumentCount = useCallback(() => {
@@ -737,6 +869,54 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
         yFoldersRef.current.delete(index, 1);
         yFoldersRef.current.insert(index, [folder]);
       });
+    }
+  }, []);
+  
+  // Set document-folder mapping
+  const setDocumentFolder = useCallback((docId, folderId) => {
+    if (!yDocFoldersRef.current) return;
+    if (folderId) {
+      yDocFoldersRef.current.set(docId, folderId);
+    } else {
+      yDocFoldersRef.current.delete(docId);
+    }
+  }, []);
+  
+  // Move document to trash (soft delete)
+  const trashDocument = useCallback((document, deletedBy = null) => {
+    if (!yTrashedDocsRef.current) return;
+    const trashedDoc = {
+      ...document,
+      deletedAt: Date.now(),
+      deletedBy,
+    };
+    yTrashedDocsRef.current.push([trashedDoc]);
+  }, []);
+  
+  // Restore document from trash
+  const restoreDocument = useCallback((docId) => {
+    if (!yTrashedDocsRef.current || !ydocRef.current) return null;
+    
+    const trashed = yTrashedDocsRef.current.toArray();
+    const index = trashed.findIndex(d => d.id === docId);
+    if (index === -1) return null;
+    
+    const doc = { ...trashed[index] };
+    delete doc.deletedAt;
+    delete doc.deletedBy;
+    
+    yTrashedDocsRef.current.delete(index, 1);
+    return doc;
+  }, []);
+  
+  // Permanently delete document from trash
+  const permanentlyDeleteDocument = useCallback((docId) => {
+    if (!yTrashedDocsRef.current) return;
+    
+    const trashed = yTrashedDocsRef.current.toArray();
+    const index = trashed.findIndex(d => d.id === docId);
+    if (index !== -1) {
+      yTrashedDocsRef.current.delete(index, 1);
     }
   }, []);
   
@@ -859,10 +1039,18 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     workspaceInfo,
     connected,
     synced,
+    // Sync progress for UI feedback
+    syncPhase,
+    syncProgress,
+    // Document-folder mapping and trash (for FolderContext compatibility)
+    documentFolders,
+    trashedDocuments,
     // Workspace-level collaborator tracking (legacy)
     collaborators,
     onlineCount,
     totalCount,
+    // Tab presence: which collaborators have which documents open
+    collaboratorsByDocument,
     // Membership tracking (keyed by publicKey)
     members,
     kicked,
@@ -873,6 +1061,8 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     getYdoc,
     getProvider,
     getYjsDocumentCount,
+    // Set current document for tab presence
+    setOpenDocumentId,
     // Document/folder operations
     addDocument,
     removeDocument,
@@ -881,6 +1071,11 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     removeFolder,
     updateFolder,
     updateWorkspaceInfo,
+    // Document-folder and trash operations
+    setDocumentFolder,
+    trashDocument,
+    restoreDocument,
+    permanentlyDeleteDocument,
     // Membership operations
     addMember,
     kickMember,

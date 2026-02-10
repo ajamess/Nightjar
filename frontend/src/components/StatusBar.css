@@ -173,6 +173,25 @@
     animation: pulse 1.5s infinite;
 }
 
+/* Syncing state (actively receiving data) */
+.connection-status.syncing .status-dot {
+    background: var(--accent-color, #6366f1);
+    animation: pulse 1s infinite;
+}
+
+.connection-status.syncing {
+    color: var(--accent-color, #6366f1);
+}
+
+/* Error state (failed or expired) */
+.connection-status.error .status-dot {
+    background: var(--error-color, #ef4444);
+}
+
+.connection-status.error {
+    color: var(--error-color, #ef4444);
+}
+
 /* Warning state (connected but no peers) */
 .connection-status.warning .status-dot {
     background: var(--warning-color, #f59e0b);
@@ -563,4 +582,193 @@
 .mesh-label {
     font-weight: 600;
     color: var(--text-primary);
+}
+
+/* Sync Status Control */
+.sync-status-control {
+    position: relative;
+}
+
+.sync-status-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--surface-2, #2d2d44);
+    border: 1px solid var(--border-color, #3d3d5c);
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.sync-status-btn:hover {
+    background: var(--surface-3, #3d3d5c);
+}
+
+.sync-status-btn:focus-visible {
+    outline: 2px solid var(--accent-color, #7c3aed);
+    outline-offset: 2px;
+}
+
+.sync-status-btn.sync-verified {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: var(--success-color, #22c55e);
+}
+
+.sync-status-btn.sync-verified .sync-icon {
+    color: var(--success-color, #22c55e);
+}
+
+.sync-status-btn.sync-verifying,
+.sync-status-btn.sync-syncing,
+.sync-status-btn.sync-retrying {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: var(--info-color, #3b82f6);
+}
+
+.sync-status-btn.sync-verifying .sync-icon,
+.sync-status-btn.sync-syncing .sync-icon,
+.sync-status-btn.sync-retrying .sync-icon {
+    color: var(--info-color, #3b82f6);
+    animation: spin 1s linear infinite;
+}
+
+.sync-status-btn.sync-incomplete {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: var(--warning-color, #f59e0b);
+}
+
+.sync-status-btn.sync-incomplete .sync-icon {
+    color: var(--warning-color, #f59e0b);
+}
+
+.sync-status-btn.sync-failed {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: var(--error-color, #ef4444);
+}
+
+.sync-status-btn.sync-failed .sync-icon {
+    color: var(--error-color, #ef4444);
+}
+
+.sync-status-btn.sync-no-peers,
+.sync-status-btn.sync-idle {
+    opacity: 0.7;
+}
+
+.sync-icon {
+    font-size: 0.9rem;
+}
+
+.sync-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Sync Details Popover */
+.sync-details-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    background: var(--surface-2, #2a2a3e);
+    border: 1px solid var(--border-color, #3a3a4e);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    min-width: 250px;
+    z-index: var(--z-popover);
+    overflow: hidden;
+}
+
+.sync-details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color, #3a3a4e);
+    background: var(--surface-3, #1e1e2e);
+}
+
+.sync-details-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.sync-details-status {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--surface-2);
+}
+
+.sync-details-status.sync-verified {
+    color: var(--success-color, #22c55e);
+}
+
+.sync-details-status.sync-incomplete {
+    color: var(--warning-color, #f59e0b);
+}
+
+.sync-details-status.sync-failed {
+    color: var(--error-color, #ef4444);
+}
+
+.sync-details-body {
+    padding: 12px 16px;
+}
+
+.sync-detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.sync-detail-row.warning {
+    color: var(--warning-color, #f59e0b);
+}
+
+.sync-details-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color, #3a3a4e);
+    background: var(--surface-3, #1e1e2e);
+}
+
+.sync-action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--surface-2, #2d2d44);
+    border: 1px solid var(--border-color, #3d3d5c);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.sync-action-btn:hover {
+    background: var(--surface-3, #3d3d5c);
+}
+
+.sync-action-btn.primary {
+    background: var(--accent-color, #7c3aed);
+    border-color: var(--accent-color, #7c3aed);
+    color: white;
+}
+
+.sync-action-btn.primary:hover {
+    background: var(--accent-hover, #6d28d9);
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }

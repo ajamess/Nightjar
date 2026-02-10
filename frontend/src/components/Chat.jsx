@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './Chat.css';
+import { useNotificationSounds, MESSAGE_TYPES } from '../hooks/useNotificationSounds';
 
 // Load persisted chat state from localStorage with bounds checking
 const loadChatState = () => {
@@ -43,13 +44,117 @@ const saveChatState = (state) => {
     }
 };
 
-const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, onTargetUserHandled }) => {
+// Load unread counts from localStorage
+const loadUnreadCounts = (workspaceId) => {
+    try {
+        const saved = localStorage.getItem(`Nightjar-chat-unread-${workspaceId}`);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error('Failed to load unread counts:', e);
+    }
+    return {}; // channelId -> { count, lastReadTimestamp }
+};
+
+// Save unread counts to localStorage
+const saveUnreadCounts = (workspaceId, counts) => {
+    try {
+        localStorage.setItem(`Nightjar-chat-unread-${workspaceId}`, JSON.stringify(counts));
+    } catch (e) {
+        console.error('Failed to save unread counts:', e);
+    }
+};
+
+// Load archived/left channels from localStorage
+const loadChannelState = (workspaceId) => {
+    try {
+        const saved = localStorage.getItem(`Nightjar-chat-channels-${workspaceId}`);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error('Failed to load channel state:', e);
+    }
+    return { archived: [], left: [] }; // archived channelIds, left channelIds
+};
+
+// Save archived/left channels to localStorage
+const saveChannelState = (workspaceId, state) => {
+    try {
+        localStorage.setItem(`Nightjar-chat-channels-${workspaceId}`, JSON.stringify(state));
+    } catch (e) {
+        console.error('Failed to save channel state:', e);
+    }
+};
+
+// Generate short group name from members (max 3 names, truncated)
+const generateGroupName = (members) => {
+    if (!members || members.length === 0) return 'Group';
+    const names = members.slice(0, 3).map(m => m.name?.split(' ')[0] || 'User');
+    const suffix = members.length > 3 ? ` +${members.length - 3}` : '';
+    return names.join(', ') + suffix;
+};
+
+// Parse mentions from text - format: @[displayName](publicKey)
+const parseMentions = (text) => {
+    const mentionRegex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+        mentions.push({
+            displayName: match[1],
+            publicKey: match[2],
+            start: match.index,
+            end: match.index + match[0].length
+        });
+    }
+    return mentions;
+};
+
+// Render text with highlighted mentions
+const renderTextWithMentions = (text, currentUserPublicKey) => {
+    const mentions = parseMentions(text);
+    if (mentions.length === 0) return text;
+    
+    const parts = [];
+    let lastIndex = 0;
+    
+    mentions.forEach((mention, i) => {
+        // Add text before mention
+        if (mention.start > lastIndex) {
+            parts.push(text.slice(lastIndex, mention.start));
+        }
+        // Add mention chip
+        const isMe = mention.publicKey === currentUserPublicKey;
+        parts.push(
+            <span key={i} className={`mention-chip ${isMe ? 'mention-me' : ''}`}>
+                @{mention.displayName}
+            </span>
+        );
+        lastIndex = mention.end;
+    });
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+        parts.push(text.slice(lastIndex));
+    }
+    
+    return parts;
+};
+
+const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, onTargetUserHandled, userPublicKey, workspaceMembers = [] }) => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [unreadCount, setUnreadCount] = useState(0);
     const messagesEndRef = useRef(null);
     const chatContainerRef = useRef(null);
     const ymessagesRef = useRef(null);
+    const inputRef = useRef(null);
+    
+    // Notification sounds hook
+    const { playForMessageType, settings: notificationSettings } = useNotificationSounds();
+    const lastMessageCountRef = useRef(0);
     
     // Local messages when no ydoc (workspace-level chat)
     const [localMessages, setLocalMessages] = useState([]);
@@ -63,6 +168,24 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     const [showUserSearch, setShowUserSearch] = useState(false);
     const [userSearchQuery, setUserSearchQuery] = useState('');
     
+    // Group chat creation state
+    const [selectedUsersForGroup, setSelectedUsersForGroup] = useState([]);
+    const [showGroupNameModal, setShowGroupNameModal] = useState(false);
+    const [groupNameInput, setGroupNameInput] = useState('');
+    
+    // @mention autocomplete state
+    const [showMentionPopup, setShowMentionPopup] = useState(false);
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+    
+    // Unread tracking per channel
+    const [unreadCounts, setUnreadCounts] = useState(() => loadUnreadCounts(workspaceId));
+    const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+    
+    // Archived/left channels
+    const [channelState, setChannelState] = useState(() => loadChannelState(workspaceId));
+    const [showArchivedSection, setShowArchivedSection] = useState(false);
+    
     // Minimize state for chat (start expanded when targetUser provided)
     const [chatState, setChatState] = useState(() => {
         const state = loadChatState();
@@ -75,10 +198,12 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     // Get the current user's client ID - must be defined before effects that use it
     const myClientId = provider?.awareness?.clientID || 'local';
     
-    // Generate a consistent channel ID for DMs (same ID for both participants)
-    const getDmChannelId = useCallback((user1ClientId, user2ClientId) => {
-        const sortedIds = [String(user1ClientId), String(user2ClientId)].sort();
-        return `dm-${sortedIds[0]}-${sortedIds[1]}`;
+    // Generate a consistent channel ID for DMs using STABLE publicKeys (not ephemeral clientId)
+    // This ensures both users compute the same channel ID across sessions
+    const getDmChannelId = useCallback((publicKey1, publicKey2) => {
+        // Sort publicKeys alphabetically for consistent channel ID regardless of who initiates
+        const sortedKeys = [String(publicKey1), String(publicKey2)].sort();
+        return `dm-${sortedKeys[0].slice(0, 12)}-${sortedKeys[1].slice(0, 12)}`;
     }, []);
 
     // Handle incoming targetUser from parent (e.g., clicked from StatusBar)
@@ -151,21 +276,159 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         user.name.toLowerCase().includes(userSearchQuery.toLowerCase())
     );
     
-    // Start a DM with a user
+    // Start a DM with a user - uses publicKey for stable channel ID
     const startDirectMessage = (user) => {
-        const tabId = `dm-${user.clientId}`;
+        // Use publicKey for stable tab ID (falls back to clientId for online-only users without publicKey)
+        const userKey = user.publicKey || `client-${user.clientId}`;
+        const tabId = `dm-${userKey.slice(0, 16)}`;
         if (!chatTabs.find(t => t.id === tabId)) {
             setChatTabs(prev => [...prev, {
                 id: tabId,
                 name: user.name,
                 type: 'dm',
-                user
+                user: { ...user, publicKey: user.publicKey || userKey }
             }]);
         }
         setActiveTab(tabId);
         setShowUserSearch(false);
         setUserSearchQuery('');
+        setSelectedUsersForGroup([]);
     };
+    
+    // Toggle user selection for group chat
+    const toggleUserForGroup = useCallback((user) => {
+        setSelectedUsersForGroup(prev => {
+            const isSelected = prev.some(u => u.clientId === user.clientId);
+            if (isSelected) {
+                return prev.filter(u => u.clientId !== user.clientId);
+            } else {
+                return [...prev, user];
+            }
+        });
+    }, []);
+    
+    // Create a group chat
+    const createGroupChat = useCallback((name) => {
+        const groupId = `group-${Date.now().toString(36)}`;
+        const members = [
+            { clientId: myClientId, name: username, publicKey: userPublicKey },
+            ...selectedUsersForGroup.map(u => ({
+                clientId: u.clientId,
+                name: u.name,
+                publicKey: u.publicKey,
+                color: u.color
+            }))
+        ];
+        
+        // Add group tab
+        setChatTabs(prev => [...prev, {
+            id: groupId,
+            name: name,
+            type: 'group',
+            members
+        }]);
+        
+        // Store group metadata in ydoc if available
+        if (ydoc) {
+            const ygroups = ydoc.getMap('chat-groups');
+            ygroups.set(groupId, {
+                id: groupId,
+                name: name,
+                members: members,
+                createdAt: Date.now(),
+                createdBy: userPublicKey
+            });
+        }
+        
+        // Send system message
+        if (ymessagesRef.current) {
+            ymessagesRef.current.push([{
+                id: Date.now().toString(36) + Math.random().toString(36).substring(2, 11),
+                text: `${username} created the group "${name}"`,
+                username: 'System',
+                timestamp: Date.now(),
+                channel: groupId,
+                type: 'system'
+            }]);
+        }
+        
+        setActiveTab(groupId);
+        setShowUserSearch(false);
+        setShowGroupNameModal(false);
+        setUserSearchQuery('');
+        setSelectedUsersForGroup([]);
+        setGroupNameInput('');
+    }, [myClientId, username, userPublicKey, selectedUsersForGroup, ydoc]);
+    
+    // Archive a channel (hide but keep history)
+    const archiveChannel = useCallback((channelId) => {
+        setChannelState(prev => {
+            const updated = {
+                ...prev,
+                [channelId]: { ...prev[channelId], archived: true }
+            };
+            saveChannelState(workspaceId, updated);
+            return updated;
+        });
+        if (activeTab === channelId) {
+            setActiveTab('general');
+        }
+    }, [workspaceId, activeTab]);
+    
+    // Leave a channel (archive + mark as left)
+    const leaveChannel = useCallback((channelId) => {
+        // Send system message that user left
+        if (ymessagesRef.current) {
+            ymessagesRef.current.push([{
+                id: Date.now().toString(36) + Math.random().toString(36).substring(2, 11),
+                text: `${username} left the chat`,
+                username: 'System',
+                timestamp: Date.now(),
+                channel: channelId,
+                type: 'system'
+            }]);
+        }
+        
+        setChannelState(prev => {
+            const updated = {
+                ...prev,
+                [channelId]: { archived: true, left: true, leftAt: Date.now() }
+            };
+            saveChannelState(workspaceId, updated);
+            return updated;
+        });
+        if (activeTab === channelId) {
+            setActiveTab('general');
+        }
+    }, [workspaceId, activeTab, username]);
+    
+    // Unarchive a channel
+    const unarchiveChannel = useCallback((channelId) => {
+        setChannelState(prev => {
+            const updated = { ...prev };
+            if (updated[channelId]) {
+                updated[channelId] = { ...updated[channelId], archived: false };
+            }
+            saveChannelState(workspaceId, updated);
+            return updated;
+        });
+    }, [workspaceId]);
+    
+    // Delete a channel (only for creator/owner)
+    const deleteChannel = useCallback((channelId) => {
+        // Remove from tabs
+        setChatTabs(prev => prev.filter(t => t.id !== channelId));
+        // Remove from channel state
+        setChannelState(prev => {
+            const updated = { ...prev };
+            delete updated[channelId];
+            saveChannelState(workspaceId, updated);
+            return updated;
+        });
+        if (activeTab === channelId) {
+            setActiveTab('general');
+        }
+    }, [workspaceId, activeTab]);
     
     // Close a chat tab
     const closeTab = (tabId, e) => {
@@ -293,14 +556,22 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         return () => window.removeEventListener('resize', handleWindowResize);
     }, [chatState.position]);
 
-    // Initialize Yjs array for chat messages (or use local state)
+    // Initialize Yjs array for chat messages with sync awareness
     useEffect(() => {
         if (!ydoc) {
             // No ydoc - use local messages for now
-            // In future, could connect to workspace-level chat via sidecar
             return;
         }
         
+        // Use separate array per channel for better performance
+        // General channel uses 'chat-general', DMs use 'chat-dm-{sortedIds}'
+        const getChannelArrayName = (channelId) => {
+            if (!channelId || channelId === 'general') return 'chat-general';
+            return `chat-${channelId}`;
+        };
+        
+        // For now, we use a single array for backwards compatibility
+        // TODO: Migrate to per-channel arrays
         const ymessages = ydoc.getArray('chat-messages');
         ymessagesRef.current = ymessages;
 
@@ -321,46 +592,93 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             ymessages.unobserve(updateFromYjs);
         };
     }, [ydoc, chatState.isMinimized]);
+    
+    // Sync group tabs from ydoc (load on mount and observe changes)
+    useEffect(() => {
+        if (!ydoc) return;
+        
+        const ygroups = ydoc.getMap('chat-groups');
+        
+        const syncGroupTabs = () => {
+            const existingGroupIds = chatTabs.filter(t => t.type === 'group').map(t => t.id);
+            const ygroupEntries = [];
+            ygroups.forEach((group, groupId) => {
+                ygroupEntries.push({ id: groupId, ...group });
+            });
+            
+            // Add any missing group tabs
+            ygroupEntries.forEach(group => {
+                // Check if this group is archived/left
+                const state = channelState[group.id];
+                if (state?.left) return; // Don't auto-add left groups
+                
+                if (!existingGroupIds.includes(group.id)) {
+                    setChatTabs(prev => {
+                        // Double check to avoid duplicates
+                        if (prev.find(t => t.id === group.id)) return prev;
+                        return [...prev, {
+                            id: group.id,
+                            name: group.name,
+                            type: 'group',
+                            members: group.members
+                        }];
+                    });
+                }
+            });
+        };
+        
+        ygroups.observe(syncGroupTabs);
+        syncGroupTabs();
+        
+        return () => {
+            ygroups.unobserve(syncGroupTabs);
+        };
+    }, [ydoc, chatTabs, channelState]);
 
     // Auto-open DM tabs when receiving DM messages from other users
     useEffect(() => {
-        if (!messages.length || !myClientId) return;
+        if (!messages.length || !userPublicKey) return;
         
         // Find DM messages sent to me that I don't have a tab for
         messages.forEach(message => {
             if (!message.channel || message.channel === 'general') return;
             if (!message.channel.startsWith('dm-')) return;
-            if (message.senderClientId === myClientId) return; // Skip my own messages
+            if (message.senderPublicKey === userPublicKey) return; // Skip my own messages
             
-            // Check if this DM is for me (my clientId is in the channel)
-            const channelParts = message.channel.split('-');
-            if (channelParts.length < 3) return;
-            const [, id1, id2] = channelParts;
-            if (id1 !== String(myClientId) && id2 !== String(myClientId)) return;
+            // Check if this DM is for me (my publicKey prefix is in the channel)
+            const myKeyPrefix = userPublicKey.slice(0, 12);
+            if (!message.channel.includes(myKeyPrefix)) return;
             
-            // The other user's clientId
-            const otherClientId = id1 === String(myClientId) ? parseInt(id2) : parseInt(id1);
-            const tabId = `dm-${otherClientId}`;
+            // The other user's publicKey (from the message)
+            const otherPublicKey = message.senderPublicKey;
+            if (!otherPublicKey) return;
+            
+            const tabId = `dm-${otherPublicKey.slice(0, 16)}`;
             
             // Check if we already have a tab for this user
             if (!chatTabs.find(t => t.id === tabId)) {
-                // Find the user in online users or create from message
-                const onlineUser = onlineUsers.find(u => u.clientId === otherClientId);
-                const user = onlineUser || {
-                    clientId: otherClientId,
+                // Find the user in online users or workspace members, or create from message
+                const onlineUser = onlineUsers.find(u => u.publicKey === otherPublicKey);
+                const workspaceMember = workspaceMembers.find(m => m.publicKey === otherPublicKey);
+                const user = onlineUser || workspaceMember || {
+                    publicKey: otherPublicKey,
                     name: message.username,
                     color: message.color
                 };
                 
-                setChatTabs(prev => [...prev, {
-                    id: tabId,
-                    name: user.name,
-                    type: 'dm',
-                    user
-                }]);
+                setChatTabs(prev => {
+                    // Double-check to avoid duplicates
+                    if (prev.find(t => t.id === tabId)) return prev;
+                    return [...prev, {
+                        id: tabId,
+                        name: user.name || user.displayName || 'Unknown',
+                        type: 'dm',
+                        user: { ...user, publicKey: otherPublicKey }
+                    }];
+                });
             }
         });
-    }, [messages, myClientId, chatTabs, onlineUsers]);
+    }, [messages, userPublicKey, chatTabs, onlineUsers, workspaceMembers]);
 
     // Scroll to bottom on new messages
     useEffect(() => {
@@ -368,6 +686,61 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages, chatState.isMinimized]);
+    
+    // Play notification sounds for new messages
+    useEffect(() => {
+        // Skip if no messages or this is the initial load
+        if (!messages.length) {
+            lastMessageCountRef.current = 0;
+            return;
+        }
+        
+        // Skip if this is initial load (count was 0)
+        if (lastMessageCountRef.current === 0) {
+            lastMessageCountRef.current = messages.length;
+            return;
+        }
+        
+        // Check if we have new messages
+        const newCount = messages.length - lastMessageCountRef.current;
+        if (newCount <= 0) {
+            lastMessageCountRef.current = messages.length;
+            return;
+        }
+        
+        // Get the newest messages
+        const newMessages = messages.slice(-newCount);
+        
+        // Process each new message for notifications
+        newMessages.forEach(message => {
+            // Skip our own messages
+            if (message.senderPublicKey === userPublicKey) return;
+            
+            // Skip system messages
+            if (message.type === 'system') return;
+            
+            // Determine message type for notification
+            let messageType = MESSAGE_TYPES.GENERAL_MESSAGE;
+            
+            // Check if it's a mention (mentions array contains our publicKey)
+            if (message.mentions?.some(m => m.publicKey === userPublicKey)) {
+                messageType = MESSAGE_TYPES.MENTION;
+            }
+            // Check if it's a DM
+            else if (message.channel?.startsWith('dm-')) {
+                messageType = MESSAGE_TYPES.DIRECT_MESSAGE;
+            }
+            // Check if it's a group message
+            else if (message.channel?.startsWith('group-')) {
+                messageType = MESSAGE_TYPES.GROUP_MESSAGE;
+            }
+            
+            // Play the appropriate sound
+            playForMessageType(messageType);
+        });
+        
+        lastMessageCountRef.current = messages.length;
+    }, [messages, userPublicKey, playForMessageType]);
 
     // Clear unread when opening chat
     useEffect(() => {
@@ -382,12 +755,18 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         // Determine the channel for this message
         let channel = 'general';
         if (activeTab.startsWith('dm-')) {
-            // For DMs, create a consistent channel ID between the two users
+            // For DMs, create a consistent channel ID using publicKeys
             const targetTab = chatTabs.find(t => t.id === activeTab);
-            if (targetTab?.user?.clientId) {
-                channel = getDmChannelId(myClientId, targetTab.user.clientId);
+            const targetPublicKey = targetTab?.user?.publicKey;
+            if (targetPublicKey && userPublicKey) {
+                channel = getDmChannelId(userPublicKey, targetPublicKey);
             }
+        } else if (activeTab.startsWith('group-')) {
+            channel = activeTab;
         }
+        
+        // Extract mentions from message text
+        const mentions = parseMentions(inputValue.trim());
 
         const message = {
             id: Date.now().toString(36) + Math.random().toString(36).substring(2, 11),
@@ -396,7 +775,10 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             color: userColor || '#6366f1',
             timestamp: Date.now(),
             channel: channel, // Add channel to route messages
-            senderClientId: myClientId // Track who sent it for DM filtering
+            senderClientId: myClientId, // Track who sent it for DM filtering
+            senderPublicKey: userPublicKey, // Track sender's public key for mentions
+            type: 'message', // message | system
+            mentions: mentions // Array of { displayName, publicKey }
         };
 
         if (ymessagesRef.current) {
@@ -408,14 +790,176 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             setMessages(prev => [...prev, message]);
         }
         setInputValue('');
-    }, [inputValue, username, userColor, activeTab, chatTabs, myClientId, getDmChannelId]);
+        
+        // Update last read timestamp for this channel (we just sent a message)
+        updateLastRead(channel);
+    }, [inputValue, username, userColor, activeTab, chatTabs, myClientId, getDmChannelId, userPublicKey]);
+    
+    // Update last read timestamp for a channel
+    const updateLastRead = useCallback((channelId) => {
+        setUnreadCounts(prev => {
+            const updated = {
+                ...prev,
+                [channelId]: { lastRead: Date.now(), count: 0 }
+            };
+            saveUnreadCounts(workspaceId, updated);
+            return updated;
+        });
+    }, [workspaceId]);
+    
+    // Handle scroll to detect when user scrolls to bottom
+    const handleChatScroll = useCallback(() => {
+        if (!chatContainerRef.current) return;
+        
+        const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+        
+        setShowScrollToBottom(!isAtBottom);
+        
+        // If scrolled to bottom, mark channel as read
+        if (isAtBottom) {
+            const channelId = activeTab === 'general' ? 'general' : activeTab;
+            updateLastRead(channelId);
+        }
+    }, [activeTab, updateLastRead]);
+    
+    // Scroll to bottom button handler
+    const scrollToBottom = useCallback(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, []);
+    
+    // Mark all messages as read
+    const markAllAsRead = useCallback(() => {
+        const updated = {};
+        Object.keys(unreadCounts).forEach(channelId => {
+            updated[channelId] = { lastRead: Date.now(), count: 0 };
+        });
+        // Also mark current channel
+        const currentChannel = activeTab === 'general' ? 'general' : activeTab;
+        updated[currentChannel] = { lastRead: Date.now(), count: 0 };
+        setUnreadCounts(updated);
+        saveUnreadCounts(workspaceId, updated);
+    }, [unreadCounts, activeTab, workspaceId]);
+    
+    // Calculate unread count for a channel
+    const getChannelUnreadCount = useCallback((channelId) => {
+        const lastRead = unreadCounts[channelId]?.lastRead || 0;
+        return messages.filter(m => 
+            (m.channel || 'general') === channelId && 
+            m.timestamp > lastRead &&
+            m.senderClientId !== myClientId
+        ).length;
+    }, [messages, unreadCounts, myClientId]);
+    
+    // Total unread across all channels
+    const totalUnread = useMemo(() => {
+        const channels = new Set(['general', ...chatTabs.map(t => t.id === 'general' ? 'general' : t.id)]);
+        let total = 0;
+        channels.forEach(channelId => {
+            total += getChannelUnreadCount(channelId);
+        });
+        return total;
+    }, [chatTabs, getChannelUnreadCount]);
 
     const handleKeyDown = (e) => {
+        // Handle mention popup navigation
+        if (showMentionPopup) {
+            const mentionCandidates = getMentionCandidates();
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setMentionIndex(prev => (prev + 1) % mentionCandidates.length);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setMentionIndex(prev => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+                return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                if (mentionCandidates[mentionIndex]) {
+                    insertMention(mentionCandidates[mentionIndex]);
+                }
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                setShowMentionPopup(false);
+                return;
+            }
+        }
+        
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
     };
+    
+    // Handle input change with @mention detection
+    const handleInputChange = (e) => {
+        const value = e.target.value;
+        setInputValue(value);
+        
+        // Detect @mention trigger
+        const cursorPos = e.target.selectionStart;
+        const textBeforeCursor = value.substring(0, cursorPos);
+        const atMatch = textBeforeCursor.match(/@(\w*)$/);
+        
+        if (atMatch && atMatch[1].length >= 1) {
+            // Show mention popup when @ followed by at least 1 character
+            setMentionQuery(atMatch[1].toLowerCase());
+            setMentionStartIndex(textBeforeCursor.length - atMatch[0].length);
+            setShowMentionPopup(true);
+            setMentionIndex(0);
+        } else {
+            setShowMentionPopup(false);
+            setMentionQuery('');
+        }
+    };
+    
+    // Get mention candidates (online users first, then workspace members)
+    const getMentionCandidates = useCallback(() => {
+        const allUsers = [];
+        const seenKeys = new Set();
+        
+        // Add online users first
+        onlineUsers.forEach(user => {
+            const key = user.publicKey || `client-${user.clientId}`;
+            if (!seenKeys.has(key) && user.name.toLowerCase().includes(mentionQuery)) {
+                seenKeys.add(key);
+                allUsers.push({ ...user, isOnline: true });
+            }
+        });
+        
+        // Add workspace members who aren't online
+        workspaceMembers.forEach(member => {
+            if (!seenKeys.has(member.publicKey) && member.displayName?.toLowerCase().includes(mentionQuery)) {
+                seenKeys.add(member.publicKey);
+                allUsers.push({
+                    name: member.displayName,
+                    publicKey: member.publicKey,
+                    color: member.color || '#6366f1',
+                    isOnline: false
+                });
+            }
+        });
+        
+        return allUsers;
+    }, [onlineUsers, workspaceMembers, mentionQuery]);
+    
+    // Insert a mention into the input
+    const insertMention = useCallback((user) => {
+        const beforeMention = inputValue.substring(0, mentionStartIndex);
+        const afterMention = inputValue.substring(inputRef.current?.selectionStart || inputValue.length);
+        const mentionText = `@[${user.name}](${user.publicKey || user.clientId}) `;
+        setInputValue(beforeMention + mentionText + afterMention);
+        setShowMentionPopup(false);
+        setMentionQuery('');
+        inputRef.current?.focus();
+    }, [inputValue, mentionStartIndex]);
+    
+    // State for mention popup selection index
+    const [mentionIndex, setMentionIndex] = useState(0);
 
     const formatTime = (timestamp) => {
         const date = new Date(timestamp);
@@ -442,8 +986,9 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             if (tabId === 'general') return 'general';
             if (tabId.startsWith('dm-')) {
                 const targetTab = chatTabs.find(t => t.id === tabId);
-                if (targetTab?.user?.clientId) {
-                    return getDmChannelId(myClientId, targetTab.user.clientId);
+                const targetPublicKey = targetTab?.user?.publicKey;
+                if (targetPublicKey && userPublicKey) {
+                    return getDmChannelId(userPublicKey, targetPublicKey);
                 }
             }
             return tabId;
@@ -454,7 +999,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             const messageChannel = message.channel || 'general'; // Default to general for legacy messages
             return messageChannel === currentChannel;
         });
-    }, [messages, activeTab, chatTabs, myClientId, getDmChannelId]);
+    }, [messages, activeTab, chatTabs, userPublicKey, getDmChannelId]);
 
     // Group messages by date
     const groupedMessages = useMemo(() => {
@@ -539,6 +1084,17 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                     <span className="online-count">
                         {provider?.awareness?.getStates()?.size || 1} online
                     </span>
+                    {totalUnread > 0 && (
+                        <button
+                            type="button"
+                            className="btn-mark-read"
+                            onClick={markAllAsRead}
+                            title="Mark all as read"
+                            aria-label="Mark all messages as read"
+                        >
+                            ✓
+                        </button>
+                    )}
                     <button 
                         type="button"
                         className="btn-minimize"
@@ -553,42 +1109,68 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
 
             {/* Chat Tabs */}
             <div className="chat-tabs" role="tablist" aria-label="Chat channels">
-                {chatTabs.map(tab => (
-                    <div 
-                        key={tab.id}
-                        className={`chat-tab ${activeTab === tab.id ? 'active' : ''}`}
-                        onClick={() => setActiveTab(tab.id)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                setActiveTab(tab.id);
-                            }
-                        }}
-                        role="tab"
-                        aria-selected={activeTab === tab.id}
-                        tabIndex={activeTab === tab.id ? 0 : -1}
+                {chatTabs.filter(tab => !channelState[tab.id]?.archived).map(tab => {
+                    const tabUnread = getChannelUnreadCount(tab.id === 'general' ? 'general' : tab.id);
+                    return (
+                        <div 
+                            key={tab.id}
+                            className={`chat-tab ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(tab.id)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    setActiveTab(tab.id);
+                                }
+                            }}
+                            role="tab"
+                            aria-selected={activeTab === tab.id}
+                            tabIndex={activeTab === tab.id ? 0 : -1}
+                        >
+                            {tab.type === 'dm' && (
+                                <span 
+                                    className="tab-avatar"
+                                    style={{ backgroundColor: tab.user?.color || '#6366f1' }}
+                                >
+                                    {tab.name?.charAt(0).toUpperCase()}
+                                </span>
+                            )}
+                            {tab.type === 'group' && (
+                                <span className="tab-avatar group-avatar">
+                                    👥
+                                </span>
+                            )}
+                            <span className="tab-name">{tab.name}</span>
+                            {tabUnread > 0 && (
+                                <span className="tab-unread-badge" aria-label={`${tabUnread} unread`}>
+                                    {tabUnread > 99 ? '99+' : tabUnread}
+                                </span>
+                            )}
+                            {tab.id !== 'general' && (
+                                <button 
+                                    type="button"
+                                    className="tab-close"
+                                    onClick={(e) => closeTab(tab.id, e)}
+                                    aria-label={`Close ${tab.name} chat`}
+                                >
+                                    ×
+                                </button>
+                            )}
+                        </div>
+                    );
+                })}
+                
+                {/* Archived section toggle */}
+                {Object.values(channelState).some(s => s.archived) && (
+                    <button
+                        type="button"
+                        className={`chat-tab archived-toggle ${showArchivedSection ? 'active' : ''}`}
+                        onClick={() => setShowArchivedSection(!showArchivedSection)}
+                        title="Show archived chats"
                     >
-                        {tab.type === 'dm' && (
-                            <span 
-                                className="tab-avatar"
-                                style={{ backgroundColor: tab.user?.color || '#6366f1' }}
-                            >
-                                {tab.name?.charAt(0).toUpperCase()}
-                            </span>
-                        )}
-                        <span className="tab-name">{tab.name}</span>
-                        {tab.id !== 'general' && (
-                            <button 
-                                type="button"
-                                className="tab-close"
-                                onClick={(e) => closeTab(tab.id, e)}
-                                aria-label={`Close ${tab.name} chat`}
-                            >
-                                ×
-                            </button>
-                        )}
-                    </div>
-                ))}
+                        📁 {showArchivedSection ? '▲' : '▼'}
+                    </button>
+                )}
+                
                 <button 
                     type="button"
                     className="chat-tab add-tab"
@@ -599,33 +1181,81 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                     +
                 </button>
             </div>
+            
+            {/* Archived channels section */}
+            {showArchivedSection && (
+                <div className="archived-channels" role="list" aria-label="Archived chats">
+                    {chatTabs.filter(tab => channelState[tab.id]?.archived).map(tab => (
+                        <div 
+                            key={tab.id}
+                            className="archived-channel-item"
+                            onClick={() => {
+                                setActiveTab(tab.id);
+                                setShowArchivedSection(false);
+                            }}
+                            role="button"
+                            tabIndex={0}
+                        >
+                            <span className="archived-icon">📁</span>
+                            <span className="archived-name">{tab.name}</span>
+                            {channelState[tab.id]?.left && (
+                                <span className="left-badge">Left</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* User Search Modal */}
             {showUserSearch && (
                 <div className="user-search-panel" role="dialog" aria-labelledby="user-search-title">
                     <div className="user-search-header">
-                        <h4 id="user-search-title">Start a Chat</h4>
+                        <h4 id="user-search-title">
+                            {selectedUsersForGroup.length > 0 
+                                ? `New Group (${selectedUsersForGroup.length} selected)`
+                                : 'Start a Chat'}
+                        </h4>
                         <button 
                             type="button"
                             className="close-search"
                             onClick={() => {
                                 setShowUserSearch(false);
                                 setUserSearchQuery('');
+                                setSelectedUsersForGroup([]);
                             }}
                             aria-label="Close user search"
                         >
                             ×
                         </button>
                     </div>
+                    
+                    {/* Selected users for group */}
+                    {selectedUsersForGroup.length > 0 && (
+                        <div className="selected-users-row">
+                            {selectedUsersForGroup.map(user => (
+                                <span 
+                                    key={user.clientId}
+                                    className="selected-user-chip"
+                                    onClick={() => toggleUserForGroup(user)}
+                                >
+                                    {user.name} ×
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    
                     <input
                         type="text"
                         className="user-search-input"
-                        placeholder="Search online users..."
+                        placeholder={selectedUsersForGroup.length > 0 
+                            ? "Add more people..." 
+                            : "Search users... (select multiple for group)"}
                         value={userSearchQuery}
                         onChange={(e) => setUserSearchQuery(e.target.value)}
                         autoFocus
                         aria-label="Search for users to chat with"
                     />
+                    
                     <div className="user-search-results" role="listbox" aria-label="Available users">
                         {filteredUsers.length === 0 ? (
                             <div className="no-users">
@@ -634,33 +1264,115 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                                     : 'No users match your search'}
                             </div>
                         ) : (
-                            filteredUsers.map(user => (
-                                <div 
-                                    key={user.clientId}
-                                    className="user-search-item"
-                                    onClick={() => startDirectMessage(user)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                            e.preventDefault();
-                                            startDirectMessage(user);
-                                        }
-                                    }}
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-label={`Start chat with ${user.name}`}
-                                >
-                                    <span 
-                                        className="user-avatar"
-                                        style={{ backgroundColor: user.color }}
-                                        aria-hidden="true"
+                            filteredUsers.map(user => {
+                                const isSelected = selectedUsersForGroup.some(u => u.clientId === user.clientId);
+                                return (
+                                    <div 
+                                        key={user.clientId}
+                                        className={`user-search-item ${isSelected ? 'selected' : ''}`}
+                                        onClick={() => {
+                                            if (selectedUsersForGroup.length > 0 || isSelected) {
+                                                // Multi-select mode
+                                                toggleUserForGroup(user);
+                                            } else {
+                                                // Single user - start DM
+                                                startDirectMessage(user);
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                if (selectedUsersForGroup.length > 0 || isSelected) {
+                                                    toggleUserForGroup(user);
+                                                } else {
+                                                    startDirectMessage(user);
+                                                }
+                                            }
+                                        }}
+                                        role="option"
+                                        aria-selected={isSelected}
+                                        tabIndex={0}
                                     >
-                                        {user.icon || user.name?.charAt(0).toUpperCase()}
-                                    </span>
-                                    <span className="user-name">{user.name}</span>
-                                    <span className="user-status">online</span>
-                                </div>
-                            ))
+                                        <input 
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleUserForGroup(user)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="user-checkbox"
+                                        />
+                                        <span 
+                                            className="user-avatar"
+                                            style={{ backgroundColor: user.color }}
+                                            aria-hidden="true"
+                                        >
+                                            {user.icon || user.name?.charAt(0).toUpperCase()}
+                                        </span>
+                                        <span className="user-name">{user.name}</span>
+                                        <span className="user-status">online</span>
+                                    </div>
+                                );
+                            })
                         )}
+                    </div>
+                    
+                    {/* Create group button */}
+                    {selectedUsersForGroup.length >= 1 && (
+                        <button
+                            type="button"
+                            className="create-group-btn"
+                            onClick={() => {
+                                if (selectedUsersForGroup.length === 1) {
+                                    // Just one user selected - start DM
+                                    startDirectMessage(selectedUsersForGroup[0]);
+                                    setSelectedUsersForGroup([]);
+                                } else {
+                                    // Multiple users - show name modal
+                                    const autoName = generateGroupName(selectedUsersForGroup);
+                                    setGroupNameInput(autoName);
+                                    setShowGroupNameModal(true);
+                                }
+                            }}
+                        >
+                            {selectedUsersForGroup.length === 1 
+                                ? `Start Chat with ${selectedUsersForGroup[0].name}`
+                                : `Create Group (${selectedUsersForGroup.length + 1} members)`}
+                        </button>
+                    )}
+                </div>
+            )}
+            
+            {/* Group Name Modal */}
+            {showGroupNameModal && (
+                <div className="group-name-modal" role="dialog" aria-labelledby="group-name-title">
+                    <div className="group-name-content">
+                        <h4 id="group-name-title">Name Your Group</h4>
+                        <input
+                            type="text"
+                            value={groupNameInput}
+                            onChange={(e) => setGroupNameInput(e.target.value)}
+                            placeholder="Group name..."
+                            className="group-name-input"
+                            autoFocus
+                        />
+                        <div className="group-name-actions">
+                            <button
+                                type="button"
+                                className="btn-cancel"
+                                onClick={() => {
+                                    setShowGroupNameModal(false);
+                                    setGroupNameInput('');
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="btn-create"
+                                onClick={() => createGroupChat(groupNameInput || generateGroupName(selectedUsersForGroup))}
+                            >
+                                Create
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -668,6 +1380,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             <div 
                 className="chat-messages" 
                 ref={chatContainerRef}
+                onScroll={handleChatScroll}
                 role="log"
                 aria-live="polite"
                 aria-label="Chat messages"
@@ -682,6 +1395,17 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                             const showFullAuthor = index === 0 || 
                                 msgs[index - 1].username !== message.username ||
                                 message.timestamp - msgs[index - 1].timestamp > 60000;
+                            
+                            // Check if this is a system message
+                            if (message.type === 'system') {
+                                return (
+                                    <div key={message.id} className="chat-message system-message">
+                                        <div className="system-message-content">
+                                            {message.text}
+                                        </div>
+                                    </div>
+                                );
+                            }
 
                             return (
                                 <div 
@@ -709,7 +1433,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                                     )}
                                     <div className="message-bubble">
                                         <div className="message-content">
-                                            {message.text}
+                                            {renderTextWithMentions(message.text, userPublicKey)}
                                         </div>
                                         <div className="message-time">
                                             {formatTime(message.timestamp)}
@@ -721,15 +1445,85 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                     </div>
                 ))}
                 <div ref={messagesEndRef} />
+                
+                {/* Scroll to bottom button */}
+                {showScrollToBottom && (
+                    <button 
+                        type="button"
+                        className="scroll-to-bottom-btn"
+                        onClick={scrollToBottom}
+                        aria-label="Scroll to new messages"
+                    >
+                        ↓ New messages
+                    </button>
+                )}
             </div>
+            
+            {/* @Mention autocomplete popup */}
+            {showMentionPopup && (
+                <div className="mention-popup" role="listbox" aria-label="Mention users">
+                    {getMentionCandidates().length === 0 ? (
+                        <div className="mention-empty">No matching users</div>
+                    ) : (
+                        <>
+                            {getMentionCandidates().filter(u => u.isOnline).length > 0 && (
+                                <div className="mention-section-header">Online</div>
+                            )}
+                            {getMentionCandidates().filter(u => u.isOnline).map((user, idx) => (
+                                <div
+                                    key={user.publicKey || user.clientId}
+                                    className={`mention-item ${mentionIndex === idx ? 'selected' : ''}`}
+                                    onClick={() => insertMention(user)}
+                                    role="option"
+                                    aria-selected={mentionIndex === idx}
+                                >
+                                    <span className="mention-status online" aria-label="Online">●</span>
+                                    <span 
+                                        className="mention-avatar"
+                                        style={{ backgroundColor: user.color }}
+                                    >
+                                        {user.name?.charAt(0).toUpperCase()}
+                                    </span>
+                                    <span className="mention-name">{user.name}</span>
+                                </div>
+                            ))}
+                            {getMentionCandidates().filter(u => !u.isOnline).length > 0 && (
+                                <div className="mention-section-header">Workspace Members</div>
+                            )}
+                            {getMentionCandidates().filter(u => !u.isOnline).map((user, idx) => {
+                                const actualIdx = getMentionCandidates().filter(u => u.isOnline).length + idx;
+                                return (
+                                    <div
+                                        key={user.publicKey || user.clientId}
+                                        className={`mention-item ${mentionIndex === actualIdx ? 'selected' : ''}`}
+                                        onClick={() => insertMention(user)}
+                                        role="option"
+                                        aria-selected={mentionIndex === actualIdx}
+                                    >
+                                        <span className="mention-status offline" aria-label="Offline">●</span>
+                                        <span 
+                                            className="mention-avatar"
+                                            style={{ backgroundColor: user.color }}
+                                        >
+                                            {user.name?.charAt(0).toUpperCase()}
+                                        </span>
+                                        <span className="mention-name">{user.name}</span>
+                                    </div>
+                                );
+                            })}
+                        </>
+                    )}
+                </div>
+            )}
 
             <div className="chat-input-container" role="form" aria-label="Send message form">
                 <input
+                    ref={inputRef}
                     type="text"
                     value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
+                    onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder={activeTab === 'general' ? "Type a message..." : `Message ${chatTabs.find(t => t.id === activeTab)?.name || ''}...`}
+                    placeholder={activeTab === 'general' ? "Type a message... (@ to mention)" : `Message ${chatTabs.find(t => t.id === activeTab)?.name || ''}...`}
                     className="chat-input"
                     aria-label={activeTab === 'general' ? "Type a message" : `Message ${chatTabs.find(t => t.id === activeTab)?.name || ''}`}
                 />

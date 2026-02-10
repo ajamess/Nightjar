@@ -95,7 +95,7 @@
     
     .pin-input-digit:disabled {
         background: #374151;
-        color: #6b7280;
+        color: var(--text-secondary, #a1a1aa);
     }
 }
 

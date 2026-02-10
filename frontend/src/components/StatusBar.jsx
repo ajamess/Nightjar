@@ -27,7 +27,15 @@ const StatusBar = ({
     isRetrying = false,
     documentType = 'text',
     onStartChatWith,
-    onFollowUser
+    onFollowUser,
+    // Sync phase tracking
+    syncPhase = 'complete',
+    workspaceSynced = true,
+    // Sync verification props
+    syncStatus = 'idle',
+    syncDetails = null,
+    onVerifySyncState,
+    onForceFullSync,
 }) => {
     const { isElectron } = useEnvironment();
     const [showCollaborators, setShowCollaborators] = useState(false);
@@ -35,8 +43,10 @@ const StatusBar = ({
     const [selectedUser, setSelectedUser] = useState(null);
     const [flyoutPosition, setFlyoutPosition] = useState({ x: 0, y: 0 });
     const [showTorMenu, setShowTorMenu] = useState(false);
+    const [showSyncDetails, setShowSyncDetails] = useState(false);
     const containerRef = useRef(null);
     const torMenuRef = useRef(null);
+    const syncMenuRef = useRef(null);
     const [maxVisible, setMaxVisible] = useState(5);
 
     // Close tor menu when clicking outside
@@ -45,12 +55,15 @@ const StatusBar = ({
             if (torMenuRef.current && !torMenuRef.current.contains(e.target)) {
                 setShowTorMenu(false);
             }
+            if (syncMenuRef.current && !syncMenuRef.current.contains(e.target)) {
+                setShowSyncDetails(false);
+            }
         };
-        if (showTorMenu) {
+        if (showTorMenu || showSyncDetails) {
             document.addEventListener('mousedown', handleClickOutside);
             return () => document.removeEventListener('mousedown', handleClickOutside);
         }
-    }, [showTorMenu]);
+    }, [showTorMenu, showSyncDetails]);
 
     // Handle clicking on a collaborator
     const handleCollaboratorClick = (collab, event) => {
@@ -84,6 +97,25 @@ const StatusBar = ({
 
     // Connection status - unified across platforms with detailed peer info
     const getConnectionStatus = () => {
+        // Show sync phase if not complete
+        if (syncPhase && syncPhase !== 'complete' && syncPhase !== 'idle') {
+            if (syncPhase === 'connecting') {
+                return { label: 'Connecting...', className: 'connecting' };
+            }
+            if (syncPhase === 'awaiting-peers') {
+                return { label: 'Finding peers...', className: 'connecting' };
+            }
+            if (syncPhase === 'receiving-metadata' || syncPhase === 'receiving-documents') {
+                return { label: 'Syncing...', className: 'syncing' };
+            }
+            if (syncPhase === 'failed') {
+                return { label: 'Sync failed', className: 'error' };
+            }
+            if (syncPhase === 'expired') {
+                return { label: 'Link expired', className: 'error' };
+            }
+        }
+        
         if (p2pStatus === 'connected') {
             // Use activePeers if provided (new behavior), otherwise fall back to onlineCount
             const currentActivePeers = activePeers > 0 ? activePeers : onlineCount;
@@ -97,6 +129,32 @@ const StatusBar = ({
             return { label: 'Connecting...', className: 'connecting' };
         }
         return { label: 'Offline', className: 'offline' };
+    };
+
+    // Get sync verification status display
+    const getSyncStatusDisplay = () => {
+        switch (syncStatus) {
+            case 'verified':
+                return { icon: '✓', label: 'Synced', className: 'sync-verified' };
+            case 'verifying':
+                return { icon: '⟳', label: 'Verifying...', className: 'sync-verifying' };
+            case 'syncing':
+                return { icon: '↻', label: 'Syncing...', className: 'sync-syncing' };
+            case 'incomplete':
+                return { 
+                    icon: '⚠', 
+                    label: `${(syncDetails?.missingDocuments || 0) + (syncDetails?.missingFolders || 0)} missing`, 
+                    className: 'sync-incomplete' 
+                };
+            case 'failed':
+                return { icon: '✗', label: 'Sync failed', className: 'sync-failed' };
+            case 'no-peers':
+                return { icon: '○', label: 'No peers', className: 'sync-no-peers' };
+            case 'retrying':
+                return { icon: '↻', label: 'Retrying...', className: 'sync-retrying' };
+            default:
+                return { icon: '○', label: '', className: 'sync-idle' };
+        }
     };
 
     // Format IP for display (show only for Electron)
@@ -232,6 +290,78 @@ const StatusBar = ({
                             >
                                 {isRetrying ? '⟳' : '↻'}
                             </button>
+                        )}
+                    </div>
+                )}
+                
+                {/* Sync verification status indicator */}
+                {syncStatus && syncStatus !== 'idle' && (
+                    <div 
+                        className="sync-status-control" 
+                        ref={syncMenuRef}
+                    >
+                        <button
+                            type="button"
+                            className={`sync-status-btn ${getSyncStatusDisplay().className}`}
+                            onClick={() => setShowSyncDetails(!showSyncDetails)}
+                            title="Sync verification status - click for details"
+                        >
+                            <span className="sync-icon">{getSyncStatusDisplay().icon}</span>
+                            <span className="sync-label">{getSyncStatusDisplay().label}</span>
+                        </button>
+                        
+                        {/* Sync details popover */}
+                        {showSyncDetails && (
+                            <div className="sync-details-menu" role="menu">
+                                <div className="sync-details-header">
+                                    <span className="sync-details-title">Sync Status</span>
+                                    <span className={`sync-details-status ${getSyncStatusDisplay().className}`}>
+                                        {getSyncStatusDisplay().icon} {syncStatus}
+                                    </span>
+                                </div>
+                                <div className="sync-details-body">
+                                    <div className="sync-detail-row">
+                                        <span>Documents:</span>
+                                        <span>{syncDetails?.documentCount || 0}</span>
+                                    </div>
+                                    <div className="sync-detail-row">
+                                        <span>Folders:</span>
+                                        <span>{syncDetails?.folderCount || 0}</span>
+                                    </div>
+                                    {(syncDetails?.missingDocuments > 0 || syncDetails?.missingFolders > 0) && (
+                                        <div className="sync-detail-row warning">
+                                            <span>Missing:</span>
+                                            <span>{syncDetails.missingDocuments} docs, {syncDetails.missingFolders} folders</span>
+                                        </div>
+                                    )}
+                                    {syncDetails?.lastVerified && (
+                                        <div className="sync-detail-row">
+                                            <span>Last verified:</span>
+                                            <span>{new Date(syncDetails.lastVerified).toLocaleTimeString()}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="sync-details-actions">
+                                    {onVerifySyncState && (
+                                        <button 
+                                            type="button" 
+                                            className="sync-action-btn"
+                                            onClick={() => { onVerifySyncState(); setShowSyncDetails(false); }}
+                                        >
+                                            <span>🔍</span> Verify Sync
+                                        </button>
+                                    )}
+                                    {onForceFullSync && (
+                                        <button 
+                                            type="button" 
+                                            className="sync-action-btn primary"
+                                            onClick={() => { onForceFullSync(); setShowSyncDetails(false); }}
+                                        >
+                                            <span>↻</span> Force Full Sync
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         )}
                     </div>
                 )}

@@ -294,3 +294,26 @@
 .sheet-container--readonly {
     position: relative;
 }
+
+/* Fortune Sheet presence/collaboration overlays - fix positioning */
+.sheet-container .fortune-presence-username {
+    /* Position in upper-right corner of the cell, not floating above */
+    top: 0 !important;
+    right: 0 !important;
+    left: auto !important;
+    transform: none !important;
+    border-radius: 0 0 0 4px !important;
+    font-size: 10px !important;
+    padding: 2px 5px !important;
+    max-width: 80px !important;
+    z-index: 50 !important; /* Keep below modals (z-index 900+) */
+}
+
+.sheet-container .fortune-presence-selection {
+    z-index: 49 !important; /* Below username label */
+}
+
+/* Ensure presence overlays don't appear over modals */
+.sheet-workbook-wrapper {
+    isolation: isolate; /* Create stacking context */
+}

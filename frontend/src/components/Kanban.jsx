@@ -6,9 +6,13 @@ import './Kanban.css';
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
 
+// Sync timeout - wait for provider to sync before initializing defaults
+const SYNC_TIMEOUT_MS = 10000;
+
 const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) => {
     const [columns, setColumns] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [syncError, setSyncError] = useState(null);
     const [draggedCard, setDraggedCard] = useState(null);
     const [draggedColumn, setDraggedColumn] = useState(null);
     const [editingCard, setEditingCard] = useState(null);
@@ -16,11 +20,18 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
     const [newColumnName, setNewColumnName] = useState('');
     const [showNewColumn, setShowNewColumn] = useState(false);
     const ykanbanRef = useRef(null);
+    const hasSyncedRef = useRef(false);
+    const syncTimeoutRef = useRef(null);
     const { confirm, ConfirmDialogComponent } = useConfirmDialog();
 
-    // Initialize Yjs map for kanban data
+    // Initialize Yjs map for kanban data with sync awareness
     useEffect(() => {
         if (!ydoc) return;
+        
+        // Reset state on mount
+        hasSyncedRef.current = false;
+        setSyncError(null);
+        setIsLoading(true);
         
         const ykanban = ydoc.getMap('kanban');
         ykanbanRef.current = ykanban;
@@ -29,8 +40,9 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
             const data = ykanban.get('columns');
             if (data) {
                 setColumns(JSON.parse(JSON.stringify(data)));
-            } else {
-                // Initialize with default columns
+                setIsLoading(false);
+            } else if (hasSyncedRef.current) {
+                // Only initialize defaults AFTER provider has synced and there's truly no data
                 const defaultColumns = [
                     { id: generateId(), name: 'To Do', color: '#6366f1', cards: [] },
                     { id: generateId(), name: 'In Progress', color: '#f59e0b', cards: [] },
@@ -38,17 +50,103 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                 ];
                 ykanban.set('columns', defaultColumns);
                 setColumns(defaultColumns);
+                setIsLoading(false);
             }
-            setIsLoading(false);
+            // If not synced yet and no data, stay in loading state
         };
 
+        // Handle provider sync
+        const handleSync = (isSynced) => {
+            if (isSynced && !hasSyncedRef.current) {
+                hasSyncedRef.current = true;
+                // Clear timeout since we synced
+                if (syncTimeoutRef.current) {
+                    clearTimeout(syncTimeoutRef.current);
+                    syncTimeoutRef.current = null;
+                }
+                // Now check if we need to initialize with defaults
+                updateFromYjs();
+            }
+        };
+
+        // Set up observer
         ykanban.observe(updateFromYjs);
-        updateFromYjs();
+        
+        // Check if already synced
+        if (provider?.synced) {
+            handleSync(true);
+        } else if (provider) {
+            // Listen for sync event
+            provider.on('sync', handleSync);
+            
+            // Timeout fallback - if sync doesn't happen in time, show error
+            syncTimeoutRef.current = setTimeout(() => {
+                if (!hasSyncedRef.current) {
+                    console.warn('[Kanban] Sync timeout - provider did not sync in time');
+                    setSyncError('Unable to sync with server. You can retry or work offline.');
+                    setIsLoading(false);
+                }
+            }, SYNC_TIMEOUT_MS);
+        } else {
+            // No provider - initialize immediately (offline mode)
+            hasSyncedRef.current = true;
+            updateFromYjs();
+        }
 
         return () => {
             ykanban.unobserve(updateFromYjs);
+            if (provider) {
+                provider.off('sync', handleSync);
+            }
+            if (syncTimeoutRef.current) {
+                clearTimeout(syncTimeoutRef.current);
+            }
         };
-    }, [ydoc]);
+    }, [ydoc, provider]);
+
+    // Retry sync handler
+    const handleRetrySync = useCallback(() => {
+        setSyncError(null);
+        setIsLoading(true);
+        hasSyncedRef.current = false;
+        
+        if (provider) {
+            // Try to reconnect
+            if (provider.wsconnected === false && provider.connect) {
+                provider.connect();
+            }
+            
+            // Set up timeout again
+            syncTimeoutRef.current = setTimeout(() => {
+                if (!hasSyncedRef.current) {
+                    setSyncError('Still unable to sync. You can continue working offline.');
+                    setIsLoading(false);
+                }
+            }, SYNC_TIMEOUT_MS);
+        }
+    }, [provider]);
+
+    // Work offline handler
+    const handleWorkOffline = useCallback(() => {
+        setSyncError(null);
+        hasSyncedRef.current = true;
+        // Initialize with defaults if no data
+        const data = ykanbanRef.current?.get('columns');
+        if (data) {
+            setColumns(JSON.parse(JSON.stringify(data)));
+        } else {
+            const defaultColumns = [
+                { id: generateId(), name: 'To Do', color: '#6366f1', cards: [] },
+                { id: generateId(), name: 'In Progress', color: '#f59e0b', cards: [] },
+                { id: generateId(), name: 'Done', color: '#22c55e', cards: [] }
+            ];
+            if (ykanbanRef.current) {
+                ykanbanRef.current.set('columns', defaultColumns);
+            }
+            setColumns(defaultColumns);
+        }
+        setIsLoading(false);
+    }, []);
 
     const saveToYjs = useCallback((newColumns) => {
         if (ykanbanRef.current) {
@@ -270,7 +368,7 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                             type="button"
                             className="btn-add-column"
                             onClick={() => setShowNewColumn(true)}
-                            disabled={isLoading}
+                            disabled={isLoading || syncError}
                         >
                             + Add Column
                         </button>
@@ -278,10 +376,31 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                 )}
             </div>
 
-            {isLoading ? (
+            {syncError ? (
+                <div className="kanban-sync-error">
+                    <div className="sync-error-icon">⚠️</div>
+                    <p>{syncError}</p>
+                    <div className="sync-error-actions">
+                        <button 
+                            type="button"
+                            className="btn-retry"
+                            onClick={handleRetrySync}
+                        >
+                            🔄 Retry
+                        </button>
+                        <button 
+                            type="button"
+                            className="btn-offline"
+                            onClick={handleWorkOffline}
+                        >
+                            📴 Work Offline
+                        </button>
+                    </div>
+                </div>
+            ) : isLoading ? (
                 <div className="kanban-loading">
                     <div className="kanban-loading__spinner"></div>
-                    <p>Loading board...</p>
+                    <p>Syncing board...</p>
                 </div>
             ) : (
             <div className="kanban-board">
@@ -357,11 +476,18 @@ const Kanban = ({ ydoc, provider, userColor, readOnly = false, onAddComment }) =
                                     key={card.id}
                                     className={`kanban-card ${draggedCard?.card.id === card.id ? 'dragging' : ''}`}
                                     style={card.color ? { borderLeftColor: card.color } : {}}
-                                    draggable={!readOnly}
+                                    draggable={!readOnly && editingCard !== card.id}
                                     tabIndex={0}
                                     role="listitem"
                                     aria-label={`Card: ${card.title}${card.description ? '. ' + card.description.substring(0, 50) : ''}`}
-                                    onDragStart={(e) => !readOnly && handleDragStart(e, card, column.id)}
+                                    onDragStart={(e) => {
+                                        // Don't start drag if clicking on input/textarea elements
+                                        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || editingCard === card.id) {
+                                            e.preventDefault();
+                                            return;
+                                        }
+                                        !readOnly && handleDragStart(e, card, column.id);
+                                    }}
                                     onDragEnd={!readOnly ? handleDragEnd : undefined}
                                     onDragOver={!readOnly ? (e) => {
                                         e.preventDefault();

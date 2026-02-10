@@ -22,6 +22,7 @@ import ChangelogPanel from './components/Changelog';
 import CreateWorkspace from './components/CreateWorkspace';
 import CreateDocumentDialog from './components/CreateDocument';
 import KickedModal from './components/KickedModal';
+import SyncProgressModal from './components/SyncProgressModal';
 import OnboardingFlow from './components/Onboarding/OnboardingFlow';
 import IdentitySelector from './components/IdentitySelector';
 import LockScreen from './components/LockScreen';
@@ -36,6 +37,7 @@ import { useWorkspaces } from './contexts/WorkspaceContext';
 import { useFolders } from './contexts/FolderContext';
 import { usePermissions } from './contexts/PermissionContext';
 import { useIdentity } from './contexts/IdentityContext';
+import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { createCollaboratorTracker } from './utils/collaboratorTracking';
 import { useEnvironment, isElectron, isCapacitor, getPlatform } from './hooks/useEnvironment';
 import { getYjsWebSocketUrl } from './utils/websocket';
@@ -140,6 +142,17 @@ function getCellRangeRef(selection) {
     return `${startRef}:${endRef}`;
 }
 
+// Component to update presence when active document changes
+function PresenceDocumentTracker({ activeDocId }) {
+    const { updateOpenDocument } = usePresence();
+    
+    useEffect(() => {
+        updateOpenDocument(activeDocId);
+    }, [activeDocId, updateOpenDocument]);
+    
+    return null;
+}
+
 function App() {
     // --- Identity Context ---
     // Identity context is available for features like kick signatures, membership tracking
@@ -220,11 +233,17 @@ function App() {
         updateWorkspaceInfo: syncUpdateWorkspaceInfo,
         connected: workspaceSyncConnected,
         synced: workspaceSyncSynced,
+        // Sync progress for UI feedback
+        syncPhase,
+        syncProgress,
         getYjsDocumentCount,
         // Workspace-level collaborator tracking
         collaborators: workspaceCollaborators,
         onlineCount: workspaceOnlineCount,
         totalCount: workspaceTotalCount,
+        // Tab presence: which collaborators have which documents open
+        collaboratorsByDocument,
+        setOpenDocumentId,
         // Workspace-level ydoc and provider for chat
         ydoc: workspaceYdoc,
         provider: workspaceProvider,
@@ -242,23 +261,18 @@ function App() {
         relayConnected,
         requestSync: requestPeerSync,
         isRetrying: isPeerSyncRetrying,
+        syncStatus,
+        syncDetails,
+        verifySyncState,
+        forceFullSync,
     } = useWorkspacePeerStatus(currentWorkspaceId);
     
-    // Use synced documents, fall back to local state for Electron mode
-    // Exception: In Electron mode, if we have a serverUrl (remote workspace), use synced docs
+    // ALWAYS use synced documents from Yjs - this is the single source of truth
+    // The sidecar persists to LevelDB but Yjs is the source for the UI
     const isElectronMode = isElectron();
     const isRemoteWorkspace = !!workspaceServerUrl;
-    const [localDocuments, setLocalDocuments] = useState([]);
-    // Use syncedDocuments for:
-    // 1) Web mode (always)
-    // 2) Electron joining remote workspace (has serverUrl)
-    // 3) Electron joining P2P workspace (not owner - documents come from Yjs sync)
-    // Use localDocuments for: Electron with local workspace that we OWN
-    const isWorkspaceOwner = currentWorkspace?.myPermission === 'owner';
-    const useLocalDocs = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
-    // Documents are workspace-scoped - sidecar returns only docs for current workspace
-    const documents = useLocalDocs ? localDocuments : syncedDocuments;
-    const setDocuments = useLocalDocs ? setLocalDocuments : () => {}; // No-op for synced mode
+    // Documents are always from Yjs sync - no special casing by permission
+    const documents = syncedDocuments;
     
     // --- Document State ---
     const [openTabs, setOpenTabs] = useState([]);
@@ -285,6 +299,8 @@ function App() {
     const [needsMigration, setNeedsMigration] = useState(false); // Migration needed for legacy identity
     const [legacyIdentity, setLegacyIdentity] = useState(null); // Legacy identity data for migration
     const [startupComplete, setStartupComplete] = useState(false); // Track if startup identity check is complete
+    const [showSyncProgress, setShowSyncProgress] = useState(false); // Show sync progress modal for new workspace joins
+    const [syncProgressWorkspaceId, setSyncProgressWorkspaceId] = useState(null); // Track which workspace is syncing
 
     // --- Auto-Lock Hook ---
     const { isLocked, setIsLocked, unlock: unlockApp } = useAutoLock();
@@ -471,6 +487,13 @@ function App() {
         };
     }, []);
 
+    // --- Update workspace awareness with currently open document (for tab presence indicators) ---
+    useEffect(() => {
+        if (setOpenDocumentId) {
+            setOpenDocumentId(activeDocId);
+        }
+    }, [activeDocId, setOpenDocumentId]);
+
     // --- Android Back Button Handling (Capacitor only) ---
     useEffect(() => {
         // Only add listener if running on Capacitor Android
@@ -559,37 +582,71 @@ function App() {
     // and should not push back to Yjs
     const isProcessingRemoteUpdate = useRef(false);
     
-    // Reset sync tracking when workspace changes
+    // Track previous workspace to detect changes
+    const prevWorkspaceIdRef = useRef(currentWorkspaceId);
+    
+    // Reset sync tracking and close all tabs when workspace changes
     useEffect(() => {
         lastSyncedWorkspaceInfo.current = null;
         isProcessingRemoteUpdate.current = false;
+        
+        // Close all open document tabs when switching or leaving workspaces
+        if (prevWorkspaceIdRef.current !== currentWorkspaceId) {
+            // Clean up ydocs for previous workspace
+            if (prevWorkspaceIdRef.current) {
+                ydocsRef.current.forEach((docData, docId) => {
+                    if (docData.provider) {
+                        docData.provider.destroy();
+                    }
+                    if (docData.ydoc) {
+                        docData.ydoc.destroy();
+                    }
+                });
+                ydocsRef.current.clear();
+            }
+            
+            // Clear open tabs and active document
+            setOpenTabs([]);
+            setActiveDocId(null);
+            
+            prevWorkspaceIdRef.current = currentWorkspaceId;
+        }
     }, [currentWorkspaceId]);
     
-    // Load documents when workspace changes (documents are workspace-scoped)
-    // Only load from sidecar for workspaces we OWN - joined workspaces get docs via Yjs sync
+    // Documents are always loaded from Yjs sync
+    // The sidecar bootstraps the Yjs document with persisted data
+    // No special handling needed here - useWorkspaceSync handles it
+    
+    // --- Show sync progress modal when joining a non-owner workspace ---
     useEffect(() => {
-        if (!currentWorkspaceId) {
-            // No workspace selected - clear documents
-            setLocalDocuments([]);
-            return;
+        // Show modal when:
+        // 1. We have a current workspace
+        // 2. We're not the owner (joining)
+        // 3. Workspace was recently created (name is still "Shared Workspace" - placeholder)
+        // 4. Sync is in progress
+        if (currentWorkspace && 
+            currentWorkspace.myPermission !== 'owner' &&
+            currentWorkspace.name === 'Shared Workspace' &&
+            syncPhase !== 'complete' && 
+            syncPhase !== 'idle') {
+            setShowSyncProgress(true);
+            setSyncProgressWorkspaceId(currentWorkspaceId);
         }
-        if (!isElectronMode) return; // Web mode uses synced documents
-        if (isRemoteWorkspace) return; // Remote workspaces use synced documents
-        if (!isWorkspaceOwner) return; // Joined workspaces use synced documents from Yjs
         
-        // Request documents for this workspace (owner only)
-        if (metaSocketRef.current?.readyState === WebSocket.OPEN) {
-            console.log(`[App] Requesting documents for owned workspace: ${currentWorkspaceId}`);
-            metaSocketRef.current.send(JSON.stringify({ 
-                type: 'list-documents', 
-                workspaceId: currentWorkspaceId 
-            }));
+        // Auto-hide when sync completes
+        if (syncPhase === 'complete' && syncProgressWorkspaceId === currentWorkspaceId) {
+            // Keep showing briefly to show success
+            setTimeout(() => {
+                setShowSyncProgress(false);
+                setSyncProgressWorkspaceId(null);
+            }, 1500);
         }
-    }, [currentWorkspaceId, isElectronMode, isRemoteWorkspace, isWorkspaceOwner]);
+    }, [currentWorkspace, currentWorkspaceId, syncPhase, syncProgressWorkspaceId]);
     
     useEffect(() => {
         // When synced workspace info arrives and differs from local, update it
-        if (syncedWorkspaceInfo && currentWorkspace && !isElectronMode) {
+        // This applies to ALL users regardless of platform - Yjs is the source of truth
+        if (syncedWorkspaceInfo && currentWorkspace) {
             const { name, icon, color } = syncedWorkspaceInfo;
             // Update if any field differs from our last known synced state
             const lastSynced = lastSyncedWorkspaceInfo.current;
@@ -613,11 +670,11 @@ function App() {
                 });
             }
         }
-    }, [syncedWorkspaceInfo, currentWorkspace, currentWorkspaceId, updateWorkspace, isElectronMode]);
+    }, [syncedWorkspaceInfo, currentWorkspace, currentWorkspaceId, updateWorkspace]);
 
     // --- Push local workspace info changes to Yjs (for owners/editors) ---
     useEffect(() => {
-        if (!currentWorkspace || isElectronMode || !syncUpdateWorkspaceInfo) return;
+        if (!currentWorkspace || !syncUpdateWorkspaceInfo) return;
         
         // Don't push if we're processing a remote update (prevents feedback loop)
         if (isProcessingRemoteUpdate.current) {
@@ -638,7 +695,7 @@ function App() {
             lastSyncedWorkspaceInfo.current = { name, icon, color };
             syncUpdateWorkspaceInfo({ name, icon, color });
         }
-    }, [currentWorkspace?.name, currentWorkspace?.icon, currentWorkspace?.color, syncUpdateWorkspaceInfo, isElectronMode]);
+    }, [currentWorkspace?.name, currentWorkspace?.icon, currentWorkspace?.color, syncUpdateWorkspaceInfo]);
 
     // --- Initialize session key and metadata connection ---
     useEffect(() => {
@@ -875,17 +932,9 @@ function App() {
         // Add to shared document list (syncs to all connected clients)
         // ALWAYS use Yjs sync so documents are available for P2P sharing
         syncAddDocument(document);
-        
-        // In Electron owned workspace mode, also update local state for UI responsiveness
-        if (useLocalDocs) {
-            setLocalDocuments(prev => {
-                if (prev.some(d => d.id === docId)) return prev;
-                return [...prev, document];
-            });
-        }
 
-        // Notify sidecar (for persistence) - Electron owned workspace only
-        if (useLocalDocs && metaSocketRef.current?.readyState === WebSocket.OPEN) {
+        // Notify sidecar (for persistence) - Electron mode only
+        if (isElectronMode && metaSocketRef.current?.readyState === WebSocket.OPEN) {
             metaSocketRef.current.send(JSON.stringify({ 
                 type: 'create-document', 
                 document 
@@ -982,32 +1031,26 @@ function App() {
         // ALWAYS remove from shared document list so P2P peers see the deletion
         syncRemoveDocument(docId);
 
-        // Notify sidecar - owned workspace only
-        if (useLocalDocs && metaSocketRef.current?.readyState === WebSocket.OPEN) {
+        // Notify sidecar - Electron mode only
+        if (isElectronMode && metaSocketRef.current?.readyState === WebSocket.OPEN) {
             metaSocketRef.current.send(JSON.stringify({ 
                 type: 'delete-document', 
                 docId 
             }));
         }
         showToast('Document deleted', 'success');
-    }, [closeDocument, useLocalDocs, syncRemoveDocument, showToast]);
+    }, [closeDocument, isElectronMode, syncRemoveDocument, showToast]);
 
     // Move document to a folder (or to root if folderId is null)
     const handleMoveDocument = useCallback((documentId, folderId) => {
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(documentId, { folderId: folderId || null });
         
-        // In owned workspace mode, also update local state immediately
-        if (useLocalDocs) {
-            setLocalDocuments(prev => prev.map(d => 
-                d.id === documentId 
-                    ? { ...d, folderId: folderId || null }
-                    : d
-            ));
-            // Also call the FolderContext function to sync with sidecar
+        // In Electron mode, also call the FolderContext function to sync with sidecar
+        if (isElectronMode) {
             moveDocumentToFolder(documentId, folderId);
         }
-    }, [moveDocumentToFolder, useLocalDocs, syncUpdateDocument]);
+    }, [moveDocumentToFolder, isElectronMode, syncUpdateDocument]);
 
     // Rename document
     const renameDocument = useCallback((docId, newName) => {
@@ -1015,15 +1058,6 @@ function App() {
         
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(docId, { name: newName.trim() });
-        
-        // In owned workspace mode, also update local state immediately
-        if (useLocalDocs) {
-            setLocalDocuments(prev => prev.map(d => 
-                d.id === docId 
-                    ? { ...d, name: newName.trim() }
-                    : d
-            ));
-        }
         
         // Also update local open tabs
         setOpenTabs(prev => prev.map(tab => 
@@ -1033,7 +1067,7 @@ function App() {
         ));
         
         showToast('Document renamed', 'success');
-    }, [isElectronMode, isRemoteWorkspace, syncUpdateDocument, showToast]);
+    }, [syncUpdateDocument, showToast]);
 
     const copyInviteLink = useCallback(() => {
         if (inviteLink) {
@@ -1072,15 +1106,13 @@ function App() {
     const activeTabName = openTabs.find(t => t.id === activeDocId)?.name || 'Untitled';
     const activeDocType = openTabs.find(t => t.id === activeDocId)?.docType || DOC_TYPES.TEXT;
 
-    // Debug logging for changelog observer
-    console.log('[App] activeDocId:', activeDocId, 'activeDoc:', !!activeDoc, 'ydoc:', !!activeDoc?.ydoc);
-
     // Observe changelog changes at the App level (runs even when panel is closed)
     const currentUser = { name: userHandle, color: userColor, icon: userIcon };
     useChangelogObserver(
         activeDoc?.ydoc, 
         activeDocId, 
-        currentUser
+        currentUser,
+        activeDocType // Pass document type for proper changelog handling
     );
 
     // Track collaborators for all documents (for sidebar pips)
@@ -1334,7 +1366,13 @@ function App() {
         return <OnboardingFlow onComplete={handleOnboardingComplete} />;
     }
     
+    // Get workspace awareness for presence - will be null if no workspace provider
+    const workspaceAwareness = workspaceProvider?.awareness || null;
+    
     return (
+        <PresenceProvider awareness={workspaceAwareness}>
+        {/* Track which document user has open for presence */}
+        <PresenceDocumentTracker activeDocId={activeDocId} />
         <div className={`app-container ${isFullscreen ? 'fullscreen' : ''} ${!hasWorkspaces && !workspacesLoading ? 'onboarding' : ''}`}>
             {/* Only show sidebar when we have workspaces (or while loading) */}
             {(hasWorkspaces || workspacesLoading) && (
@@ -1419,6 +1457,7 @@ function App() {
                             onToggleFullscreen={toggleFullscreen}
                             documents={documents}
                             folders={folders}
+                            collaboratorsByDocument={collaboratorsByDocument}
                         />
                     ) : (
                         <div className="header-bar-minimal">
@@ -1593,6 +1632,12 @@ function App() {
                     isRetrying={isPeerSyncRetrying}
                     documentType={activeDocType}
                     onStartChatWith={(user) => setChatTargetUser(user)}
+                    syncPhase={syncPhase}
+                    workspaceSynced={workspaceSyncSynced}
+                    syncStatus={syncStatus}
+                    syncDetails={syncDetails}
+                    onVerifySyncState={verifySyncState}
+                    onForceFullSync={forceFullSync}
                 />
             </div>
 
@@ -1644,6 +1689,13 @@ function App() {
                     workspaceId={currentWorkspace?.id}
                     targetUser={chatTargetUser}
                     onTargetUserHandled={() => setChatTargetUser(null)}
+                    userPublicKey={userIdentity?.publicKey}
+                    workspaceMembers={Object.values(workspaceMembers || {}).map(m => ({
+                        publicKey: m.publicKey,
+                        displayName: m.displayName || m.name || 'Unknown',
+                        color: m.color || '#6366f1',
+                        icon: m.icon
+                    }))}
                 />
             )}
 
@@ -1743,7 +1795,39 @@ function App() {
                     }}
                 />
             )}
+
+            {/* Sync Progress Modal - shown when joining a workspace */}
+            {showSyncProgress && (
+                <SyncProgressModal
+                    phase={syncPhase}
+                    progress={syncProgress}
+                    workspaceName={syncedWorkspaceInfo?.name || currentWorkspace?.name || 'workspace'}
+                    onClose={() => {
+                        setShowSyncProgress(false);
+                        setSyncProgressWorkspaceId(null);
+                    }}
+                    onCancel={() => {
+                        // User cancelled - leave the workspace
+                        setShowSyncProgress(false);
+                        setSyncProgressWorkspaceId(null);
+                        leaveWorkspace(currentWorkspaceId);
+                        const otherWorkspace = workspaces.find(w => w.id !== currentWorkspaceId);
+                        if (otherWorkspace) {
+                            switchWorkspace(otherWorkspace.id);
+                        } else {
+                            switchWorkspace(null);
+                        }
+                    }}
+                    onRetry={() => {
+                        // Force reconnect by switching workspace back
+                        const wsId = currentWorkspaceId;
+                        switchWorkspace(null);
+                        setTimeout(() => switchWorkspace(wsId), 100);
+                    }}
+                />
+            )}
         </div>
+        </PresenceProvider>
     );
 }
 

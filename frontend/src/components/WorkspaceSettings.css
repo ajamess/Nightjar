@@ -663,7 +663,7 @@
 
 .workspace-settings__delete-note {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary, #a1a1aa);
 }
 
 .workspace-settings__delete-actions {
