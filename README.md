@@ -50,12 +50,29 @@ Whether you're a journalist protecting sources, an activist organizing securely,
 - Multi-sheet workbooks with formula support
 - Cell formatting and number formats
 - Real-time collaborative editing
+- Formula bar with live cell reference tracking
 
 ### 📋 Kanban Boards
 - Visual project management with drag-and-drop cards
+- Customizable columns and card details
+- Real-time collaborative updates
+
+### 📦 Inventory Management System *(New in v1.6)*
+- **Multi-role workflow**: Administrators, Producers, and Requesters with role-specific dashboards
+- **Request lifecycle**: Submit → Approve → Claim → Ship → Deliver with full status tracking
+- **Smart assignment algorithm**: Priority queue with urgent + FIFO ordering
+- **Capacity planning**: Track producer stock levels and production rates
+- **Geographic visualization**: US state heatmap showing request distribution
+- **CSV/XLSX import**: Smart column auto-mapping with validation preview
+- **Encrypted addresses**: End-to-end encrypted shipping address handling (AES-GCM)
+- **Catalog management**: Define item catalog with categories
+- **Analytics dashboard**: Fulfillment metrics, demand trends, producer leaderboards
+- **Audit logging**: Complete history of all inventory operations
 
 ### 👥 Real-Time Collaboration
 - **Live cursor tracking** with collaborator names and colors
+- **Document-level presence pips** showing who has each document open *(Enhanced in v1.5+)*
+- **Focused state indicators** with glowing effect for active documents
 - **Presence indicators** showing who's online with last-seen timestamps
 - **Real-time commenting** on text selections, spreadsheet cells, and document sections
 - **Built-in secure chat** with direct messaging and workspace channels
@@ -63,6 +80,12 @@ Whether you're a journalist protecting sources, an activist organizing securely,
 - **Permission-based access**: Owner, Editor, Viewer with granular controls
 - **Member management**: Real-time member list, activity tracking, instant kick/ban
 - **Workspace-wide notifications** for joins, edits, and system events
+
+### 🔔 Notifications *(New in v1.5)*
+- **Sound notifications** for messages, mentions, and workspace events
+- **Do Not Disturb mode** to silence notifications when focused
+- **Per-channel settings** for granular control
+- **Visual indicators** with unread counts and badges
 
 ### 📁 Organization
 - Workspaces to separate projects
@@ -83,6 +106,7 @@ Whether you're a journalist protecting sources, an activist organizing securely,
 - Act as a relay for other peers
 - Local network discovery via mDNS
 - Works offline with automatic sync
+- **Peer status monitoring** with connection health indicators *(v1.4+)*
 
 ---
 
@@ -533,6 +557,7 @@ See [server/unified/docker-compose.yml](server/unified/docker-compose.yml) for f
 | **Rich Text** | TipTap / ProseMirror | Collaborative text editor |
 | **Spreadsheet** | Fortune Sheet | Excel-like spreadsheets |
 | **CRDT** | Yjs | Conflict-free real-time sync |
+| **Visualization** | D3.js / TopoJSON | Geographic heatmaps and charts |
 
 ### Networking
 
@@ -552,6 +577,7 @@ See [server/unified/docker-compose.yml](server/unified/docker-compose.yml) for f
 | **TweetNaCl** | XSalsa20-Poly1305 | Authenticated encryption |
 | **hash-wasm** | Argon2id | Password-based key derivation |
 | **bip39** | BIP39 | Mnemonic recovery phrases |
+| **Web Crypto API** | AES-GCM | Inventory address encryption |
 
 ### Storage
 
@@ -559,6 +585,14 @@ See [server/unified/docker-compose.yml](server/unified/docker-compose.yml) for f
 |------------|---------|
 | **LevelDB** | Local encrypted document storage |
 | **IndexedDB** | Browser-based storage fallback |
+
+### Testing
+
+| Technology | Purpose |
+|------------|---------|
+| **Jest** | Unit and integration tests |
+| **Playwright** | End-to-end browser tests |
+| **React Testing Library** | Component tests |
 
 ---
 
@@ -790,9 +824,52 @@ npm run package:linux  # Linux
 ### Tests
 
 ```bash
-npm test                    # Unit tests
+npm test                    # Unit tests (Jest)
 npm run test:integration    # Integration tests
+npm run test:e2e            # End-to-end tests (Playwright)
+npm run test:e2e:smoke      # Quick smoke tests
 ```
+
+**Test Coverage:**
+- Unit tests for hooks, utilities, and components
+- E2E tests for all document types (editor, spreadsheet, kanban)
+- Multi-user presence and collaboration scenarios
+- P2P sync and share link validation
+- Inventory system workflow tests
+
+---
+
+## Changelog
+
+### v1.6.0 - Inventory Management System
+- **New Feature**: Complete inventory management system with admin, producer, and requester roles
+- **New Feature**: CSV/XLSX import with smart column mapping
+- **New Feature**: Geographic visualization with US state heatmap
+- **New Feature**: Encrypted address storage for secure shipping
+- **Enhancement**: Document-level presence pips in sidebar
+- **Enhancement**: Focused state indicators with glowing effect
+- **Testing**: Comprehensive E2E test suite (40+ new tests)
+
+### v1.5.x - Presence & Notifications
+- **v1.5.13**: Multi-document presence, chat fixes, spreadsheet improvements
+- **v1.5.1**: Comprehensive bug audit with 40+ fixes
+- **v1.5.0**: Notification sound system with Do Not Disturb mode
+
+### v1.4.0 - P2P Stability
+- Fixed P2P sync for joined workspaces
+- Added peer status monitoring with connection health indicators
+- Improved cross-platform workspace sharing (Mac ↔ Windows)
+
+### v1.3.x - Sharing & Reliability
+- Dynamic sidecar port configuration
+- Fixed signed invite link validation
+- Improved document deduplication
+- Cross-platform P2P fixes
+
+### v1.2.0 - Relay Mesh
+- Global relay mesh network
+- Relay configuration UI
+- Base64 encoding fixes
 
 ---
 
