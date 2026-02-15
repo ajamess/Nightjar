@@ -3,7 +3,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import useInventorySync from '../../../hooks/useInventorySync';
 import CapacityInput from '../common/CapacityInput';
 import StatusBadge from '../common/StatusBadge';
 import AddressReveal from './AddressReveal';
@@ -19,18 +18,74 @@ const KANBAN_COLUMNS = [
 
 export default function ProducerDashboard() {
   const ctx = useInventory();
-  const { catalogItems, requests, producerCapacities, addressReveals } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems, yInventoryRequests: ctx.yInventoryRequests,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog: ctx.yInventoryAuditLog },
-    ctx.inventorySystemId
-  );
+  const { catalogItems, requests, producerCapacities, addressReveals } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
+  const myDisplayName = ctx.userIdentity?.displayName || ctx.userIdentity?.name || '';
   const [revealRequestId, setRevealRequestId] = useState(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // My capacity data
   const myCap = producerCapacities?.[myKey] || {};
+
+  // Find imported requests with names matching my identity (case-insensitive)
+  const importMatches = useMemo(() => {
+    if (!myDisplayName || bannerDismissed) return [];
+    const myNameLower = myDisplayName.toLowerCase();
+    return requests.filter(r =>
+      r.importedProducerName &&
+      r.importedProducerName.toLowerCase() === myNameLower &&
+      !r.assignedTo
+    );
+  }, [requests, myDisplayName, bannerDismissed]);
+
+  const importMatchUnits = useMemo(() =>
+    importMatches.reduce((s, r) => s + (r.quantity || 0), 0),
+    [importMatches]
+  );
+
+  const handleClaimAll = useCallback(() => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr || !myKey) return;
+    const doc = yArr.doc;
+
+    doc.transact(() => {
+      const arr = yArr.toArray();
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const req = arr[i];
+        if (importMatches.find(m => m.id === req.id)) {
+          const updated = {
+            ...req,
+            assignedTo: myKey,
+            assignedToName: myDisplayName,
+            assignedAt: Date.now(),
+            claimedBy: myKey,
+            claimedAt: Date.now(),
+            status: req.status === 'open' ? 'claimed' : req.status,
+          };
+          delete updated.importedProducerName;
+          yArr.delete(i, 1);
+          yArr.insert(i, [updated]);
+        }
+      }
+    });
+
+    if (ctx.yInventoryAuditLog) {
+      ctx.yInventoryAuditLog.push([{
+        id: generateId(),
+        inventorySystemId: ctx.inventorySystemId,
+        timestamp: Date.now(),
+        actorId: myKey,
+        actorRole: 'editor',
+        action: 'bulk_claim_imported',
+        targetType: 'request',
+        targetId: '',
+        summary: `Self-claimed ${importMatches.length} imported requests (${importMatchUnits} units)`,
+      }]);
+    }
+
+    setBannerDismissed(true);
+  }, [ctx, myKey, myDisplayName, importMatches, importMatchUnits]);
 
   // My requests — kanban cards
   const myRequests = useMemo(() =>
@@ -151,6 +206,25 @@ export default function ProducerDashboard() {
         </span>
       </div>
 
+      {/* Import match banner */}
+      {importMatches.length > 0 && !bannerDismissed && (
+        <div className="pd-import-banner">
+          <div className="pd-import-banner-text">
+            <span className="pd-import-banner-icon">📋</span>
+            We found <strong>{importMatches.length} request{importMatches.length !== 1 ? 's' : ''}</strong>{' '}
+            ({importMatchUnits.toLocaleString()} units) from the import that match your name.
+          </div>
+          <div className="pd-import-banner-actions">
+            <button className="btn-sm btn-primary" onClick={handleClaimAll}>
+              ✋ Claim All
+            </button>
+            <button className="btn-sm btn-secondary" onClick={() => setBannerDismissed(true)}>
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Capacity section */}
       <section className="pd-section">
         <h3>My Capacity</h3>
@@ -180,7 +254,7 @@ export default function ProducerDashboard() {
                 </div>
                 <div className="pd-kanban-cards">
                   {colReqs.map(req => {
-                    const item = catalogMap[req.itemId];
+                    const item = catalogMap[req.catalogItemId];
                     const hasReveal = addressReveals?.[req.id];
                     return (
                       <div key={req.id} className={`pd-kanban-card ${req.urgent ? 'pd-kanban-card--urgent' : ''}`}>
@@ -190,7 +264,7 @@ export default function ProducerDashboard() {
                         </div>
                         <div className="pd-card-item">{item?.name || 'Unknown'}</div>
                         <div className="pd-card-detail">
-                          {req.quantity} {item?.unitName || 'un'} • {req.shippingState}
+                          {req.quantity} {item?.unit || 'un'} • {req.state}
                         </div>
                         <StatusBadge status={req.status} />
 

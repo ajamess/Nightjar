@@ -3,27 +3,22 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import useInventorySync from '../../../hooks/useInventorySync';
 import StatusBadge from '../common/StatusBadge';
 import AddressReveal from './AddressReveal';
 import { generateId, formatRelativeDate } from '../../../utils/inventoryValidation';
+import { pushNotification } from '../../../utils/inventoryNotifications';
 import './ProducerMyRequests.css';
 
 const PIPELINE = [
   { key: 'claimed', label: 'Claimed', desc: 'Waiting for approval' },
   { key: 'approved', label: 'Approved', desc: 'Address revealed' },
-  { key: 'ready', label: 'Ready to Ship', desc: 'Pending approval review' },
+  { key: 'in_progress', label: 'In Progress', desc: 'Being prepared' },
   { key: 'shipped', label: 'Shipped', desc: 'In transit / delivered' },
 ];
 
 export default function ProducerMyRequests() {
   const ctx = useInventory();
-  const { catalogItems, requests, addressReveals } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems, yInventoryRequests: ctx.yInventoryRequests,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog: ctx.yInventoryAuditLog },
-    ctx.inventorySystemId
-  );
+  const { catalogItems, requests, addressReveals } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
   const [revealRequestId, setRevealRequestId] = useState(null);
@@ -43,8 +38,9 @@ export default function ProducerMyRequests() {
   const filteredPipeline = useMemo(() => {
     const statusToColumn = {
       'claimed': 'claimed',
-      'pending_approval': 'ready',
+      'pending_approval': 'claimed',
       'approved': 'approved',
+      'in_progress': 'in_progress',
       'shipped': 'shipped',
       'delivered': 'shipped',
     };
@@ -87,6 +83,49 @@ export default function ProducerMyRequests() {
       targetId: requestId,
       summary: `Request ${requestId.slice(0, 8)} unclaimed`,
     }]);
+
+    // Notify the requestor
+    const req = arr[idx];
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_unclaimed',
+      message: `A producer unclaimed your request for ${req.catalogItemName}`,
+      relatedId: requestId,
+    });
+  }, [ctx, myKey]);
+
+  const handleMarkInProgress = useCallback((requestId) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === requestId);
+    if (idx === -1) return;
+    const updated = { ...arr[idx], status: 'in_progress', inProgressAt: Date.now(), updatedAt: Date.now() };
+    yArr.delete(idx, 1);
+    yArr.insert(idx, [updated]);
+
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_in_progress',
+      targetType: 'request',
+      targetId: requestId,
+      summary: `Request ${requestId.slice(0, 8)} marked in progress`,
+    }]);
+
+    // Notify the requestor
+    const req = arr[idx];
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_in_progress',
+      message: `Your request for ${req.catalogItemName} is now in progress`,
+      relatedId: requestId,
+    });
   }, [ctx, myKey]);
 
   return (
@@ -115,7 +154,7 @@ export default function ProducerMyRequests() {
             <div className="pmr-stage-desc">{stage.desc}</div>
             <div className="pmr-stage-cards">
               {stage.requests.map(req => {
-                const item = catalogMap[req.itemId];
+                const item = catalogMap[req.catalogItemId];
                 const hasReveal = addressReveals?.[req.id];
 
                 return (
@@ -127,7 +166,7 @@ export default function ProducerMyRequests() {
                     </div>
                     <div className="pmr-card-item">{item?.name || 'Unknown'}</div>
                     <div className="pmr-card-meta">
-                      {req.quantity} {item?.unitName || 'units'} • {req.shippingCity}, {req.shippingState}
+                      {req.quantity} {item?.unit || 'units'} • {req.city}, {req.state}
                     </div>
                     <div className="pmr-card-date">{formatRelativeDate(req.requestedAt)}</div>
 
@@ -138,12 +177,17 @@ export default function ProducerMyRequests() {
                     )}
 
                     <div className="pmr-card-actions">
-                      {hasReveal && (req.status === 'approved') && (
+                      {hasReveal && (req.status === 'approved' || req.status === 'in_progress') && (
                         <button className="pmr-btn pmr-btn--reveal" onClick={() => setRevealRequestId(req.id)}>
                           📍 View Address
                         </button>
                       )}
-                      {['claimed', 'pending_approval', 'approved'].includes(req.status) && (
+                      {req.status === 'approved' && (
+                        <button className="pmr-btn pmr-btn--progress" onClick={() => handleMarkInProgress(req.id)}>
+                          🔨 Mark In Progress
+                        </button>
+                      )}
+                      {['claimed', 'pending_approval', 'approved', 'in_progress'].includes(req.status) && (
                         <button className="pmr-btn pmr-btn--unclaim" onClick={() => handleUnclaim(req.id)}>
                           ↩️ Unclaim
                         </button>

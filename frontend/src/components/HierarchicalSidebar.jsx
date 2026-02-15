@@ -98,6 +98,7 @@ const TreeItem = React.memo(function TreeItem({
         if (item.type === 'kanban') return '📋';
         if (item.type === 'sheet') return '📊';
         if (item.type === 'inventory') return '📦';
+        if (item.type === 'files') return '📂';
         return '📄';
     };
     
@@ -391,6 +392,7 @@ const HierarchicalSidebar = ({
     onCreateSheet,
     onCreateKanban,
     onCreateInventory,
+    onCreateFileStorage,
     onDeleteDocument,
     onRenameDocument,
     onMoveDocument,
@@ -768,12 +770,12 @@ const HierarchicalSidebar = ({
                         type="button"
                         className="hierarchical-sidebar__action-btn hierarchical-sidebar__action-btn--doc"
                         onClick={() => startCreatingDocument(null)}
-                        title="New Document"
-                        aria-label="Create new document"
+                        title="New Item"
+                        aria-label="Create new item"
                         data-testid="new-document-btn"
                     >
-                        <span className="action-btn__icon">📄+</span>
-                        <span className="action-btn__label">Doc</span>
+                        <span className="action-btn__icon">➕</span>
+                        <span className="action-btn__label">New</span>
                     </button>
                     <button 
                         type="button"
@@ -1013,6 +1015,7 @@ const HierarchicalSidebar = ({
                 onCreateSheet={onCreateSheet}
                 onCreateKanban={onCreateKanban}
                 onCreateInventory={onCreateInventory}
+                onCreateFileStorage={onCreateFileStorage}
             />
         </div>
     );

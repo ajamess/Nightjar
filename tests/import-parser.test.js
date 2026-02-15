@@ -275,7 +275,21 @@ describe('inferStatus', () => {
 
   it('should default to open for unknown values', () => {
     expect(inferStatus('banana')).toBe('open');
-    expect(inferStatus('in_transit')).toBe('open');
+    expect(inferStatus('xylophone')).toBe('open');
+  });
+
+  it('should map in_transit to shipped', () => {
+    expect(inferStatus('in_transit')).toBe('shipped');
+    expect(inferStatus('in transit')).toBe('shipped');
+  });
+
+  it('should infer status from freeform text patterns', () => {
+    expect(inferStatus('Shipped!')).toBe('shipped');
+    expect(inferStatus('Mark as shipped')).toBe('claimed'); // "mark as shipped" = not yet shipped = claimed
+    expect(inferStatus('item was mailed')).toBe('shipped');
+    expect(inferStatus('delivery complete')).toBe('delivered');
+    expect(inferStatus('order cancelled')).toBe('cancelled');
+    expect(inferStatus('assigned to producer')).toBe('claimed');
   });
 });
 

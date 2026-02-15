@@ -26,7 +26,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: false,  // Disable source maps in production for faster builds
+    sourcemap: false,
     minify: 'esbuild',  // esbuild is faster than terser
     commonjsOptions: {
       include: [/node_modules/],

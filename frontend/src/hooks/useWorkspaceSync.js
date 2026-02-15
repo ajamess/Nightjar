@@ -88,6 +88,13 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   const yAddressRevealsRef = useRef(null); // Map of encrypted address reveals
   const yPendingAddressesRef = useRef(null); // Map of pending addresses
   const yInventoryAuditLogRef = useRef(null); // Array of audit log entries
+  // File Storage shared types — live in workspace-level Y.Doc (NOT separate per-document rooms)
+  // See docs/FILE_STORAGE_SPEC.md §15.2
+  const yFileStorageSystemsRef = useRef(null); // Map of file storage systems
+  const yStorageFilesRef = useRef(null); // Array of storage files
+  const yStorageFoldersRef = useRef(null); // Array of storage folders
+  const yChunkAvailabilityRef = useRef(null); // Map of chunk availability
+  const yFileAuditLogRef = useRef(null); // Array of file audit log entries
   
   // Initialize Yjs sync when workspace changes
   useEffect(() => {
@@ -307,6 +314,14 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     const yPendingAddresses = ydoc.getMap('pendingAddresses');
     const yInventoryAuditLog = ydoc.getArray('inventoryAuditLog');
     
+    // File Storage shared types — live in workspace-level Y.Doc (NOT separate per-document rooms)
+    // See docs/FILE_STORAGE_SPEC.md §15.2
+    const yFileStorageSystems = ydoc.getMap('fileStorageSystems');
+    const yStorageFiles = ydoc.getArray('storageFiles');
+    const yStorageFolders = ydoc.getArray('storageFolders');
+    const yChunkAvailability = ydoc.getMap('chunkAvailability');
+    const yFileAuditLog = ydoc.getArray('fileAuditLog');
+    
     // Add current user to members map if they have an identity
     if (userIdentity?.publicKeyBase62 && userProfile) {
       const myPublicKey = userIdentity.publicKeyBase62;
@@ -367,6 +382,11 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     yAddressRevealsRef.current = yAddressReveals;
     yPendingAddressesRef.current = yPendingAddresses;
     yInventoryAuditLogRef.current = yInventoryAuditLog;
+    yFileStorageSystemsRef.current = yFileStorageSystems;
+    yStorageFilesRef.current = yStorageFiles;
+    yStorageFoldersRef.current = yStorageFolders;
+    yChunkAvailabilityRef.current = yChunkAvailability;
+    yFileAuditLogRef.current = yFileAuditLog;
     
     // Sync documents from Yjs to React state (with deduplication)
     const syncDocuments = () => {
@@ -940,6 +960,40 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     yInventorySystemsRef.current.delete(inventorySystemId);
   }, []);
   
+  // Update an inventory system (e.g. rename)
+  const updateInventorySystem = useCallback((inventorySystemId, updates) => {
+    if (!yInventorySystemsRef.current) return;
+    const existing = yInventorySystemsRef.current.get(inventorySystemId);
+    if (existing) {
+      yInventorySystemsRef.current.set(inventorySystemId, { ...existing, ...updates, updatedAt: Date.now() });
+    }
+  }, []);
+  
+  // --- File Storage CRUD operations ---
+  // See docs/FILE_STORAGE_SPEC.md §15.2
+  
+  // Add a file storage system to the workspace
+  const addFileStorageSystem = useCallback((fileStorageSystem) => {
+    if (!yFileStorageSystemsRef.current) return;
+    if (yFileStorageSystemsRef.current.has(fileStorageSystem.id)) return;
+    yFileStorageSystemsRef.current.set(fileStorageSystem.id, fileStorageSystem);
+  }, []);
+  
+  // Remove a file storage system
+  const removeFileStorageSystem = useCallback((fileStorageSystemId) => {
+    if (!yFileStorageSystemsRef.current) return;
+    yFileStorageSystemsRef.current.delete(fileStorageSystemId);
+  }, []);
+  
+  // Update a file storage system (e.g. rename)
+  const updateFileStorageSystem = useCallback((fileStorageSystemId, updates) => {
+    if (!yFileStorageSystemsRef.current) return;
+    const existing = yFileStorageSystemsRef.current.get(fileStorageSystemId);
+    if (existing) {
+      yFileStorageSystemsRef.current.set(fileStorageSystemId, { ...existing, ...updates, updatedAt: Date.now() });
+    }
+  }, []);
+  
   // Add a folder
   const addFolder = useCallback((folder) => {
     if (!yFoldersRef.current) return;
@@ -1199,6 +1253,17 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     // Inventory operations
     addInventorySystem,
     removeInventorySystem,
+    updateInventorySystem,
+    // File Storage Yjs shared types (refs for direct access by FileStorageDashboard)
+    yFileStorageSystems: yFileStorageSystemsRef.current,
+    yStorageFiles: yStorageFilesRef.current,
+    yStorageFolders: yStorageFoldersRef.current,
+    yChunkAvailability: yChunkAvailabilityRef.current,
+    yFileAuditLog: yFileAuditLogRef.current,
+    // File Storage operations
+    addFileStorageSystem,
+    removeFileStorageSystem,
+    updateFileStorageSystem,
   };
 }
 

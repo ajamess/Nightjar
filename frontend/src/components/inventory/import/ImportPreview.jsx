@@ -10,6 +10,7 @@
 import React, { useMemo, useState } from 'react';
 import { validateRow } from '../../../utils/importParser';
 import { inferStatus, inferUrgency } from '../../../utils/importMapper';
+import { useInventory } from '../../../contexts/InventoryContext';
 
 const PAGE_SIZE = 25;
 
@@ -23,6 +24,8 @@ const PAGE_SIZE = 25;
  * }} props
  */
 export default function ImportPreview({ rows, mapping, catalogItems, onConfirm, onBack }) {
+  const ctx = useInventory();
+  const collaborators = ctx.collaborators || [];
   const [page, setPage] = useState(0);
   const [skipErrors, setSkipErrors] = useState(true);
   const [skipWarnings, setSkipWarnings] = useState(false);
@@ -39,10 +42,10 @@ export default function ImportPreview({ rows, mapping, catalogItems, onConfirm, 
   // Validate all rows
   const validated = useMemo(() => {
     return rows.map((row, i) => {
-      const result = validateRow(row, mapping, catalogLookup);
+      const result = validateRow(row, mapping, catalogLookup, collaborators);
       return { index: i, row, ...result };
     });
-  }, [rows, mapping, catalogLookup]);
+  }, [rows, mapping, catalogLookup, collaborators]);
 
   const summary = useMemo(() => {
     const total = validated.length;
@@ -60,7 +63,7 @@ export default function ImportPreview({ rows, mapping, catalogItems, onConfirm, 
   const targetFields = useMemo(() => {
     const fields = new Set();
     for (const [, tgt] of Object.entries(mapping)) {
-      if (tgt && tgt !== '__skip__' && !tgt.startsWith('__')) fields.add(tgt);
+      if (tgt && typeof tgt === 'string' && tgt !== '__skip__' && !tgt.startsWith('__')) fields.add(tgt);
     }
     return Array.from(fields);
   }, [mapping]);
@@ -83,7 +86,7 @@ export default function ImportPreview({ rows, mapping, catalogItems, onConfirm, 
       return mapped;
     });
 
-    onConfirm(finalRows, { skipErrors, skipWarnings });
+    onConfirm(finalRows, { skipErrors, skipWarnings, mapping });
   };
 
   return (

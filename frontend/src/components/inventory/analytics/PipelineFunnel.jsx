@@ -37,7 +37,7 @@ const PIPELINE_STAGES = [
 export default function PipelineFunnel({ requests, dateRange }) {
   const data = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
-    const inRange = requests.filter(r => r.createdAt >= from && r.createdAt <= to);
+    const inRange = requests.filter(r => (r.requestedAt || r.createdAt || 0) >= from && (r.requestedAt || r.createdAt || 0) <= to);
 
     return PIPELINE_STAGES.map(stage => ({
       ...stage,

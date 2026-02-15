@@ -841,6 +841,14 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.6.1 - Import & Analytics Fixes
+- **Bug Fix**: CSV/XLSX date parsing — imported dates no longer show "just now" (SheetJS serial date conversion fix)
+- **Bug Fix**: Analytics views now correctly display imported request data (field name normalization)
+- **Bug Fix**: Fixed `formatRelativeDate` for future timestamps
+- **Bug Fix**: Removed duplicate React key warning in InventoryNavRail
+- **Enhancement**: Import parser preserves numeric types from SheetJS
+- **Testing**: 10 new test suites, 2102 total tests across 75 suites (0 failures)
+
 ### v1.6.0 - Inventory Management System
 - **New Feature**: Complete inventory management system with admin, producer, and requester roles
 - **New Feature**: CSV/XLSX import with smart column mapping

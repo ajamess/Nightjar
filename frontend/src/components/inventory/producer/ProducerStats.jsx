@@ -3,18 +3,12 @@
 
 import React, { useMemo } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import useInventorySync from '../../../hooks/useInventorySync';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import './ProducerStats.css';
 
 export default function ProducerStats() {
   const ctx = useInventory();
-  const { catalogItems, requests, producerCapacities } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems, yInventoryRequests: ctx.yInventoryRequests,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog: ctx.yInventoryAuditLog },
-    ctx.inventorySystemId
-  );
+  const { catalogItems, requests, producerCapacities } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
 
@@ -44,9 +38,9 @@ export default function ProducerStats() {
     // Per-item breakdown
     const byItem = {};
     shipped.forEach(r => {
-      if (!byItem[r.itemId]) byItem[r.itemId] = { count: 0, units: 0 };
-      byItem[r.itemId].count++;
-      byItem[r.itemId].units += r.quantity || 0;
+      if (!byItem[r.catalogItemId]) byItem[r.catalogItemId] = { count: 0, units: 0 };
+      byItem[r.catalogItemId].count++;
+      byItem[r.catalogItemId].units += r.quantity || 0;
     });
 
     // Ranking among all producers

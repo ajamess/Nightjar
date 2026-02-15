@@ -26,14 +26,15 @@ const METRIC_DEFS = [
 export default function SummaryMetrics({ requests, producerCapacities, dateRange }) {
   const metrics = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
-    const inRange = requests.filter(r => r.createdAt >= from && r.createdAt <= to);
+    const ts = r => r.requestedAt || r.createdAt || 0;
+    const inRange = requests.filter(r => ts(r) >= from && ts(r) <= to);
     const total = inRange.length;
 
     // Previous period (same duration, offset backwards)
     const duration = to - from;
     const prevFrom = from - duration;
     const prevTo = from;
-    const prevRange = requests.filter(r => r.createdAt >= prevFrom && r.createdAt <= prevTo);
+    const prevRange = requests.filter(r => ts(r) >= prevFrom && ts(r) <= prevTo);
     const prevTotal = prevRange.length;
 
     const shipped = inRange.filter(r => r.status === 'shipped' || r.status === 'delivered');
@@ -42,13 +43,13 @@ export default function SummaryMetrics({ requests, producerCapacities, dateRange
     const prevUnits = prevShipped.reduce((s, r) => s + (r.quantity || 0), 0);
 
     // Avg fulfillment days
-    const fulfilled = inRange.filter(r => r.shippedAt && r.createdAt);
+    const fulfilled = inRange.filter(r => r.shippedAt && (r.requestedAt || r.createdAt));
     const avgDays = fulfilled.length > 0
-      ? fulfilled.reduce((s, r) => s + (r.shippedAt - r.createdAt) / 86400000, 0) / fulfilled.length
+      ? fulfilled.reduce((s, r) => s + (r.shippedAt - (r.requestedAt || r.createdAt)) / 86400000, 0) / fulfilled.length
       : 0;
-    const prevFulfilled = prevRange.filter(r => r.shippedAt && r.createdAt);
+    const prevFulfilled = prevRange.filter(r => r.shippedAt && (r.requestedAt || r.createdAt));
     const prevAvgDays = prevFulfilled.length > 0
-      ? prevFulfilled.reduce((s, r) => s + (r.shippedAt - r.createdAt) / 86400000, 0) / prevFulfilled.length
+      ? prevFulfilled.reduce((s, r) => s + (r.shippedAt - (r.requestedAt || r.createdAt)) / 86400000, 0) / prevFulfilled.length
       : 0;
 
     const blocked = inRange.filter(r => r.status === 'blocked').length;
@@ -57,8 +58,8 @@ export default function SummaryMetrics({ requests, producerCapacities, dateRange
     const claimed = inRange.filter(r => r.assignedTo).length;
     const prevClaimed = prevRange.filter(r => r.assignedTo).length;
 
-    const urgent = inRange.filter(r => r.urgency === 'urgent').length;
-    const prevUrgent = prevRange.filter(r => r.urgency === 'urgent').length;
+    const urgent = inRange.filter(r => r.urgent === true).length;
+    const prevUrgent = prevRange.filter(r => r.urgent === true).length;
 
     const cancelled = inRange.filter(r => r.status === 'cancelled').length;
     const prevCancelled = prevRange.filter(r => r.status === 'cancelled').length;

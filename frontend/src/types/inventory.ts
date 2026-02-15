@@ -29,7 +29,7 @@ export interface InventorySystem {
   id: string;
   /** Parent workspace */
   workspaceId: string;
-  /** Display name, e.g., "Whistle Distribution" */
+  /** Display name, e.g., "Toy Distribution" */
   name: string;
   /** Emoji or icon identifier */
   icon: string;
@@ -51,7 +51,7 @@ export interface CatalogItem {
   /** Parent inventory system */
   inventorySystemId: string;
 
-  /** e.g., "Standard Whistle" */
+  /** e.g., "Rubber Duck" */
   name: string;
   /** Optional longer description */
   description?: string;
@@ -62,8 +62,8 @@ export interface CatalogItem {
 
   /** Minimum order size (e.g., 50) */
   minQuantity?: number;
-  /** Maximum order size (e.g., 5000) */
-  maxQuantity?: number;
+  /** Maximum order size (e.g., 5000) or null for no max */
+  maxQuantity?: number | null;
   /** Must order in multiples of (e.g., 25) */
   quantityStep?: number;
 
@@ -95,8 +95,10 @@ export type RequestStatus =
   | 'cancelled';         // Cancelled by admin or requestor
 
 export interface InventoryRequest {
-  /** Sequential numeric string (e.g., "1835") */
+  /** Internal CRDT key — random base36 hash (e.g., "req-a1b2c3d4") */
   id: string;
+  /** Human-visible sequential number (e.g., "1835") — imported or auto-assigned */
+  displayId?: string;
   /** Parent inventory system */
   inventorySystemId: string;
 
@@ -151,12 +153,18 @@ export interface InventoryRequest {
   // Fulfillment
   /** When producer confirmed shipment */
   shippedAt?: number;
+  /** Number of units actually shipped (may differ from requested quantity) */
+  quantityShipped?: number;
   /** Optional delivery confirmation */
   deliveredAt?: number;
   /** Optional tracking info */
   trackingNumber?: string;
   /** Producer's notes */
   printerNotes?: string;
+
+  // Import metadata
+  /** Unresolved producer name from spreadsheet import (pending admin mapping) */
+  importedProducerName?: string;
 
   // Cancellation
   /** Default: false */

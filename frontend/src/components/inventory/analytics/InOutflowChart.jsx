@@ -97,8 +97,9 @@ function bucketize(requests, from, to, granularity) {
   }
 
   for (const r of requests) {
-    if (r.createdAt >= from && r.createdAt <= to) {
-      const label = formatBucketLabel(r.createdAt, granularity);
+    const ts = r.requestedAt || r.createdAt || 0;
+    if (ts >= from && ts <= to) {
+      const label = formatBucketLabel(ts, granularity);
       const b = buckets.get(label);
       if (b) b.created++;
     }

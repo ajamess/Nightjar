@@ -15,6 +15,7 @@ import EditorPane from './EditorPane';
 import Kanban from './components/Kanban';
 import Sheet from './components/Sheet';
 import InventoryDashboard from './components/inventory/InventoryDashboard';
+import FileStorageDashboard from './components/files/FileStorageDashboard';
 import Chat from './components/Chat';
 import Comments from './components/Comments';
 import SplitPane from './components/SplitPane';
@@ -114,6 +115,7 @@ const DOC_TYPES = {
     SHEET: 'sheet',
     KANBAN: 'kanban',
     INVENTORY: 'inventory',
+    FILE_STORAGE: 'files',
 };
 
 // Helper to convert column index to letter (0 -> A, 25 -> Z, 26 -> AA)
@@ -267,6 +269,17 @@ function App() {
         // Inventory operations
         addInventorySystem: syncAddInventorySystem,
         removeInventorySystem: syncRemoveInventorySystem,
+        updateInventorySystem: syncUpdateInventorySystem,
+        // File Storage Yjs shared types
+        yFileStorageSystems,
+        yStorageFiles,
+        yStorageFolders,
+        yChunkAvailability,
+        yFileAuditLog,
+        // File Storage operations
+        addFileStorageSystem: syncAddFileStorageSystem,
+        removeFileStorageSystem: syncRemoveFileStorageSystem,
+        updateFileStorageSystem: syncUpdateFileStorageSystem,
     } = useWorkspaceSync(currentWorkspaceId, initialWorkspaceInfo, workspaceUserProfile, workspaceServerUrl, publicIdentity, currentWorkspace?.myPermission);
     
     // --- P2P Peer Status (Electron only) ---
@@ -977,17 +990,18 @@ function App() {
 
     // Create an Inventory System — does NOT create a separate Y.Doc
     // Inventory data lives in the workspace-level Y.Doc (see spec §11.2.5)
-    const createInventorySystem = useCallback((name) => {
+    const createInventorySystem = useCallback((name, folderId = null, icon = null, color = null) => {
         if (!currentWorkspaceId) {
             showToast('Please create a workspace first', 'error');
             return null;
         }
         const invId = 'inv-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
+        const resolvedIcon = icon || '📦';
         const inventorySystem = {
             id: invId,
             workspaceId: currentWorkspaceId,
             name: name || 'Inventory System',
-            icon: '📦',
+            icon: resolvedIcon,
             createdAt: Date.now(),
             createdBy: publicIdentity?.publicKeyBase62,
             settings: {
@@ -999,6 +1013,22 @@ function App() {
         };
         // Add to workspace-level Yjs map (syncs to all peers)
         syncAddInventorySystem(inventorySystem);
+
+        // Also add to shared document list so it appears in the sidebar
+        const document = {
+            id: invId,
+            name: name || 'Inventory System',
+            type: DOC_TYPES.INVENTORY,
+            icon: resolvedIcon,
+            color: color || null,
+            workspaceId: currentWorkspaceId,
+            folderId: folderId || null,
+            createdAt: Date.now(),
+            lastEdited: Date.now(),
+            authorCount: 1,
+        };
+        syncAddDocument(document);
+
         // Open tab immediately
         setOpenTabs(prev => [...prev, {
             id: invId,
@@ -1009,7 +1039,60 @@ function App() {
         setActiveDocId(invId);
         showToast('Inventory System created', 'success');
         return invId;
-    }, [currentWorkspaceId, showToast, publicIdentity, syncAddInventorySystem]);
+    }, [currentWorkspaceId, showToast, publicIdentity, syncAddInventorySystem, syncAddDocument]);
+
+    // Create a File Storage system — does NOT create a separate Y.Doc
+    // File storage data lives in the workspace-level Y.Doc (see FILE_STORAGE_SPEC.md §15.2)
+    const createFileStorage = useCallback((name, folderId = null, icon = null, color = null) => {
+        if (!currentWorkspaceId) {
+            showToast('Please create a workspace first', 'error');
+            return null;
+        }
+        const fsId = 'fs-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
+        const resolvedIcon = icon || '📂';
+        const fileStorageSystem = {
+            id: fsId,
+            workspaceId: currentWorkspaceId,
+            name: name || 'File Storage',
+            icon: resolvedIcon,
+            createdAt: Date.now(),
+            createdBy: publicIdentity?.publicKeyBase62,
+            settings: {
+                maxFileSizeMB: 100,
+                allowedExtensions: [], // empty = allow all
+                autoSeedEnabled: true,
+                minSeeders: 2,
+            },
+        };
+        // Add to workspace-level Yjs map
+        syncAddFileStorageSystem(fileStorageSystem);
+
+        // Also add to shared document list so it appears in the sidebar
+        const document = {
+            id: fsId,
+            name: name || 'File Storage',
+            type: DOC_TYPES.FILE_STORAGE,
+            icon: resolvedIcon,
+            color: color || null,
+            workspaceId: currentWorkspaceId,
+            folderId: folderId || null,
+            createdAt: Date.now(),
+            lastEdited: Date.now(),
+            authorCount: 1,
+        };
+        syncAddDocument(document);
+
+        // Open tab immediately
+        setOpenTabs(prev => [...prev, {
+            id: fsId,
+            name: name || 'File Storage',
+            docType: DOC_TYPES.FILE_STORAGE,
+            hasUnsavedChanges: false,
+        }]);
+        setActiveDocId(fsId);
+        showToast('File Storage created', 'success');
+        return fsId;
+    }, [currentWorkspaceId, showToast, publicIdentity, syncAddFileStorageSystem, syncAddDocument]);
 
     const openDocument = useCallback((docId, name, docType = DOC_TYPES.TEXT) => {
         // Check if already open
@@ -1020,6 +1103,13 @@ function App() {
 
         // Inventory systems don't get their own Y.Doc — data lives in workspace-level doc
         if (docType === DOC_TYPES.INVENTORY) {
+            setOpenTabs(prev => [...prev, { id: docId, name, docType, hasUnsavedChanges: false }]);
+            setActiveDocId(docId);
+            return;
+        }
+
+        // File storage systems don't get their own Y.Doc — data lives in workspace-level doc
+        if (docType === DOC_TYPES.FILE_STORAGE) {
             setOpenTabs(prev => [...prev, { id: docId, name, docType, hasUnsavedChanges: false }]);
             setActiveDocId(docId);
             return;
@@ -1110,6 +1200,10 @@ function App() {
         // ALWAYS remove from shared document list so P2P peers see the deletion
         syncRemoveDocument(docId);
 
+        // Also remove from inventory Y.Map if this was an inventory system
+        // (safe no-op if docId doesn't exist in the map)
+        syncRemoveInventorySystem(docId);
+
         // Notify sidecar - Electron mode only
         if (isElectronMode && metaSocketRef.current?.readyState === WebSocket.OPEN) {
             metaSocketRef.current.send(JSON.stringify({ 
@@ -1118,7 +1212,7 @@ function App() {
             }));
         }
         showToast('Document deleted', 'success');
-    }, [closeDocument, isElectronMode, syncRemoveDocument, showToast]);
+    }, [closeDocument, isElectronMode, syncRemoveDocument, syncRemoveInventorySystem, showToast]);
 
     // Move document to a folder (or to root if folderId is null)
     const handleMoveDocument = useCallback((documentId, folderId) => {
@@ -1138,6 +1232,10 @@ function App() {
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(docId, { name: newName.trim() });
         
+        // Also update inventory Y.Map if this was an inventory system
+        // (safe no-op if docId doesn't exist in the map)
+        syncUpdateInventorySystem(docId, { name: newName.trim() });
+        
         // Also update local open tabs
         setOpenTabs(prev => prev.map(tab => 
             tab.id === docId 
@@ -1146,7 +1244,7 @@ function App() {
         ));
         
         showToast('Document renamed', 'success');
-    }, [syncUpdateDocument, showToast]);
+    }, [syncUpdateDocument, syncUpdateInventorySystem, showToast]);
 
     const copyInviteLink = useCallback(() => {
         if (inviteLink) {
@@ -1543,6 +1641,14 @@ function App() {
                     onSelectDocument={(docId) => {
                         const doc = documents.find(d => d.id === docId);
                         let docType = doc?.type;
+                        // Detect inventory by type or id prefix
+                        if (!docType && (doc?.type === DOC_TYPES.INVENTORY || docId.startsWith('inv-'))) {
+                            docType = DOC_TYPES.INVENTORY;
+                        }
+                        // Detect file storage by type or id prefix
+                        if (!docType && (doc?.type === DOC_TYPES.FILE_STORAGE || docId.startsWith('fs-'))) {
+                            docType = DOC_TYPES.FILE_STORAGE;
+                        }
                         if (!docType && doc?.name?.toLowerCase().includes('kanban')) {
                             docType = DOC_TYPES.KANBAN;
                         }
@@ -1554,7 +1660,8 @@ function App() {
                     onCreateDocument={(name, folderId, icon, color) => createDocument(name, folderId, DOC_TYPES.TEXT, icon, color)}
                     onCreateSheet={(name, folderId, icon, color) => createDocument(name || 'Spreadsheet', folderId, DOC_TYPES.SHEET, icon, color)}
                     onCreateKanban={(name, folderId, icon, color) => createDocument(name || 'Kanban Board', folderId, DOC_TYPES.KANBAN, icon, color)}
-                    onCreateInventory={(name) => createInventorySystem(name || 'Inventory')}
+                    onCreateInventory={(name, folderId, icon, color) => createInventorySystem(name || 'Inventory', folderId, icon, color)}
+                    onCreateFileStorage={(name, folderId, icon, color) => createFileStorage(name || 'File Storage', folderId, icon, color)}
                     onDeleteDocument={deleteDocument}
                     onMoveDocument={handleMoveDocument}
                     onRenameDocument={renameDocument}
@@ -1641,7 +1748,20 @@ function App() {
                 </div>
 
                 <div className="editor-with-comments">
-                    {activeDocType === DOC_TYPES.INVENTORY ? (
+                    {activeDocType === DOC_TYPES.FILE_STORAGE ? (
+                        <FileStorageDashboard
+                            key={activeDocId}
+                            fileStorageId={activeDocId}
+                            workspaceId={currentWorkspaceId}
+                            yFileStorageSystems={yFileStorageSystems}
+                            yStorageFiles={yStorageFiles}
+                            yStorageFolders={yStorageFolders}
+                            yChunkAvailability={yChunkAvailability}
+                            yFileAuditLog={yFileAuditLog}
+                            userIdentity={publicIdentity}
+                            collaborators={workspaceCollaborators}
+                        />
+                    ) : activeDocType === DOC_TYPES.INVENTORY ? (
                         <InventoryDashboard
                             key={activeDocId}
                             inventorySystemId={activeDocId}

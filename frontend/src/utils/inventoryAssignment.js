@@ -21,14 +21,14 @@ export function assignRequests(requests, capacities, itemId = null) {
 
   // Filter to open requests only
   const openRequests = requests.filter(
-    r => r.status === 'open' && (!itemId || r.itemId === itemId)
+    r => r.status === 'open' && (!itemId || r.catalogItemId === itemId)
   );
 
   // Group requests by itemId for per-item assignment
   const byItem = {};
   for (const r of openRequests) {
-    if (!byItem[r.itemId]) byItem[r.itemId] = [];
-    byItem[r.itemId].push(r);
+    if (!byItem[r.catalogItemId]) byItem[r.catalogItemId] = [];
+    byItem[r.catalogItemId].push(r);
   }
 
   for (const [currentItemId, itemRequests] of Object.entries(byItem)) {

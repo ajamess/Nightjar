@@ -22,7 +22,7 @@ export function validateQuantity(quantity, catalogItem) {
     return { valid: false, error: 'Quantity must be a positive whole number' };
   }
   const min = catalogItem.quantityMin || 1;
-  const max = catalogItem.quantityMax || Infinity;
+  const max = catalogItem.quantityMax != null ? catalogItem.quantityMax : Infinity;
   const step = catalogItem.quantityStep || 1;
 
   if (qty < min) {
@@ -48,6 +48,7 @@ export function isValidUSState(state) {
 
 /**
  * Validate a shipping address object.
+ * Supports US and international addresses with light validation.
  * @param {Object} address
  * @returns {{ valid: boolean, errors: string[] }}
  */
@@ -62,15 +63,25 @@ export function validateAddress(address) {
   if (!recipientName?.trim()) errors.push('Recipient name is required');
   if (!street1?.trim()) errors.push('Street address is required');
   if (!address.city?.trim()) errors.push('City is required');
-  if (!address.state?.trim()) {
-    errors.push('State is required');
-  } else if (!isValidUSState(address.state)) {
-    errors.push('Invalid US state abbreviation');
-  }
-  if (!address.zip?.trim()) {
-    errors.push('ZIP code is required');
-  } else if (!/^\d{5}(-\d{4})?$/.test(address.zip.trim())) {
-    errors.push('ZIP code must be 5 digits (or ZIP+4 format)');
+
+  const country = (address.country || 'US').toUpperCase();
+
+  if (country === 'US') {
+    // US-specific validation
+    if (!address.state?.trim()) {
+      errors.push('State is required');
+    } else if (!isValidUSState(address.state)) {
+      errors.push('Invalid US state abbreviation');
+    }
+    if (!address.zip?.trim()) {
+      errors.push('ZIP code is required');
+    } else if (!/^\d{5}(-\d{4})?$/.test(address.zip.trim())) {
+      errors.push('ZIP code must be 5 digits (or ZIP+4 format)');
+    }
+  } else {
+    // International: require state/province and postal code (any format)
+    if (!address.state?.trim()) errors.push('State/Province is required');
+    if (!address.zip?.trim()) errors.push('Postal code is required');
   }
   return { valid: errors.length === 0, errors };
 }
@@ -86,36 +97,74 @@ export function validateCatalogItem(item) {
   if (!item.unit?.trim()) errors.push('Unit type is required (e.g., "units", "boxes", "lbs")');
   
   const min = Number(item.quantityMin);
-  const max = Number(item.quantityMax);
+  const max = item.quantityMax != null && item.quantityMax !== '' ? Number(item.quantityMax) : null;
   const step = Number(item.quantityStep);
 
   if (isNaN(min) || min < 1) errors.push('Minimum quantity must be at least 1');
-  if (isNaN(max) || max < 1) errors.push('Maximum quantity must be at least 1');
-  if (min > max) errors.push('Minimum quantity cannot exceed maximum');
+  if (max !== null && (isNaN(max) || max < 1)) errors.push('Maximum quantity must be at least 1');
+  if (max !== null && min > max) errors.push('Minimum quantity cannot exceed maximum');
   if (isNaN(step) || step < 1) errors.push('Step must be at least 1');
 
   return { valid: errors.length === 0, errors };
 }
 
 /**
- * Parse a date string into a timestamp. Handles common formats.
- * @param {string} dateStr - Date string (M/D/YYYY, YYYY-MM-DD, ISO, etc.)
+ * Parse a date string into a timestamp. Handles common formats including Excel serial dates.
+ * @param {string|number} dateStr - Date string (M/D/YYYY, YYYY-MM-DD, ISO, Excel serial number, etc.)
  * @returns {number|null} Timestamp or null if invalid
  */
 export function parseDate(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const str = dateStr.trim();
-  if (!str) return null;
+  if (dateStr == null) return null;
 
-  // Try ISO first
-  const iso = Date.parse(str);
-  if (!isNaN(iso)) return iso;
+  // Handle numeric values FIRST (Excel serial dates from SheetJS)
+  // SheetJS converts date cells to serial numbers; handle them before string parsing
+  // so that stringified serials like "46044" don't get misinterpreted by Date.parse.
+  const numVal = typeof dateStr === 'number' ? dateStr : null;
+  if (numVal != null && !isNaN(numVal) && numVal > 0 && numVal < 2958466) {
+    const ms = (numVal - 25569) * 86400000;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime()) && d.getFullYear() >= 1900 && d.getFullYear() <= 2100) {
+      return d.getTime();
+    }
+  }
 
-  // Try M/D/YYYY (Google Sheets format)
-  const mdyMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdyMatch) {
-    const d = new Date(+mdyMatch[3], +mdyMatch[1] - 1, +mdyMatch[2]);
-    if (!isNaN(d.getTime())) return d.getTime();
+  // String-based formats
+  if (typeof dateStr === 'string') {
+    const str = dateStr.trim();
+    if (!str) return null;
+
+    // If the string is a pure number, treat it as an Excel serial date
+    // (e.g., "46044" from SheetJS). Do NOT pass to Date.parse which
+    // would interpret it as year 46044.
+    if (/^\d+(\.\d+)?$/.test(str)) {
+      const serial = Number(str);
+      if (serial > 0 && serial < 2958466) {
+        const ms = (serial - 25569) * 86400000;
+        const d = new Date(ms);
+        if (!isNaN(d.getTime()) && d.getFullYear() >= 1900 && d.getFullYear() <= 2100) {
+          return d.getTime();
+        }
+      }
+      return null;
+    }
+
+    // Try M/D/YYYY (Google Sheets / US format) — check before Date.parse
+    // to avoid timezone issues with Date.parse
+    const mdyMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (mdyMatch) {
+      const d = new Date(+mdyMatch[3], +mdyMatch[1] - 1, +mdyMatch[2]);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+
+    // Try ISO / other standard formats via Date.parse
+    const iso = Date.parse(str);
+    if (!isNaN(iso)) {
+      // Sanity check: reject results outside 1900–2100
+      const d = new Date(iso);
+      if (d.getFullYear() >= 1900 && d.getFullYear() <= 2100) {
+        return iso;
+      }
+    }
   }
 
   return null;
@@ -155,6 +204,10 @@ export function formatRelativeDate(timestamp) {
   if (!timestamp) return '—';
   const now = Date.now();
   const diff = now - timestamp;
+
+  // Future dates or very old dates — show absolute date
+  if (diff < 0) return formatDate(timestamp);
+
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
@@ -206,3 +259,13 @@ export const US_STATE_NAMES = {
   DC: 'District of Columbia', PR: 'Puerto Rico', VI: 'Virgin Islands', GU: 'Guam',
   AS: 'American Samoa', MP: 'Northern Mariana Islands',
 };
+
+/**
+ * Common countries for the international address dropdown.
+ */
+export const COUNTRIES = [
+  'US', 'CA', 'MX', 'GB', 'AU', 'DE', 'FR', 'JP', 'KR', 'BR',
+  'IN', 'IT', 'ES', 'NL', 'SE', 'NO', 'DK', 'FI', 'PL', 'AT',
+  'CH', 'BE', 'IE', 'NZ', 'SG', 'HK', 'TW', 'IL', 'ZA', 'AE',
+  'CL', 'CO', 'AR', 'PH', 'TH', 'MY', 'ID', 'VN', 'CZ', 'PT',
+];

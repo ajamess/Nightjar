@@ -18,6 +18,7 @@ const DOC_TYPES = {
     SHEET: 'sheet', 
     KANBAN: 'kanban',
     INVENTORY: 'inventory',
+    FILE_STORAGE: 'files',
 };
 
 const DOCUMENT_TYPES = [
@@ -44,6 +45,12 @@ const DOCUMENT_TYPES = [
         icon: '📦', 
         label: 'Inventory System', 
         description: 'Manage inventory requests and fulfillment'
+    },
+    { 
+        type: DOC_TYPES.FILE_STORAGE, 
+        icon: '📂', 
+        label: 'File Storage', 
+        description: 'Encrypted P2P file sharing and storage'
     }
 ];
 
@@ -70,6 +77,7 @@ export default function CreateDocumentDialog({
   onCreateSheet,
   onCreateKanban,
   onCreateInventory,
+  onCreateFileStorage,
 }) {
   const { folders } = useFolders();
   const { currentWorkspace, currentWorkspaceId } = useWorkspaces();
@@ -139,6 +147,8 @@ export default function CreateDocumentDialog({
         await onCreateKanban(docName, selectedFolder, icon, color);
       } else if (documentType === DOC_TYPES.INVENTORY && onCreateInventory) {
         await onCreateInventory(docName, selectedFolder, icon, color);
+      } else if (documentType === DOC_TYPES.FILE_STORAGE && onCreateFileStorage) {
+        await onCreateFileStorage(docName, selectedFolder, icon, color);
       } else if (documentType === DOC_TYPES.SHEET && onCreateSheet) {
         await onCreateSheet(docName, selectedFolder, icon, color);
       } else if (onCreateDocument) {
@@ -171,7 +181,7 @@ export default function CreateDocumentDialog({
     <div className="create-document-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="create-document-modal" ref={modalRef}>
         <header className="create-document-modal__header">
-          <h2 className="create-document-modal__title">Create New Document</h2>
+          <h2 className="create-document-modal__title">Create New Item</h2>
           <button 
             type="button"
             className="create-document-modal__close" 

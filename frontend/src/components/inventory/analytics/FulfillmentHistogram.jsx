@@ -37,15 +37,15 @@ export default function FulfillmentHistogram({ requests, dateRange, targetDays =
   const { data, withinTarget } = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
     const fulfilled = requests.filter(r =>
-      r.shippedAt && r.createdAt &&
-      r.createdAt >= from && r.createdAt <= to
+      r.shippedAt && (r.requestedAt || r.createdAt) &&
+      (r.requestedAt || r.createdAt || 0) >= from && (r.requestedAt || r.createdAt || 0) <= to
     );
 
     const counts = BUCKETS.map(b => ({ ...b, count: 0 }));
     let inTarget = 0;
 
     for (const r of fulfilled) {
-      const days = (r.shippedAt - r.createdAt) / 86400000;
+      const days = (r.shippedAt - (r.requestedAt || r.createdAt)) / 86400000;
       if (days <= targetDays) inTarget++;
       for (let i = 0; i < BUCKETS.length; i++) {
         if (days < BUCKETS[i].max) {

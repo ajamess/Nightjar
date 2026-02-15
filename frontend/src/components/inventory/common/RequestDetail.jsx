@@ -13,6 +13,7 @@ import { useInventory } from '../../../contexts/InventoryContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { formatDate, generateId } from '../../../utils/inventoryValidation';
 import { getAddress } from '../../../utils/inventoryAddressStore';
+import { parseTrackingNumber, genericTrackingUrl } from '../../../utils/trackingLinks';
 import './RequestDetail.css';
 
 const TIMELINE_STEPS = [
@@ -138,7 +139,17 @@ export default function RequestDetail({
         {request.trackingNumber && (
           <div className="request-detail__field">
             <span className="request-detail__label">Tracking #</span>
-            <span>{request.trackingNumber}</span>
+            <span>
+              {(() => {
+                const carrier = parseTrackingNumber(request.trackingNumber);
+                const url = carrier?.url || genericTrackingUrl(request.trackingNumber);
+                return (
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="request-detail__tracking-link">
+                    {carrier ? `${carrier.icon} ${carrier.carrier}: ` : ''}{request.trackingNumber} ↗
+                  </a>
+                );
+              })()}
+            </span>
           </div>
         )}
         {request.notes && (

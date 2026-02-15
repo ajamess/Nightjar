@@ -93,6 +93,67 @@
   background: var(--hover-bg);
 }
 
+/* Shipping Provider Buttons */
+.ar-provider-group {
+  margin-bottom: 16px;
+}
+
+.ar-provider-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.ar-provider-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ar-provider-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ar-provider-btn:hover {
+  background: var(--hover-bg);
+  border-color: var(--accent-color);
+}
+
+.ar-provider-icon {
+  font-size: 1rem;
+}
+
+.ar-provider-name {
+  font-weight: 500;
+}
+
+.ar-provider-copied {
+  font-size: 0.75rem;
+  color: var(--success-color, #22c55e);
+  margin-left: 2px;
+}
+
+.ar-provider-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+  font-style: italic;
+}
+
 .ar-ship-section {
   border-top: 1px solid var(--border-color);
   padding-top: 16px;

@@ -9,7 +9,6 @@
 
 import React, { useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import { useToast } from '../../../contexts/ToastContext';
 import { validateCatalogItem, generateId } from '../../../utils/inventoryValidation';
 import './CatalogManager.css';
@@ -18,24 +17,16 @@ const EMPTY_ITEM = {
   name: '',
   unit: 'units',
   quantityMin: 1,
-  quantityMax: 5000,
+  quantityMax: '',
   quantityStep: 1,
   sku: '',
   category: '',
   description: '',
+  noMax: true,
 };
 
 export default function CatalogManager() {
-  const { yCatalogItems, inventorySystemId, yInventoryAuditLog } = useInventory();
-  const { catalogItems, requests } = useInventorySync(
-    { yCatalogItems, yInventoryRequests: useInventory().yInventoryRequests,
-      yInventorySystems: useInventory().yInventorySystems,
-      yProducerCapacities: useInventory().yProducerCapacities,
-      yAddressReveals: useInventory().yAddressReveals,
-      yPendingAddresses: useInventory().yPendingAddresses,
-      yInventoryAuditLog },
-    inventorySystemId
-  );
+  const { yCatalogItems, inventorySystemId, yInventoryAuditLog, catalogItems, requests } = useInventory();
   const { showToast } = useToast();
 
   const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
@@ -60,7 +51,7 @@ export default function CatalogManager() {
       category: newItem.category?.trim() || '',
       description: newItem.description?.trim() || '',
       quantityMin: Number(newItem.quantityMin),
-      quantityMax: Number(newItem.quantityMax),
+      quantityMax: newItem.noMax ? null : Number(newItem.quantityMax),
       quantityStep: Number(newItem.quantityStep),
       active: true,
       createdAt: Date.now(),
@@ -73,9 +64,9 @@ export default function CatalogManager() {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'catalog_item_added',
-      entityId: item.id,
-      entityType: 'catalog_item',
-      details: { name: item.name },
+      targetId: item.id,
+      targetType: 'catalog_item',
+      summary: `Added catalog item "${item.name}"`,
       timestamp: Date.now(),
     }]);
 
@@ -105,7 +96,7 @@ export default function CatalogManager() {
       category: editItem.category?.trim() || '',
       description: editItem.description?.trim() || '',
       quantityMin: Number(editItem.quantityMin),
-      quantityMax: Number(editItem.quantityMax),
+      quantityMax: editItem.noMax ? null : Number(editItem.quantityMax),
       quantityStep: Number(editItem.quantityStep),
       updatedAt: Date.now(),
     };
@@ -117,9 +108,9 @@ export default function CatalogManager() {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'catalog_item_updated',
-      entityId: editingId,
-      entityType: 'catalog_item',
-      details: { name: updated.name },
+      targetId: editingId,
+      targetType: 'catalog_item',
+      summary: `Updated catalog item "${updated.name}"`,
       timestamp: Date.now(),
     }]);
 
@@ -148,9 +139,9 @@ export default function CatalogManager() {
       id: generateId('aud-'),
       inventorySystemId,
       action: updated.active ? 'catalog_item_activated' : 'catalog_item_deactivated',
-      entityId: item.id,
-      entityType: 'catalog_item',
-      details: { name: item.name },
+      targetId: item.id,
+      targetType: 'catalog_item',
+      summary: `${item.name} ${updated.active ? 'activated' : 'deactivated'}`,
       timestamp: Date.now(),
     }]);
 
@@ -159,7 +150,7 @@ export default function CatalogManager() {
 
   const startEditing = (item) => {
     setEditingId(item.id);
-    setEditItem({ ...item });
+    setEditItem({ ...item, noMax: item.quantityMax == null });
   };
 
   const getOpenRequestCount = (itemId) => {
@@ -226,7 +217,7 @@ export default function CatalogManager() {
                   <div className="catalog-item-card__details">
                     <span>Unit: {item.unit}</span>
                     <span>Min: {item.quantityMin?.toLocaleString()}</span>
-                    <span>Max: {item.quantityMax?.toLocaleString()}</span>
+                    <span>Max: {item.quantityMax != null ? item.quantityMax.toLocaleString() : 'No max'}</span>
                     <span>Step: {item.quantityStep}</span>
                     {item.category && <span>Category: {item.category}</span>}
                   </div>
@@ -270,7 +261,7 @@ function CatalogItemForm({ item, onChange, onSubmit, submitLabel, onCancel }) {
             type="text"
             value={item.name}
             onChange={e => handleChange('name', e.target.value)}
-            placeholder="e.g., Standard Whistle"
+            placeholder="e.g., Rubber Duck"
           />
         </label>
         <label>
@@ -297,10 +288,22 @@ function CatalogItemForm({ item, onChange, onSubmit, submitLabel, onCancel }) {
           Max qty
           <input
             type="number"
-            value={item.quantityMax}
+            value={item.noMax ? '' : item.quantityMax}
             onChange={e => handleChange('quantityMax', e.target.value)}
             min="1"
+            disabled={item.noMax}
+            placeholder={item.noMax ? '∞' : ''}
           />
+          <label className="catalog-form__no-max">
+            <input
+              type="checkbox"
+              checked={!!item.noMax}
+              onChange={e => {
+                onChange({ ...item, noMax: e.target.checked, quantityMax: e.target.checked ? '' : 5000 });
+              }}
+            />
+            No max
+          </label>
         </label>
         <label>
           Step
@@ -319,7 +322,7 @@ function CatalogItemForm({ item, onChange, onSubmit, submitLabel, onCancel }) {
             type="text"
             value={item.sku}
             onChange={e => handleChange('sku', e.target.value)}
-            placeholder="e.g., WH-001"
+            placeholder="e.g., TOY-001"
           />
         </label>
         <label>
@@ -328,7 +331,7 @@ function CatalogItemForm({ item, onChange, onSubmit, submitLabel, onCancel }) {
             type="text"
             value={item.category}
             onChange={e => handleChange('category', e.target.value)}
-            placeholder="e.g., Whistles"
+            placeholder="e.g., Toys"
           />
         </label>
       </div>

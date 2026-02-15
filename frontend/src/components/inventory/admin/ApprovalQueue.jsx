@@ -3,7 +3,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import useInventorySync from '../../../hooks/useInventorySync';
 import StatusBadge from '../common/StatusBadge';
 import RequestDetail from '../common/RequestDetail';
 import { generateId, formatRelativeDate } from '../../../utils/inventoryValidation';
@@ -13,12 +12,7 @@ import './ApprovalQueue.css';
 
 export default function ApprovalQueue() {
   const ctx = useInventory();
-  const { requests, catalogItems, producerCapacities } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems, yInventoryRequests: ctx.yInventoryRequests,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog: ctx.yInventoryAuditLog },
-    ctx.inventorySystemId
-  );
+  const { requests, catalogItems, producerCapacities } = ctx;
 
   const [selected, setSelected] = useState(new Set());
   const [expandedId, setExpandedId] = useState(null);
@@ -210,9 +204,9 @@ export default function ApprovalQueue() {
 
       <div className="aq-list">
         {pendingRequests.map(req => {
-          const item = catalogMap[req.itemId];
+          const item = catalogMap[req.catalogItemId];
           const producerCap = req.assignedTo
-            ? getProducerCapForItem(req.assignedTo, req.itemId)
+            ? getProducerCapForItem(req.assignedTo, req.catalogItemId)
             : null;
 
           return (
@@ -238,8 +232,8 @@ export default function ApprovalQueue() {
               <div className="aq-card-body">
                 <div className="aq-card-info">
                   <span><strong>{item?.name || 'Unknown Item'}</strong></span>
-                  <span>{req.quantity} {item?.unitName || 'units'}</span>
-                  <span>{req.shippingCity}, {req.shippingState}</span>
+                  <span>{req.quantity} {item?.unit || 'units'}</span>
+                  <span>{req.city}, {req.state}</span>
                   <span>{formatRelativeDate(req.requestedAt)}</span>
                 </div>
 
@@ -251,7 +245,7 @@ export default function ApprovalQueue() {
                     <span className="aq-producer-name">{getProducerName(req.assignedTo)}</span>
                     {producerCap && (
                       <span className="aq-producer-detail">
-                        Stock: {producerCap.currentStock || 0} {item?.unitName || 'units'}
+                        Stock: {producerCap.currentStock || 0} {item?.unit || 'units'}
                         {producerCap.currentStock >= req.quantity
                           ? ' (sufficient)'
                           : producerCap.capacityPerDay > 0

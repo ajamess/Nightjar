@@ -21,8 +21,8 @@ export default function ProducerLeaderboard({ requests, collaborators, dateRange
 
   const producers = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
-    let inRange = requests.filter(r => r.createdAt >= from && r.createdAt <= to);
-    if (filterItemId) inRange = inRange.filter(r => r.itemId === filterItemId);
+    let inRange = requests.filter(r => (r.requestedAt || r.createdAt || 0) >= from && (r.requestedAt || r.createdAt || 0) <= to);
+    if (filterItemId) inRange = inRange.filter(r => (r.catalogItemId || r.itemId) === filterItemId);
 
     const map = {};
     for (const r of inRange) {
@@ -44,8 +44,8 @@ export default function ProducerLeaderboard({ requests, collaborators, dateRange
       if (r.status === 'shipped' || r.status === 'delivered') {
         p.fulfilled++;
         p.units += r.quantity || 0;
-        if (r.shippedAt && r.createdAt) {
-          const days = (r.shippedAt - r.createdAt) / 86400000;
+        if (r.shippedAt && (r.requestedAt || r.createdAt)) {
+          const days = (r.shippedAt - (r.requestedAt || r.createdAt)) / 86400000;
           p.totalDays += days;
           if (days <= 5) p.onTime++;
         }
@@ -64,7 +64,7 @@ export default function ProducerLeaderboard({ requests, collaborators, dateRange
           (r.status === 'shipped' || r.status === 'delivered') &&
           r.shippedAt >= periodStart && r.shippedAt < periodEnd
         );
-        if (filterItemId) filteredReqs = filteredReqs.filter(r => r.itemId === filterItemId);
+        if (filterItemId) filteredReqs = filteredReqs.filter(r => (r.catalogItemId || r.itemId) === filterItemId);
         sparkline.push({ v: filteredReqs.length });
       }
       p.sparkline = sparkline;

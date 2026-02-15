@@ -6,6 +6,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import { decryptAddressReveal } from '../../../utils/addressCrypto';
 import { generateId } from '../../../utils/inventoryValidation';
+import { pushNotification } from '../../../utils/inventoryNotifications';
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback';
+import { formatAddressForCopy, getEnabledProviders } from '../../../utils/shippingProviders';
 import './AddressReveal.css';
 
 /**
@@ -15,7 +18,8 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
   const ctx = useInventory();
   const [address, setAddress] = useState(null);
   const [decryptError, setDecryptError] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copyToClipboard } = useCopyFeedback();
+  const [providerCopied, setProviderCopied] = useState(null); // tracks which provider ID was just copied
   const [trackingNumber, setTrackingNumber] = useState('');
   const [shippingNotes, setShippingNotes] = useState('');
   const [confirmed, setConfirmed] = useState(false);
@@ -28,6 +32,12 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
     const arr = yArr.toArray();
     return arr.find(r => r.id === requestId) || null;
   }, [ctx.yInventoryRequests, requestId]);
+
+  // Get enabled shipping providers from system settings
+  const enabledProviders = useMemo(() => {
+    const system = ctx.yInventorySystems?.get(ctx.inventorySystemId);
+    return getEnabledProviders(system?.settings);
+  }, [ctx.yInventorySystems, ctx.inventorySystemId]);
 
   useEffect(() => {
     if (!reveal || !identity?.privateKey) return;
@@ -48,22 +58,19 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
 
   const handleCopy = useCallback(() => {
     if (!address) return;
-    const text = [
-      address.fullName,
-      address.street1,
-      address.street2,
-      `${address.city}, ${address.state} ${address.zipCode}`,
-      address.country || 'US',
-      address.phone ? `Phone: ${address.phone}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    copyToClipboard(formatAddressForCopy(address));
+  }, [address, copyToClipboard]);
 
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleShipWith = useCallback((provider) => {
+    if (!address) return;
+    const formatted = provider.formatAddress(address);
+    copyToClipboard(formatted, () => {
+      setProviderCopied(provider.id);
+      setTimeout(() => setProviderCopied(null), 2500);
     });
-  }, [address]);
+    // Open shipping provider in new tab
+    window.open(provider.url, '_blank', 'noopener,noreferrer');
+  }, [address, copyToClipboard]);
 
   const handleMarkShipped = useCallback(async () => {
     if (!confirmed) return;
@@ -102,6 +109,18 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
         targetId: requestId,
         summary: `Request ${requestId.slice(0, 8)} marked as shipped${trackingNumber ? ` (tracking: ${trackingNumber})` : ''}`,
       }]);
+
+      // Notify the requestor
+      const req = yArr ? yArr.toArray().find(r => r.id === requestId) : null;
+      if (req?.requestedBy) {
+        pushNotification(ctx.yInventoryNotifications, {
+          inventorySystemId: ctx.inventorySystemId,
+          recipientId: req.requestedBy,
+          type: 'request_shipped',
+          message: `Your request for ${req.catalogItemName} has been shipped${trackingNumber ? ` (tracking: ${trackingNumber})` : ''}`,
+          relatedId: requestId,
+        });
+      }
 
       onShipped?.(requestId);
     } catch (err) {
@@ -182,6 +201,29 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
       <button className="ar-copy-btn" onClick={handleCopy}>
         {copied ? '✓ Copied!' : '📋 Copy Address'}
       </button>
+
+      {enabledProviders.length > 0 && (
+        <div className="ar-provider-group">
+          <span className="ar-provider-label">Ship with</span>
+          <div className="ar-provider-buttons">
+            {enabledProviders.map(provider => (
+              <button
+                key={provider.id}
+                className="ar-provider-btn"
+                onClick={() => handleShipWith(provider)}
+                title={`Copy address & open ${provider.name}`}
+              >
+                <span className="ar-provider-icon">{provider.icon}</span>
+                <span className="ar-provider-name">{provider.name}</span>
+                {providerCopied === provider.id && (
+                  <span className="ar-provider-copied">✓ Copied</span>
+                )}
+              </button>
+            ))}
+          </div>
+          <span className="ar-provider-hint">Address is copied to clipboard — paste into the shipping site</span>
+        </div>
+      )}
 
       <div className="ar-ship-section">
         <label className="ar-tracking-label">

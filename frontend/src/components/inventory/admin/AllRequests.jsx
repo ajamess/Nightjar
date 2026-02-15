@@ -9,11 +9,11 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import { useToast } from '../../../contexts/ToastContext';
 import RequestRow from '../common/RequestRow';
 import RequestDetail from '../common/RequestDetail';
 import { generateId, US_STATES } from '../../../utils/inventoryValidation';
+import { pushNotification } from '../../../utils/inventoryNotifications';
 import { exportRequests } from '../../../utils/inventoryExport';
 import './AllRequests.css';
 
@@ -22,14 +22,8 @@ const STATUS_OPTIONS = ['all', 'open', 'claimed', 'pending_approval', 'approved'
 
 export default function AllRequests() {
   const ctx = useInventory();
-  const { yInventoryRequests, yInventoryAuditLog, inventorySystemId, collaborators } = ctx;
-  const { requests, catalogItems } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems,
-      yInventoryRequests, yProducerCapacities: ctx.yProducerCapacities,
-      yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog },
-    inventorySystemId
-  );
+  const { yInventoryRequests, yInventoryAuditLog, inventorySystemId, collaborators, yInventoryNotifications,
+    requests, catalogItems } = ctx;
   const { showToast } = useToast();
 
   // Filters
@@ -120,9 +114,16 @@ export default function AllRequests() {
     if (idx === -1) return;
     yInventoryRequests.delete(idx, 1);
     yInventoryRequests.insert(idx, [{ ...items[idx], status: 'approved', approvedAt: Date.now(), updatedAt: Date.now() }]);
-    yInventoryAuditLog.push([{ id: generateId('aud-'), inventorySystemId, action: 'request_approved', entityId: req.id, entityType: 'request', details: { item: req.catalogItemName }, timestamp: Date.now() }]);
+    yInventoryAuditLog.push([{ id: generateId('aud-'), inventorySystemId, action: 'request_approved', targetId: req.id, targetType: 'request', summary: `Request ${req.id?.slice(0, 8)} approved`, timestamp: Date.now() }]);
+    pushNotification(yInventoryNotifications, {
+      inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_approved',
+      message: `Your request for ${req.catalogItemName} has been approved`,
+      relatedId: req.id,
+    });
     showToast(`#${req.id?.slice(4, 10)} approved`, 'success');
-  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, yInventoryNotifications]);
 
   const handleReject = useCallback((req) => {
     const items = yInventoryRequests.toArray();
@@ -130,9 +131,16 @@ export default function AllRequests() {
     if (idx === -1) return;
     yInventoryRequests.delete(idx, 1);
     yInventoryRequests.insert(idx, [{ ...items[idx], status: 'open', assignedTo: null, updatedAt: Date.now() }]);
-    yInventoryAuditLog.push([{ id: generateId('aud-'), inventorySystemId, action: 'request_rejected', entityId: req.id, entityType: 'request', details: { item: req.catalogItemName }, timestamp: Date.now() }]);
+    yInventoryAuditLog.push([{ id: generateId('aud-'), inventorySystemId, action: 'request_rejected', targetId: req.id, targetType: 'request', summary: `Request ${req.id?.slice(0, 8)} rejected`, timestamp: Date.now() }]);
+    pushNotification(yInventoryNotifications, {
+      inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_rejected',
+      message: `Your request for ${req.catalogItemName} was rejected`,
+      relatedId: req.id,
+    });
     showToast(`#${req.id?.slice(4, 10)} returned to Open`, 'success');
-  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, yInventoryNotifications]);
 
   const handleCancel = useCallback((req) => {
     const items = yInventoryRequests.toArray();
@@ -140,9 +148,16 @@ export default function AllRequests() {
     if (idx === -1) return;
     yInventoryRequests.delete(idx, 1);
     yInventoryRequests.insert(idx, [{ ...items[idx], status: 'cancelled', updatedAt: Date.now() }]);
-    yInventoryAuditLog.push([{ id: generateId('aud-'), inventorySystemId, action: 'request_cancelled', entityId: req.id, entityType: 'request', details: { item: req.catalogItemName }, timestamp: Date.now() }]);
+    yInventoryAuditLog.push([{ id: generateId('aud-'), inventorySystemId, action: 'request_cancelled', targetId: req.id, targetType: 'request', summary: `Request ${req.id?.slice(0, 8)} cancelled`, timestamp: Date.now() }]);
+    pushNotification(yInventoryNotifications, {
+      inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_cancelled',
+      message: `Your request for ${req.catalogItemName} has been cancelled by admin`,
+      relatedId: req.id,
+    });
     showToast(`#${req.id?.slice(4, 10)} cancelled`, 'success');
-  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, yInventoryNotifications]);
 
   // Unique states appearing in requests
   const usedStates = [...new Set(requests.map(r => r.state).filter(Boolean))].sort();

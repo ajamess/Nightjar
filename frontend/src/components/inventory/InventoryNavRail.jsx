@@ -24,6 +24,7 @@ const VIEWS = {
   AUDIT_LOG: 'audit-log',
   IMPORT_EXPORT: 'import-export',
   SETTINGS: 'settings',
+  NAME_MAPPER: 'name-mapper',
   // Producer
   PRODUCER_DASHBOARD: 'producer-dashboard',
   OPEN_REQUESTS: 'open-requests',
@@ -32,6 +33,8 @@ const VIEWS = {
   // Requestor
   SUBMIT_REQUEST: 'submit-request',
   MY_REQUESTS: 'my-requests',
+  SAVED_ADDRESSES: 'saved-addresses',
+  NOTIFICATIONS: 'notifications',
   FAQ: 'faq',
 };
 
@@ -41,17 +44,20 @@ const ADMIN_NAV = [
   { id: VIEWS.ALL_REQUESTS, icon: '📋', label: 'All Requests' },
   { id: VIEWS.APPROVAL_QUEUE, icon: '✅', label: 'Approval Queue', badgeKey: 'pendingApprovalCount' },
   { id: VIEWS.PRODUCERS, icon: '👥', label: 'Producers' },
+  { id: VIEWS.NAME_MAPPER, icon: '🔗', label: 'Name Mapper' },
   { id: VIEWS.CATALOG, icon: '📦', label: 'Item Catalog' },
   { id: VIEWS.ANALYTICS, icon: '📊', label: 'Analytics' },
   { id: VIEWS.HEATMAP, icon: '🗺️', label: 'Heatmap' },
   { id: VIEWS.AUDIT_LOG, icon: '📜', label: 'Audit Log' },
   { id: VIEWS.IMPORT_EXPORT, icon: '📥', label: 'Import/Export' },
+  { id: VIEWS.NOTIFICATIONS, icon: '🔔', label: 'Notifications', badgeKey: 'notificationUnreadCount' },
   { id: VIEWS.SETTINGS, icon: '⚙️', label: 'Settings' },
 ];
 
 const ADMIN_ROLE_SWITCH = [
   { id: VIEWS.SUBMIT_REQUEST, icon: '📝', label: 'Submit Request' },
   { id: VIEWS.MY_REQUESTS, icon: '📌', label: 'My Requests' },
+  { id: VIEWS.SAVED_ADDRESSES, icon: '📍', label: 'Saved Addresses' },
   { id: VIEWS.PRODUCER_DASHBOARD, icon: '🏭', label: 'My Capacity' },
 ];
 
@@ -60,6 +66,7 @@ const PRODUCER_NAV = [
   { id: VIEWS.OPEN_REQUESTS, icon: '📋', label: 'Open Requests', badgeKey: 'openRequestCount' },
   { id: VIEWS.PRODUCER_MY_REQUESTS, icon: '📌', label: 'My Requests' },
   { id: VIEWS.PRODUCER_STATS, icon: '📊', label: 'My Stats' },
+  { id: VIEWS.NOTIFICATIONS, icon: '🔔', label: 'Notifications', badgeKey: 'notificationUnreadCount' },
   { id: VIEWS.HEATMAP, icon: '🗺️', label: 'Heatmap' },
   { id: VIEWS.FAQ, icon: '❓', label: 'FAQ' },
 ];
@@ -67,6 +74,8 @@ const PRODUCER_NAV = [
 const REQUESTOR_NAV = [
   { id: VIEWS.SUBMIT_REQUEST, icon: '📝', label: 'Submit Request' },
   { id: VIEWS.MY_REQUESTS, icon: '📜', label: 'My Requests' },
+  { id: VIEWS.SAVED_ADDRESSES, icon: '📍', label: 'Saved Addresses' },
+  { id: VIEWS.NOTIFICATIONS, icon: '🔔', label: 'Notifications', badgeKey: 'notificationUnreadCount' },
   { id: VIEWS.FAQ, icon: '❓', label: 'FAQ' },
 ];
 
@@ -80,6 +89,7 @@ const REQUESTOR_NAV = [
  * @param {string} props.systemName - Inventory system name for header
  * @param {number} props.openRequestCount
  * @param {number} props.pendingApprovalCount
+ * @param {number} props.notificationUnreadCount
  */
 export default function InventoryNavRail({
   activeView,
@@ -90,10 +100,12 @@ export default function InventoryNavRail({
   systemName,
   openRequestCount = 0,
   pendingApprovalCount = 0,
+  notificationUnreadCount = 0,
 }) {
   const badges = {
     openRequestCount,
     pendingApprovalCount,
+    notificationUnreadCount,
   };
 
   // Choose nav items based on role
@@ -130,7 +142,7 @@ export default function InventoryNavRail({
       {showRoleSwitch && (
         <>
           <div className="inventory-nav-rail__divider" />
-          <div className="inventory-nav-rail__section-label">I'm also a...</div>
+          <div className="inventory-nav-rail__section-label">My Views</div>
           <div className="inventory-nav-rail__items">
             {ADMIN_ROLE_SWITCH.map(item => (
               <NavItem
