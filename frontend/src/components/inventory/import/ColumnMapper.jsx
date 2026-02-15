@@ -33,6 +33,7 @@ export default function ColumnMapper({ headers, sampleRows, onMappingComplete, c
   // Default catalog item for unmapped item column
   const [defaultItem, setDefaultItem] = useState(catalogItems?.[0]?.name || '');
   const [defaultStatus, setDefaultStatus] = useState('open');
+  const [continueNumbering, setContinueNumbering] = useState(true);
 
   // Check if required fields are mapped
   const missingRequired = useMemo(() => {
@@ -40,11 +41,17 @@ export default function ColumnMapper({ headers, sampleRows, onMappingComplete, c
     return REQUIRED_FIELDS.filter(f => !mapped.has(f));
   }, [mapping]);
 
+  // Check if external_id is mapped
+  const hasExternalId = useMemo(() => {
+    return Object.values(mapping).includes('external_id');
+  }, [mapping]);
+
   const handleChange = (source, target) => {
     setMapping(prev => {
       const next = { ...prev };
       // If this target is already used elsewhere, un-assign it
-      if (target !== '__skip__') {
+      // (except 'status' — allow multiple columns to feed into status)
+      if (target !== '__skip__' && target !== 'status') {
         for (const [k, v] of Object.entries(next)) {
           if (v === target && k !== source) next[k] = '__skip__';
         }
@@ -61,6 +68,9 @@ export default function ColumnMapper({ headers, sampleRows, onMappingComplete, c
       finalMapping.__defaultItem = defaultItem;
     }
     finalMapping.__defaultStatus = defaultStatus;
+    if (hasExternalId) {
+      finalMapping.__continueNumbering = continueNumbering;
+    }
     onMappingComplete(finalMapping);
   };
 
@@ -125,11 +135,29 @@ export default function ColumnMapper({ headers, sampleRows, onMappingComplete, c
         <label>Default status for imported requests:</label>
         <select value={defaultStatus} onChange={e => setDefaultStatus(e.target.value)}>
           <option value="open">Open</option>
+          <option value="claimed">Claimed</option>
           <option value="approved">Approved</option>
           <option value="shipped">Shipped</option>
           <option value="delivered">Delivered</option>
         </select>
+        <p className="cm-hint" style={{ fontSize: '0.8em', color: '#888', marginTop: 4 }}>
+          💡 You can map multiple columns to <strong>status</strong> — values like "Shipped!", "Mark as shipped", etc. will be auto-detected.
+        </p>
       </div>
+
+      {/* Continue numbering from imported IDs */}
+      {hasExternalId && (
+        <div className="cm-default">
+          <label>
+            <input
+              type="checkbox"
+              checked={continueNumbering}
+              onChange={e => setContinueNumbering(e.target.checked)}
+            />
+            Continue this numbering for new requests (e.g., next request gets #{'{'}max + 1{'}'})
+          </label>
+        </div>
+      )}
 
       {missingRequired.length > 0 && !missingRequired.every(f => f === 'item' && defaultItem) && (
         <p className="cm-warning">

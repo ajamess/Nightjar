@@ -48,11 +48,31 @@
 }
 .catalog-form__row label {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* ---- No-max checkbox ---- */
+.catalog-form__no-max {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-bottom: 0 !important;
+  margin-top: 4px;
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  cursor: pointer;
+}
+.catalog-form__no-max input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-color);
+  cursor: pointer;
 }
 .catalog-form label {
   display: flex;
@@ -75,6 +95,10 @@
 .catalog-form textarea:focus {
   outline: none;
   border-color: var(--accent-color);
+}
+.catalog-form input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .catalog-form textarea {
   resize: vertical;

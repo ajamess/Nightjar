@@ -3,9 +3,9 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import useInventorySync from '../../../hooks/useInventorySync';
 import RequestCard from '../common/RequestCard';
 import { generateId, formatRelativeDate } from '../../../utils/inventoryValidation';
+import { pushNotification } from '../../../utils/inventoryNotifications';
 import { estimateFulfillment, validateClaim } from '../../../utils/inventoryAssignment';
 import './OpenRequests.css';
 
@@ -13,12 +13,7 @@ const PAGE_SIZE = 12;
 
 export default function OpenRequests() {
   const ctx = useInventory();
-  const { catalogItems, requests, producerCapacities } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems, yInventoryRequests: ctx.yInventoryRequests,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog: ctx.yInventoryAuditLog },
-    ctx.inventorySystemId
-  );
+  const { catalogItems, requests, producerCapacities } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
   const myCap = producerCapacities?.[myKey] || {};
@@ -40,15 +35,15 @@ export default function OpenRequests() {
   // States present in open requests
   const availableStates = useMemo(() => {
     const s = new Set();
-    requests.forEach(r => { if (r.status === 'open' && r.shippingState) s.add(r.shippingState); });
+    requests.forEach(r => { if (r.status === 'open' && r.state) s.add(r.state); });
     return [...s].sort();
   }, [requests]);
 
   // Filter and sort
   const openRequests = useMemo(() => {
     let list = requests.filter(r => r.status === 'open');
-    if (filterItem) list = list.filter(r => r.itemId === filterItem);
-    if (filterState) list = list.filter(r => r.shippingState === filterState);
+    if (filterItem) list = list.filter(r => r.catalogItemId === filterItem);
+    if (filterState) list = list.filter(r => r.state === filterState);
     if (filterUrgency === 'urgent') list = list.filter(r => r.urgent);
     if (filterUrgency === 'normal') list = list.filter(r => !r.urgent);
     if (filterQtyMin) list = list.filter(r => (r.quantity || 0) >= Number(filterQtyMin));
@@ -64,7 +59,7 @@ export default function OpenRequests() {
         case 'quantity':
           return (b.quantity || 0) - (a.quantity || 0);
         case 'state':
-          return (a.shippingState || '').localeCompare(b.shippingState || '');
+          return (a.state || '').localeCompare(b.state || '');
         default:
           return 0;
       }
@@ -75,11 +70,11 @@ export default function OpenRequests() {
 
   // "Can fill" estimate per request
   const getEstimate = useCallback((req) => {
-    const itemCap = myCap.items?.[req.itemId];
+    const itemCap = myCap.items?.[req.catalogItemId];
     if (!itemCap) return null;
     const myAssigned = requests.filter(
       r => (r.assignedTo === myKey || r.claimedBy === myKey) &&
-           r.itemId === req.itemId &&
+           r.catalogItemId === req.catalogItemId &&
            !['shipped', 'delivered', 'cancelled'].includes(r.status)
     );
     return estimateFulfillment(req.quantity, itemCap, myAssigned);
@@ -132,6 +127,15 @@ export default function OpenRequests() {
       targetId: requestId,
       summary: `Request ${requestId.slice(0, 8)} claimed by ${myKey.slice(0, 8)}`,
     }]);
+
+    // Notify the requestor that their request was claimed
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_claimed',
+      message: `Your request for ${req.catalogItemName} was claimed by a producer`,
+      relatedId: requestId,
+    });
   }, [ctx, myKey]);
 
   return (

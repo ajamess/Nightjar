@@ -9,8 +9,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
-import { generateId } from '../../../utils/inventoryValidation';
+import { generateId, parseDate } from '../../../utils/inventoryValidation';
+import { inferUrgency } from '../../../utils/importMapper';
 import FileUpload from './FileUpload';
 import ColumnMapper from './ColumnMapper';
 import ImportPreview from './ImportPreview';
@@ -21,7 +21,7 @@ const BATCH_SIZE = 100;
 
 export default function ImportWizard() {
   const ctx = useInventory();
-  const sync = useInventorySync(ctx, ctx.inventorySystemId);
+  const sync = ctx;
 
   const [step, setStep] = useState(0);
   const [file, setFile] = useState(null);
@@ -53,6 +53,24 @@ export default function ImportWizard() {
     const total = validRows.length;
     let imported = 0;
     let errors = 0;
+    const useDisplayIds = opts?.mapping?.__continueNumbering ?? true;
+
+    // Build catalog lookup for catalogItemId resolution
+    const catalogLookup = {};
+    for (const ci of (sync.catalogItems || [])) {
+      catalogLookup[ci.name.toLowerCase()] = ci;
+    }
+
+    // Helper: parse booleans from CSV values
+    const parseBool = (val) => {
+      if (val == null) return false;
+      return ['true', 'yes', '1', 'cancelled', 'canceled', 'urgent', 'y'].includes(
+        String(val).trim().toLowerCase()
+      );
+    };
+
+    // Helper: get fileName for source tracking (supports multi-file)
+    const fileName = Array.isArray(file) ? file.map(f => f.name).join(', ') : (file?.name || '');
 
     // Batch import into Yjs
     const doc = yRequests.doc;
@@ -61,29 +79,83 @@ export default function ImportWizard() {
       doc.transact(() => {
         for (const row of batch) {
           try {
+            // Resolve catalog item
+            const itemName = row.item || '';
+            const catalogItem = catalogLookup[itemName.toLowerCase()] || null;
+
+            // Determine status — auto-infer from shipped_date/cancelled if not explicit
+            let status = row.status || 'open';
+            const isCancelled = parseBool(row.cancelled);
+            if (isCancelled) status = 'cancelled';
+            else if (row.shipped_date && status === 'open') status = 'shipped';
+            else if (row.shipped_date && status === 'claimed') status = 'shipped';
+
+            // Build request with correct field names matching InventoryRequest type
             const request = {
               id: generateId(),
               inventorySystemId: ctx.inventorySystemId,
-              item: row.item || '',
-              quantity: row.quantity || 1,
-              status: row.status || 'open',
-              urgency: row.urgency || 'normal',
-              requesterName: row.requester_name || '',
-              requesterState: row.requester_state || '',
-              requesterCity: row.requester_city || '',
+
+              // Catalog item (matching InventoryRequest type)
+              catalogItemId: catalogItem?.id || '',
+              catalogItemName: itemName,
+
+              // Request details
+              quantity: parseInt(row.quantity, 10) || 1,
+              urgent: inferUrgency(row.urgency) === 'urgent',
               notes: row.notes || '',
-              printerNotes: row.printer_notes || '',
-              createdAt: Date.now(),
+
+              // Requestor identity (correct field names for analytics)
+              requestorId: '',
+              requestorName: row.requester_name || '',
+              city: row.requester_city || '',
+              state: row.requester_state || '',
+
+              // Timestamps (correct field names)
+              requestedAt: parseDate(row.date) || Date.now(),
+              updatedAt: Date.now(),
+
+              // Status
+              status,
+              cancelled: isCancelled,
+
+              // Import metadata
               createdBy: ctx.userIdentity?.publicKeyBase62 || '',
-              source: 'import',
-              sourceFile: file?.name || '',
+              importedFrom: fileName,
+
+              // New fields from CSV
+              displayId: useDisplayIds ? (row.external_id || '') : '',
+              shippedAt: parseDate(row.shipped_date) || null,
+              printerNotes: row.printer_notes || '',
+              adminNotes: row.admin_notes || '',
+              quantityShipped: row.quantity_shipped != null && row.quantity_shipped !== ''
+                ? (parseInt(row.quantity_shipped, 10) || 0)
+                : null,
             };
 
-            // Address fields (stored unencrypted in import — no address crypto for bulk)
-            if (row.address_line1) request.addressLine1 = row.address_line1;
-            if (row.address_line2) request.addressLine2 = row.address_line2;
-            if (row.zip) request.zip = row.zip;
-            if (row.phone) request.phone = row.phone;
+            // Resolve assigned_to against collaborators
+            if (row.assigned_to) {
+              const nameToMatch = row.assigned_to.trim().toLowerCase();
+              const collaborators = ctx.collaborators || [];
+              const match = collaborators.find(c =>
+                (c.displayName || '').toLowerCase() === nameToMatch ||
+                (c.name || '').toLowerCase() === nameToMatch
+              );
+              if (match) {
+                request.assignedTo = match.publicKey;
+                request.assignedToName = match.displayName || match.name || '';
+                // If the request was open and we have an assignment, set to claimed
+                if (request.status === 'open') request.status = 'claimed';
+              } else {
+                // Store unresolved name for admin to map later
+                request.importedProducerName = row.assigned_to.trim();
+              }
+            }
+
+            // Address fields — NOT stored in CRDT for security.
+            // Only city/state (already set above) are stored.
+            // Full address data from imports is intentionally dropped to prevent
+            // unencrypted PII from being synced across the P2P network.
+            // Admins can request addresses separately via the encrypted address flow.
 
             yRequests.push([request]);
             imported++;
@@ -113,14 +185,14 @@ export default function ImportWizard() {
           action: 'data_imported',
           targetType: 'request',
           targetId: '',
-          summary: `Imported ${imported} requests from ${file?.name || 'file'}`,
+          summary: `Imported ${imported} requests from ${fileName}`,
         }]);
       });
     }
 
     setImportResult({ imported, skipped: total - imported - errors, errors });
     setImportProgress(100);
-  }, [ctx, file]);
+  }, [ctx, file, sync.catalogItems]);
 
   const handleReset = () => {
     setStep(0);
@@ -150,12 +222,21 @@ export default function ImportWizard() {
         )}
 
         {step === 1 && parsed && (
-          <ColumnMapper
-            headers={parsed.headers}
-            sampleRows={parsed.rows.slice(0, 5)}
-            catalogItems={sync.catalogItems}
-            onMappingComplete={handleMappingComplete}
-          />
+          <>
+            {parsed.mergeStats && (
+              <div className="iw-merge-summary">
+                📎 Merged {parsed.mergeStats.total} rows from multiple files
+                → {parsed.mergeStats.unique} unique rows
+                {parsed.mergeStats.duplicates > 0 && ` (${parsed.mergeStats.duplicates} duplicates merged)`}
+              </div>
+            )}
+            <ColumnMapper
+              headers={parsed.headers}
+              sampleRows={parsed.rows.slice(0, 5)}
+              catalogItems={sync.catalogItems}
+              onMappingComplete={handleMappingComplete}
+            />
+          </>
         )}
 
         {step === 2 && parsed && mapping && (

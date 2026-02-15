@@ -9,7 +9,6 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import { formatRelativeDate } from '../../../utils/inventoryValidation';
 import { exportAuditLog } from '../../../utils/inventoryExport';
 import './AuditLog.css';
@@ -60,7 +59,7 @@ const ACTION_ICONS = {
 
 export default function AuditLog() {
   const ctx = useInventory();
-  const sync = useInventorySync(ctx, ctx.inventorySystemId);
+  const sync = ctx;
 
   const [filterAction, setFilterAction] = useState('');
   const [filterTarget, setFilterTarget] = useState('');

@@ -8,9 +8,10 @@
  * See docs/INVENTORY_SYSTEM_SPEC.md §11.2.5, §6.8
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { InventoryProvider, useInventory } from '../../contexts/InventoryContext';
 import { useInventorySync } from '../../hooks/useInventorySync';
+import { getUnreadCount } from '../../utils/inventoryNotifications';
 import { usePermission } from '../../hooks/usePermission';
 import InventoryNavRail from './InventoryNavRail';
 import OnboardingWizard from './OnboardingWizard';
@@ -19,6 +20,7 @@ import AllRequests from './admin/AllRequests';
 import CatalogManager from './admin/CatalogManager';
 import SubmitRequest from './requestor/SubmitRequest';
 import MyRequests from './requestor/MyRequests';
+import SavedAddresses from './requestor/SavedAddresses';
 import ApprovalQueue from './admin/ApprovalQueue';
 import InventorySettings from './admin/InventorySettings';
 import ProducerDashboard from './producer/ProducerDashboard';
@@ -30,7 +32,9 @@ import USHeatmap from './analytics/USHeatmap';
 import ImportWizard from './import/ImportWizard';
 import AuditLog from './admin/AuditLog';
 import ProducerManagement from './admin/ProducerManagement';
+import ProducerNameMapper from './admin/ProducerNameMapper';
 import RequestFAQ from './requestor/RequestFAQ';
+import NotificationInbox from './common/NotificationInbox';
 import './InventoryDashboard.css';
 
 // Navigation view IDs — maps to component hierarchy in §6.8
@@ -46,6 +50,7 @@ const VIEWS = {
   AUDIT_LOG: 'audit-log',
   IMPORT_EXPORT: 'import-export',
   SETTINGS: 'settings',
+  NAME_MAPPER: 'name-mapper',
   // Producer views
   PRODUCER_DASHBOARD: 'producer-dashboard',
   OPEN_REQUESTS: 'open-requests',
@@ -54,6 +59,8 @@ const VIEWS = {
   // Requestor views
   SUBMIT_REQUEST: 'submit-request',
   MY_REQUESTS: 'my-requests',
+  SAVED_ADDRESSES: 'saved-addresses',
+  NOTIFICATIONS: 'notifications',
   FAQ: 'faq',
 };
 
@@ -70,6 +77,7 @@ const VIEWS = {
  * @param {Y.Map} props.yAddressReveals
  * @param {Y.Map} props.yPendingAddresses
  * @param {Y.Array} props.yInventoryAuditLog
+ * @param {Y.Array} props.yInventoryNotifications
  */
 export default function InventoryDashboard({
   inventorySystemId,
@@ -84,6 +92,7 @@ export default function InventoryDashboard({
   yAddressReveals,
   yPendingAddresses,
   yInventoryAuditLog,
+  yInventoryNotifications,
 }) {
   // Permission check — spec §11.2.5: use usePermission('workspace', workspaceId)
   const { isOwner, isEditor, isViewer } = usePermission('workspace', workspaceId);
@@ -101,6 +110,19 @@ export default function InventoryDashboard({
     },
     inventorySystemId
   );
+
+  // Notification unread count — observe Yjs array for live updates
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!yInventoryNotifications) { setNotificationUnreadCount(0); return; }
+    const computeCount = () => {
+      const all = yInventoryNotifications.toArray();
+      setNotificationUnreadCount(getUnreadCount(all, userIdentity?.publicKeyBase62, inventorySystemId));
+    };
+    computeCount();
+    yInventoryNotifications.observe(computeCount);
+    return () => yInventoryNotifications.unobserve(computeCount);
+  }, [yInventoryNotifications, userIdentity, inventorySystemId]);
 
   // Determine default view based on role
   const getDefaultView = useCallback(() => {
@@ -143,6 +165,8 @@ export default function InventoryDashboard({
         return <ImportWizard />;
       case VIEWS.SETTINGS:
         return <InventorySettings />;
+      case VIEWS.NAME_MAPPER:
+        return <ProducerNameMapper />;
 
       // Producer views
       case VIEWS.PRODUCER_DASHBOARD:
@@ -159,6 +183,10 @@ export default function InventoryDashboard({
         return <SubmitRequest currentWorkspace={currentWorkspace} isOwner={isOwner} />;
       case VIEWS.MY_REQUESTS:
         return <MyRequests />;
+      case VIEWS.SAVED_ADDRESSES:
+        return <SavedAddresses currentWorkspace={currentWorkspace} />;
+      case VIEWS.NOTIFICATIONS:
+        return <NotificationInbox />;
       case VIEWS.FAQ:
         return <RequestFAQ />;
 
@@ -178,6 +206,7 @@ export default function InventoryDashboard({
       yAddressReveals={yAddressReveals}
       yPendingAddresses={yPendingAddresses}
       yInventoryAuditLog={yInventoryAuditLog}
+      yInventoryNotifications={yInventoryNotifications}
       userIdentity={userIdentity}
       collaborators={collaborators}
     >
@@ -191,6 +220,7 @@ export default function InventoryDashboard({
           systemName={inventoryState.currentSystem?.name || 'Inventory'}
           openRequestCount={inventoryState.openRequestCount}
           pendingApprovalCount={inventoryState.pendingApprovalCount}
+          notificationUnreadCount={notificationUnreadCount}
         />
         <div className="inventory-content">
           {renderContent()}

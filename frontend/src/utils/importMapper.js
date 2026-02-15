@@ -12,13 +12,17 @@
 // ---------------------------------------------------------------------------
 
 const FIELD_ALIASES = {
+  external_id: [
+    'external_id', 'id', 'id_number', 'request_id', 'order_id', 'ref',
+    'reference', 'ticket', 'ticket_number', 'row_id',
+  ],
   item: [
     'item', 'product', 'sku', 'catalog_item', 'item_name', 'product_name',
-    'catalog', 'name', 'material', 'type',
+    'catalog', 'material', 'type',
   ],
   quantity: [
     'quantity', 'qty', 'amount', 'count', 'units', 'num', 'number',
-    'order_quantity', 'order_qty',
+    'order_quantity', 'order_qty', 'qty_requested',
   ],
   requester_name: [
     'requester_name', 'requester', 'requestor', 'requestor_name',
@@ -54,16 +58,39 @@ const FIELD_ALIASES = {
     'notes', 'note', 'comments', 'comment', 'description', 'message',
     'special_instructions', 'instructions', 'remarks',
   ],
+  admin_notes: [
+    'admin_notes', 'admin_note', 'input_admin_notes', 'internal_notes',
+    'admin_comments', 'staff_notes',
+  ],
   printer_notes: [
-    'printer_notes', 'producer_notes', 'internal_notes', 'admin_notes',
+    'printer_notes', 'printer_note', 'producer_notes', 'maker_notes',
     'fulfillment_notes',
   ],
+  assigned_to: [
+    'assigned_to', 'claimed_by', 'producer', 'printer', 'fulfilled_by',
+    'shipped_by', 'assigned', 'printer_name', 'producer_name',
+    'maker', 'maker_name', 'assignee',
+  ],
   status: [
-    'status', 'state', 'order_status', 'request_status',
+    'status', 'order_status', 'request_status', 'shipped_status',
+    'delivery_status', 'click_link_to_mark_as_shipped_or_add_notes',
+    'click_link_to_mark_as_shipped', 'mark_as_shipped',
+    'fulfillment_status', 'shipping_status',
   ],
   date: [
     'date', 'created', 'created_at', 'order_date', 'request_date',
     'submitted', 'submitted_at', 'timestamp',
+  ],
+  shipped_date: [
+    'shipped_date', 'ship_date', 'fulfilled_date', 'fulfillment_date',
+    'date_shipped', 'delivery_date',
+  ],
+  quantity_shipped: [
+    'quantity_shipped', 'qty_shipped', 'shipped_quantity', 'shipped_qty',
+    'amount_shipped',
+  ],
+  cancelled: [
+    'cancelled', 'canceled', 'cancel', 'void', 'voided',
   ],
 };
 
@@ -113,7 +140,8 @@ export function autoMapColumns(sourceHeaders) {
   for (const { src, target, confidence } of matches) {
     if (target && !usedTargets.has(target) && confidence > 0) {
       result[src] = { target, confidence };
-      usedTargets.add(target);
+      // Allow multiple columns to map to 'status' — don't block it
+      if (target !== 'status') usedTargets.add(target);
     } else {
       result[src] = { target: null, confidence: 0 };
     }
@@ -143,6 +171,8 @@ export function flattenMapping(autoMap) {
 export function inferStatus(rawStatus) {
   if (!rawStatus) return 'open';
   const s = String(rawStatus).toLowerCase().trim();
+
+  // Exact match lookup
   const map = {
     open: 'open',
     new: 'open',
@@ -150,7 +180,11 @@ export function inferStatus(rawStatus) {
     pending_approval: 'pending_approval',
     approved: 'approved',
     claimed: 'claimed',
+    assigned: 'claimed',
     shipped: 'shipped',
+    'shipped!': 'shipped',
+    'in transit': 'shipped',
+    'in_transit': 'shipped',
     delivered: 'delivered',
     cancelled: 'cancelled',
     canceled: 'cancelled',
@@ -160,8 +194,24 @@ export function inferStatus(rawStatus) {
     completed: 'delivered',
     done: 'delivered',
     fulfilled: 'delivered',
+    'mark as shipped': 'claimed',
+    'not started': 'open',
+    'in progress': 'claimed',
+    'in_progress': 'claimed',
   };
-  return map[s] || 'open';
+  if (map[s]) return map[s];
+
+  // Pattern-based matching for freeform status text (e.g. CSV columns
+  // like "Click link to mark as shipped or add notes")
+  if (s.includes('shipped') || s.includes('sent') || s.includes('mailed')) return 'shipped';
+  if (s.includes('deliver') || s.includes('complete') || s.includes('done') || s.includes('fulfill')) return 'delivered';
+  if (s.includes('cancel') || s.includes('void')) return 'cancelled';
+  if (s.includes('claim') || s.includes('assign') || s.includes('progress')) return 'claimed';
+  if (s.includes('approv')) return 'approved';
+  if (s.includes('pend') || s.includes('waiting') || s.includes('review')) return 'pending_approval';
+  if (s.includes('block') || s.includes('reject') || s.includes('denied')) return 'blocked';
+
+  return 'open';
 }
 
 /**

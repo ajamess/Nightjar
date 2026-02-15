@@ -16,7 +16,7 @@ const MS_PER_DAY = 86400000;
 function makeRequest(overrides = {}) {
   return {
     id: `req-${Math.random().toString(36).slice(2, 8)}`,
-    itemId: 'item-1',
+    catalogItemId: 'item-1',
     quantity: 1,
     status: 'open',
     urgent: false,
@@ -148,8 +148,8 @@ describe('assignRequests', () => {
 
   it('should handle multiple items independently', () => {
     const requests = [
-      makeRequest({ id: 'r-item1', itemId: 'item-1', quantity: 1 }),
-      makeRequest({ id: 'r-item2', itemId: 'item-2', quantity: 1 }),
+      makeRequest({ id: 'r-item1', catalogItemId: 'item-1', quantity: 1 }),
+      makeRequest({ id: 'r-item2', catalogItemId: 'item-2', quantity: 1 }),
     ];
     const capacities = {
       'producer-a': {
@@ -170,8 +170,8 @@ describe('assignRequests', () => {
 
   it('should filter by itemId when provided', () => {
     const requests = [
-      makeRequest({ id: 'r1', itemId: 'item-1', quantity: 1 }),
-      makeRequest({ id: 'r2', itemId: 'item-2', quantity: 1 }),
+      makeRequest({ id: 'r1', catalogItemId: 'item-1', quantity: 1 }),
+      makeRequest({ id: 'r2', catalogItemId: 'item-2', quantity: 1 }),
     ];
     const capacities = {
       'producer-a': {

@@ -1,5 +1,6 @@
 // Jest setup file
 import { jest } from '@jest/globals';
+import '@testing-library/jest-dom';
 
 // Mock window.crypto for tests
 const mockCrypto = {

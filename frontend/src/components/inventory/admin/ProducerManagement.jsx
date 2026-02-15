@@ -10,25 +10,35 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import StatusBadge from '../common/StatusBadge';
 import RequestDetail from '../common/RequestDetail';
 import './ProducerManagement.css';
 
 export default function ProducerManagement() {
   const ctx = useInventory();
-  const sync = useInventorySync(ctx, ctx.inventorySystemId);
+  const sync = ctx;
   const [selectedProducer, setSelectedProducer] = useState(null);
 
   const requests = sync.requests || [];
   const capacities = sync.producerCapacities || {};
 
-  // Build producer list from collaborators who are editors
+  // Build producer list from collaborators who are editors/owners, including admin
   const producers = useMemo(() => {
     const collaborators = ctx.collaborators || [];
     const editors = collaborators.filter(c =>
       c.permission === 'editor' || c.permission === 'owner'
     );
+
+    // Ensure the current user (admin) appears even if not in collaborators list
+    const myKey = ctx.userIdentity?.publicKeyBase62;
+    if (myKey && !editors.find(c => c.publicKey === myKey)) {
+      editors.unshift({
+        publicKey: myKey,
+        displayName: ctx.userIdentity?.displayName || ctx.userIdentity?.name || 'Me',
+        permission: 'owner',
+        isOnline: true,
+      });
+    }
 
     return editors.map(collab => {
       const key = collab.publicKey;
@@ -104,7 +114,7 @@ export default function ProducerManagement() {
         <div className="pm-table-section">
           {producers.length === 0 ? (
             <div className="pm-empty">
-              <p>No producers found. Invite collaborators with editor permission to become producers.</p>
+              <p>No producers found. You'll appear here once you set your capacity, or invite collaborators with editor permission.</p>
             </div>
           ) : (
             <table className="pm-table">

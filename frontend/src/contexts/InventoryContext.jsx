@@ -4,6 +4,10 @@
  * Provides inventory-specific Yjs data to all inventory components without prop-drilling.
  * Follows the PresenceContext pattern: createContext(null) → custom hook with null-check → Provider with useMemo.
  * 
+ * The Provider also calls useInventorySync internally so child components get reactive
+ * derived state (requests, catalogItems, etc.) directly from context instead of each
+ * calling useInventorySync themselves.
+ * 
  * Usage: InventoryDashboard wraps its children in <InventoryProvider>, and all child components
  * (CatalogManager, AllRequests, OpenRequests, etc.) call useInventory() to access data.
  * 
@@ -11,6 +15,7 @@
  */
 
 import { createContext, useContext, useMemo } from 'react';
+import { useInventorySync } from '../hooks/useInventorySync';
 
 const InventoryContext = createContext(null);
 
@@ -41,6 +46,7 @@ export function useInventory() {
  * @param {Y.Map} props.yAddressReveals - Yjs map of encrypted reveals
  * @param {Y.Map} props.yPendingAddresses - Yjs map of pending addresses
  * @param {Y.Array} props.yInventoryAuditLog - Yjs array of audit entries
+ * @param {Y.Array} props.yInventoryNotifications - Yjs array of notifications
  * @param {Object} props.userIdentity - Current user identity (publicKeyBase62, etc.)
  * @param {Array} props.collaborators - Workspace collaborators list
  */
@@ -55,10 +61,26 @@ export function InventoryProvider({
   yAddressReveals,
   yPendingAddresses,
   yInventoryAuditLog,
+  yInventoryNotifications,
   userIdentity,
   collaborators,
 }) {
+  // Call useInventorySync once here so children don't need to
+  const sync = useInventorySync(
+    {
+      yInventorySystems,
+      yCatalogItems,
+      yInventoryRequests,
+      yProducerCapacities,
+      yAddressReveals,
+      yPendingAddresses,
+      yInventoryAuditLog,
+    },
+    inventorySystemId
+  );
+
   const value = useMemo(() => ({
+    // Raw Yjs refs (for mutations)
     inventorySystemId,
     workspaceId,
     yInventorySystems,
@@ -68,13 +90,17 @@ export function InventoryProvider({
     yAddressReveals,
     yPendingAddresses,
     yInventoryAuditLog,
+    yInventoryNotifications,
     userIdentity,
     collaborators,
+    // Derived reactive state from useInventorySync
+    ...sync,
   }), [
     inventorySystemId, workspaceId,
     yInventorySystems, yCatalogItems, yInventoryRequests,
     yProducerCapacities, yAddressReveals, yPendingAddresses,
-    yInventoryAuditLog, userIdentity, collaborators,
+    yInventoryAuditLog, yInventoryNotifications, userIdentity, collaborators,
+    sync,
   ]);
 
   return (

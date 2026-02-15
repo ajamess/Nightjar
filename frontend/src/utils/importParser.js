@@ -8,6 +8,7 @@
  */
 
 import * as XLSX from 'xlsx';
+import { inferStatus } from './importMapper';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -55,7 +56,21 @@ export async function parseFile(file, opts = {}) {
     if (isEmptyRow(row)) continue;
     const obj = {};
     rawHeaders.forEach((h, ci) => {
-      if (h) obj[h] = row[ci] != null ? String(row[ci]).trim() : '';
+      if (h) {
+        const val = row[ci];
+        // Preserve numeric values (e.g., Excel serial dates from SheetJS)
+        // so downstream parsers like parseDate can handle them correctly.
+        // Only coerce non-numeric, non-boolean values to strings.
+        if (val == null) {
+          obj[h] = '';
+        } else if (typeof val === 'number') {
+          obj[h] = val;
+        } else if (typeof val === 'boolean') {
+          obj[h] = val;
+        } else {
+          obj[h] = String(val).trim();
+        }
+      }
     });
     rows.push(obj);
   }
@@ -101,26 +116,56 @@ function isEmptyRow(row) {
  * Validate a single parsed row against the column mapping.
  *
  * @param {object} row – raw parsed row
- * @param {object} mapping – { sourceCol: targetField }
+ * @param {object} mapping – { sourceCol: targetField, __defaultItem?, __defaultStatus? }
  * @param {object} catalogLookup – { itemName: catalogItem }
- * @returns {{ valid: boolean, warnings: string[], errors: string[] }}
+ * @param {object[]} [collaborators] – workspace collaborators for assigned_to validation
+ * @returns {{ valid: boolean, warnings: string[], errors: string[], mapped: object }}
  */
-export function validateRow(row, mapping, catalogLookup = {}) {
+export function validateRow(row, mapping, catalogLookup = {}, collaborators = []) {
   const errors = [];
   const warnings = [];
 
-  // Map source → target
+  // Map source → target (skip internal keys prefixed with __)
+  // Multiple source columns can map to 'status' — merge them
   const mapped = {};
+  const statusSources = [];
   for (const [src, tgt] of Object.entries(mapping)) {
-    if (tgt && tgt !== '__skip__') {
-      mapped[tgt] = row[src] ?? '';
+    if (tgt && typeof tgt === 'string' && tgt !== '__skip__' && typeof src === 'string' && !src.startsWith('__')) {
+      if (tgt === 'status') {
+        // Collect all status source values for merging
+        const val = row[src] ?? '';
+        if (val) statusSources.push(val);
+      } else {
+        mapped[tgt] = row[src] ?? '';
+      }
     }
   }
+  // Merge status sources: pick the most specific non-empty value
+  if (statusSources.length > 0) {
+    // Prefer a value that looks like a real status (e.g. "Shipped!") over generic text
+    let bestStatus = statusSources[0];
+    for (const sv of statusSources) {
+      const inferred = inferStatus(sv);
+      if (inferred !== 'open') {
+        bestStatus = sv;
+        break;
+      }
+    }
+    mapped.status = bestStatus;
+  }
 
-  // Required: item, quantity, requesterState
+  // Apply defaults from ColumnMapper for fields that weren't mapped or are empty
+  if (!mapped.item && mapping.__defaultItem) {
+    mapped.item = mapping.__defaultItem;
+  }
+  if (!mapped.status) {
+    mapped.status = mapping.__defaultStatus || 'open';
+  }
+
+  // Required: item, quantity
   if (!mapped.item) errors.push('Missing item');
   else if (catalogLookup && Object.keys(catalogLookup).length > 0) {
-    const key = mapped.item.trim().toLowerCase();
+    const key = String(mapped.item).trim().toLowerCase();
     if (!Object.keys(catalogLookup).some(k => k.toLowerCase() === key)) {
       warnings.push(`Unknown catalog item: "${mapped.item}"`);
     }
@@ -135,8 +180,21 @@ export function validateRow(row, mapping, catalogLookup = {}) {
 
   if (mapped.requester_state) {
     // Loose validation — just flag suspicious
-    if (mapped.requester_state.length > 2 && mapped.requester_state.length < 4) {
+    const stateStr = String(mapped.requester_state);
+    if (stateStr.length > 2 && stateStr.length < 4) {
       warnings.push(`State may be abbreviated incorrectly: "${mapped.requester_state}"`);
+    }
+  }
+
+  // Validate assigned_to against collaborators if present
+  if (mapped.assigned_to && collaborators.length > 0) {
+    const nameToMatch = String(mapped.assigned_to).trim().toLowerCase();
+    const match = collaborators.find(c =>
+      (c.displayName || '').toLowerCase() === nameToMatch ||
+      (c.name || '').toLowerCase() === nameToMatch
+    );
+    if (!match) {
+      warnings.push(`Unknown producer: "${mapped.assigned_to}" — will need manual mapping`);
     }
   }
 

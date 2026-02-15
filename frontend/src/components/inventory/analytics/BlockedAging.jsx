@@ -36,7 +36,7 @@ export default function BlockedAging({ requests }) {
       .filter(r => r.status === 'blocked')
       .map(r => ({
         ...r,
-        ageDays: Math.floor((now - r.createdAt) / 86400000),
+        ageDays: Math.floor((now - (r.requestedAt || r.createdAt || 0)) / 86400000),
       }))
       .sort((a, b) => b.ageDays - a.ageDays);
 
@@ -97,9 +97,9 @@ export default function BlockedAging({ requests }) {
             <tbody>
               {blocked.slice(0, 20).map(r => (
                 <tr key={r.id} className={r.ageDays > 14 ? 'aged-out' : ''}>
-                  <td>{r.item}</td>
+                  <td>{r.catalogItemName || 'Unknown'}</td>
                   <td>{r.quantity}</td>
-                  <td>{r.requesterState || '—'}</td>
+                  <td>{r.state || '—'}</td>
                   <td>{r.ageDays}d</td>
                   <td>
                     {r.ageDays > 14 && <span className="ba-alert">⚠️</span>}

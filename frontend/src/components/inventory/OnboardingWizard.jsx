@@ -37,11 +37,12 @@ export default function OnboardingWizard({ onComplete }) {
     name: '',
     unit: 'units',
     quantityMin: 1,
-    quantityMax: 5000,
+    quantityMax: '',
     quantityStep: 1,
     sku: '',
     category: '',
   });
+  const [noMax, setNoMax] = useState(true);
 
   const handleSaveConfig = useCallback(() => {
     const name = systemName.trim();
@@ -70,9 +71,11 @@ export default function OnboardingWizard({ onComplete }) {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'system_configured',
-      entityId: inventorySystemId,
-      entityType: 'system',
-      details: { name, icon: systemIcon, requireApproval, autoAssign },
+      targetId: inventorySystemId,
+      targetType: 'system',
+      summary: `System configured: "${name}" (approval=${requireApproval}, autoAssign=${autoAssign})`,
+      actorId: '',
+      actorRole: 'owner',
       timestamp: Date.now(),
     }]);
 
@@ -92,7 +95,7 @@ export default function OnboardingWizard({ onComplete }) {
       name: firstItem.name.trim(),
       unit: firstItem.unit.trim(),
       quantityMin: Number(firstItem.quantityMin),
-      quantityMax: Number(firstItem.quantityMax),
+      quantityMax: noMax ? null : Number(firstItem.quantityMax),
       quantityStep: Number(firstItem.quantityStep),
       sku: firstItem.sku?.trim() || '',
       category: firstItem.category?.trim() || '',
@@ -106,15 +109,17 @@ export default function OnboardingWizard({ onComplete }) {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'catalog_item_added',
-      entityId: item.id,
-      entityType: 'catalog_item',
-      details: { name: item.name },
+      targetId: item.id,
+      targetType: 'catalog_item',
+      summary: `Catalog item added: "${item.name}"`,
+      actorId: '',
+      actorRole: 'owner',
       timestamp: Date.now(),
     }]);
 
     showToast(`Added "${item.name}" to catalog`, 'success');
     setStep(3);
-  }, [firstItem, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [firstItem, noMax, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast]);
 
   const handleSkipItem = () => setStep(3);
 
@@ -160,7 +165,7 @@ export default function OnboardingWizard({ onComplete }) {
                 type="text"
                 value={systemName}
                 onChange={e => setSystemName(e.target.value)}
-                placeholder="e.g., Whistle Distribution"
+                placeholder="e.g., Toy Distribution"
                 autoFocus
               />
             </label>
@@ -168,7 +173,7 @@ export default function OnboardingWizard({ onComplete }) {
             <div className="onboarding-wizard__icon-picker">
               <label>Choose Icon</label>
               <div className="onboarding-icon-grid">
-                {['📦', '🏭', '🎵', '🔧', '📋', '🎁', '🛒', '⚙️'].map(icon => (
+                {['📦', '🏭', '🧸', '🔧', '📋', '🎁', '🛒', '⚙️'].map(icon => (
                   <button
                     key={icon}
                     type="button"
@@ -228,7 +233,7 @@ export default function OnboardingWizard({ onComplete }) {
                     type="text"
                     value={firstItem.name}
                     onChange={e => setFirstItem({ ...firstItem, name: e.target.value })}
-                    placeholder="e.g., Standard Whistle"
+                    placeholder="e.g., Rubber Duck"
                   />
                 </label>
                 <label>
@@ -255,10 +260,20 @@ export default function OnboardingWizard({ onComplete }) {
                   Max qty
                   <input
                     type="number"
-                    value={firstItem.quantityMax}
+                    value={noMax ? '' : firstItem.quantityMax}
                     onChange={e => setFirstItem({ ...firstItem, quantityMax: e.target.value })}
                     min="1"
+                    disabled={noMax}
+                    placeholder={noMax ? '∞' : ''}
                   />
+                  <label className="catalog-form__no-max">
+                    <input
+                      type="checkbox"
+                      checked={noMax}
+                      onChange={e => setNoMax(e.target.checked)}
+                    />
+                    No max
+                  </label>
                 </label>
                 <label>
                   Step
@@ -277,7 +292,7 @@ export default function OnboardingWizard({ onComplete }) {
                     type="text"
                     value={firstItem.sku}
                     onChange={e => setFirstItem({ ...firstItem, sku: e.target.value })}
-                    placeholder="e.g., WH-001"
+                    placeholder="e.g., TOY-001"
                   />
                 </label>
                 <label>
@@ -286,7 +301,7 @@ export default function OnboardingWizard({ onComplete }) {
                     type="text"
                     value={firstItem.category}
                     onChange={e => setFirstItem({ ...firstItem, category: e.target.value })}
-                    placeholder="e.g., Whistles"
+                    placeholder="e.g., Toys"
                   />
                 </label>
               </div>

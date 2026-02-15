@@ -12,7 +12,7 @@ import { useInventory } from '../../../contexts/InventoryContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { getSavedAddresses, storeSavedAddress, deleteSavedAddress } from '../../../utils/inventorySavedAddresses';
 import { getWorkspaceKeyMaterial } from '../../../utils/inventoryAddressStore';
-import { validateAddress, US_STATES } from '../../../utils/inventoryValidation';
+import { validateAddress, US_STATES, COUNTRIES } from '../../../utils/inventoryValidation';
 import './SavedAddresses.css';
 
 const EMPTY = {
@@ -24,6 +24,7 @@ const EMPTY = {
   state: '',
   zip: '',
   phone: '',
+  country: 'US',
 };
 
 export default function SavedAddresses({ currentWorkspace }) {
@@ -194,6 +195,7 @@ export default function SavedAddresses({ currentWorkspace }) {
 
 function AddressForm({ addr, onChange }) {
   const h = (field, value) => onChange({ ...addr, [field]: value });
+  const country = addr.country || 'US';
   return (
     <div className="address-form">
       <label>
@@ -212,20 +214,30 @@ function AddressForm({ addr, onChange }) {
         Address Line 2
         <input type="text" value={addr.line2 || ''} onChange={e => h('line2', e.target.value)} placeholder="Apt 4B" />
       </label>
+      <label>
+        Country
+        <select value={country} onChange={e => { h('country', e.target.value); h('state', ''); }}>
+          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </label>
       <div className="address-form__row">
         <label>
           City *
           <input type="text" value={addr.city} onChange={e => h('city', e.target.value)} placeholder="Nashville" />
         </label>
         <label>
-          State *
-          <select value={addr.state} onChange={e => h('state', e.target.value)}>
-            <option value="">Select</option>
-            {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {country === 'US' ? 'State *' : 'State/Province *'}
+          {country === 'US' ? (
+            <select value={addr.state} onChange={e => h('state', e.target.value)}>
+              <option value="">Select</option>
+              {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <input type="text" value={addr.state} onChange={e => h('state', e.target.value)} placeholder="Province" />
+          )}
         </label>
         <label>
-          ZIP *
+          {country === 'US' ? 'ZIP *' : 'Postal Code *'}
           <input type="text" value={addr.zip} onChange={e => h('zip', e.target.value)} placeholder="37201" maxLength={10} />
         </label>
       </div>

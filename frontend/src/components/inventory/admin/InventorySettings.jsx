@@ -3,19 +3,14 @@
 
 import React, { useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import useInventorySync from '../../../hooks/useInventorySync';
 import { generateId } from '../../../utils/inventoryValidation';
 import { assignRequests } from '../../../utils/inventoryAssignment';
+import { SHIPPING_PROVIDERS, getAllProviderIds } from '../../../utils/shippingProviders';
 import './InventorySettings.css';
 
 export default function InventorySettings() {
   const ctx = useInventory();
-  const { currentSystem, requests, producerCapacities } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems, yInventoryRequests: ctx.yInventoryRequests,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog: ctx.yInventoryAuditLog },
-    ctx.inventorySystemId
-  );
+  const { currentSystem, requests, producerCapacities } = ctx;
 
   const [systemName, setSystemName] = useState(currentSystem?.name || '');
   const [dirty, setDirty] = useState(false);
@@ -241,6 +236,37 @@ export default function InventorySettings() {
             ❌ {assignResult.error}
           </div>
         )}
+      </section>
+
+      {/* Shipping Providers */}
+      <section className="is-section">
+        <h3>Shipping Providers</h3>
+        <p className="is-section-desc">
+          Choose which shipping providers appear on the address reveal screen. Producers can one-click copy the address and open the provider's label page.
+        </p>
+        {SHIPPING_PROVIDERS.map(provider => {
+          const enabledIds = settings.enabledShippingProviders || getAllProviderIds();
+          const isEnabled = enabledIds.includes(provider.id);
+          return (
+            <label className="is-toggle" key={provider.id}>
+              <div className="is-toggle-info">
+                <span className="is-toggle-title">{provider.icon} {provider.name}</span>
+                <span className="is-toggle-desc">{provider.description}</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={isEnabled}
+                onChange={e => {
+                  const current = settings.enabledShippingProviders || getAllProviderIds();
+                  const next = e.target.checked
+                    ? [...current, provider.id]
+                    : current.filter(id => id !== provider.id);
+                  updateSetting('enabledShippingProviders', next);
+                }}
+              />
+            </label>
+          );
+        })}
       </section>
 
       {/* Danger zone */}

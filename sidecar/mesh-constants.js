@@ -146,6 +146,13 @@ const MESSAGE_TYPES = {
   // Health/ping
   PING: 'ping',
   PONG: 'pong',
+  
+  // File Storage P2P transfer (see docs/FILE_STORAGE_SPEC.md §8)
+  FILE_CHUNK_REQUEST: 'file-chunk-request',
+  FILE_CHUNK_RESPONSE: 'file-chunk-response',
+  FILE_AVAILABILITY_ANNOUNCE: 'file-availability-announce',
+  FILE_AVAILABILITY_QUERY: 'file-availability-query',
+  FILE_SEED_STATUS: 'file-seed-status',
 };
 
 // =============================================================================

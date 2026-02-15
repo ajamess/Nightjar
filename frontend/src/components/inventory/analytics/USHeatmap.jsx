@@ -36,17 +36,17 @@ export default function USHeatmap({ requests, dateRange, onStateFilter }) {
 
   const stateData = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
-    const inRange = requests.filter(r => r.createdAt >= from && r.createdAt <= to);
+    const inRange = requests.filter(r => (r.requestedAt || r.createdAt || 0) >= from && (r.requestedAt || r.createdAt || 0) <= to);
 
     const byState = {};
     for (const r of inRange) {
-      const st = (r.requesterState || '').toUpperCase().trim();
+      const st = (r.state || r.requesterState || '').toUpperCase().trim();
       if (!st) continue;
       if (!byState[st]) byState[st] = { requests: 0, units: 0, totalDays: 0, fulfilled: 0 };
       byState[st].requests++;
       byState[st].units += r.quantity || 0;
-      if (r.shippedAt && r.createdAt) {
-        byState[st].totalDays += (r.shippedAt - r.createdAt) / 86400000;
+      if (r.shippedAt && (r.requestedAt || r.createdAt)) {
+        byState[st].totalDays += (r.shippedAt - (r.requestedAt || r.createdAt)) / 86400000;
         byState[st].fulfilled++;
       }
     }

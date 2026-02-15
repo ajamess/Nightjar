@@ -10,10 +10,10 @@
 import React, { useMemo, useState } from 'react';
 
 const GROUP_KEYS = [
-  { key: 'item', label: 'Item', accessor: r => r.item || 'Unknown' },
-  { key: 'requesterState', label: 'State', accessor: r => r.requesterState || 'Unknown' },
+  { key: 'item', label: 'Item', accessor: r => r.catalogItemName || 'Unknown' },
+  { key: 'requesterState', label: 'State', accessor: r => r.state || 'Unknown' },
   { key: 'status', label: 'Status', accessor: r => r.status || 'Unknown' },
-  { key: 'urgency', label: 'Urgency', accessor: r => r.urgency || 'normal' },
+  { key: 'urgency', label: 'Urgency', accessor: r => r.urgent ? 'urgent' : 'normal' },
   { key: 'assignedTo', label: 'Producer', accessor: r => r.assignedTo || 'Unassigned' },
 ];
 
@@ -25,7 +25,7 @@ export default function PivotTable({ requests, collaborators, dateRange }) {
 
   const grouped = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
-    const inRange = requests.filter(r => r.createdAt >= from && r.createdAt <= to);
+    const inRange = requests.filter(r => (r.requestedAt || 0) >= from && (r.requestedAt || 0) <= to);
 
     const gDef = GROUP_KEYS.find(g => g.key === groupBy);
     if (!gDef) return [];
@@ -44,8 +44,8 @@ export default function PivotTable({ requests, collaborators, dateRange }) {
       b.units += r.quantity || 0;
       if (r.status === 'shipped' || r.status === 'delivered') {
         b.shipped++;
-        if (r.shippedAt && r.createdAt) {
-          b.totalDays += (r.shippedAt - r.createdAt) / 86400000;
+        if (r.shippedAt && r.requestedAt) {
+          b.totalDays += (r.shippedAt - r.requestedAt) / 86400000;
           b.fulfilledCount++;
         }
       }

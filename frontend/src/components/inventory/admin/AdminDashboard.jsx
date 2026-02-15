@@ -9,11 +9,11 @@
 
 import React, { useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import { useToast } from '../../../contexts/ToastContext';
 import StatusBadge from '../common/StatusBadge';
 import RequestCard from '../common/RequestCard';
 import { formatDate, formatRelativeDate, generateId } from '../../../utils/inventoryValidation';
+import { pushNotification } from '../../../utils/inventoryNotifications';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart } from 'recharts';
 import './AdminDashboard.css';
 
@@ -21,15 +21,8 @@ const MS_PER_DAY = 86400000;
 
 export default function AdminDashboard({ onNavigate }) {
   const ctx = useInventory();
-  const { yInventoryRequests, yInventoryAuditLog, inventorySystemId, collaborators } = ctx;
-  const { currentSystem, requests, producerCapacities, openRequestCount, pendingApprovalCount } =
-    useInventorySync(
-      { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems,
-        yInventoryRequests, yProducerCapacities: ctx.yProducerCapacities,
-        yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-        yInventoryAuditLog },
-      inventorySystemId
-    );
+  const { yInventoryRequests, yInventoryAuditLog, inventorySystemId, collaborators, userIdentity,
+    currentSystem, requests, producerCapacities, openRequestCount, pendingApprovalCount } = ctx;
   const { showToast } = useToast();
 
   // Derived counts
@@ -68,13 +61,33 @@ export default function AdminDashboard({ onNavigate }) {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'request_approved',
-      entityId: req.id,
-      entityType: 'request',
-      details: { item: req.catalogItemName },
+      targetId: req.id,
+      targetType: 'request',
+      summary: `Request ${req.id?.slice(0, 8)} approved (${req.catalogItemName})`,
+      actorId: userIdentity?.publicKeyBase62 || '',
+      actorRole: 'owner',
       timestamp: Date.now(),
     }]);
+    // Notify the requestor
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_approved',
+      message: `Your request for ${req.catalogItemName} has been approved`,
+      relatedId: req.id,
+    });
+    // Notify the assigned producer (if any)
+    if (req.assignedTo) {
+      pushNotification(ctx.yInventoryNotifications, {
+        inventorySystemId,
+        recipientId: req.assignedTo,
+        type: 'request_approved',
+        message: `Request for ${req.catalogItemName} you claimed has been approved`,
+        relatedId: req.id,
+      });
+    }
     showToast(`Request #${req.id?.slice(4, 10)} approved`, 'success');
-  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, ctx.yInventoryNotifications]);
 
   const handleReject = useCallback((req) => {
     const items = yInventoryRequests.toArray();
@@ -87,13 +100,33 @@ export default function AdminDashboard({ onNavigate }) {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'request_rejected',
-      entityId: req.id,
-      entityType: 'request',
-      details: { item: req.catalogItemName },
+      targetId: req.id,
+      targetType: 'request',
+      summary: `Request ${req.id?.slice(0, 8)} rejected (${req.catalogItemName})`,
+      actorId: userIdentity?.publicKeyBase62 || '',
+      actorRole: 'owner',
       timestamp: Date.now(),
     }]);
+    // Notify the requestor
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_rejected',
+      message: `Your request for ${req.catalogItemName} was returned to open`,
+      relatedId: req.id,
+    });
+    // Notify the producer if they claimed it
+    if (req.assignedTo) {
+      pushNotification(ctx.yInventoryNotifications, {
+        inventorySystemId,
+        recipientId: req.assignedTo,
+        type: 'request_rejected',
+        message: `Request for ${req.catalogItemName} you claimed was rejected`,
+        relatedId: req.id,
+      });
+    }
     showToast(`Request #${req.id?.slice(4, 10)} rejected — returned to Open`, 'success');
-  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, ctx.yInventoryNotifications]);
 
   const getAssignedName = (pubkey) => {
     if (!pubkey) return null;
@@ -168,7 +201,19 @@ export default function AdminDashboard({ onNavigate }) {
                 </span>
                 <div className="admin-blocked-card__actions">
                   <button className="btn-sm" onClick={() => onNavigate?.('approval-queue')}>→ Manual Assign</button>
-                  <button className="btn-sm" onClick={() => showToast('Producer notification sent', 'info')}>📧 Notify Producers</button>
+                  <button className="btn-sm" onClick={() => {
+                    const producers = collaborators.filter(c => c.role === 'editor');
+                    producers.forEach(p => {
+                      pushNotification(ctx.yInventoryNotifications, {
+                        inventorySystemId,
+                        recipientId: p.publicKeyBase62,
+                        type: 'blocked_request',
+                        message: `Blocked request for ${req.catalogItemName} (${req.quantity} ${req.unit}) needs a producer`,
+                        relatedId: req.id,
+                      });
+                    });
+                    showToast(`Notified ${producers.length} producer(s)`, 'success');
+                  }}>📧 Notify Producers</button>
                 </div>
               </div>
             ))}

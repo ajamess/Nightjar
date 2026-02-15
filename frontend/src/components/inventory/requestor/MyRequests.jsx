@@ -9,10 +9,11 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import { useToast } from '../../../contexts/ToastContext';
 import StatusBadge from '../common/StatusBadge';
 import { formatDate, formatRelativeDate, generateId } from '../../../utils/inventoryValidation';
+import { pushNotification } from '../../../utils/inventoryNotifications';
+import { parseTrackingNumber, genericTrackingUrl } from '../../../utils/trackingLinks';
 import './MyRequests.css';
 
 const STATUS_LABELS = {
@@ -31,18 +32,16 @@ const TIMELINE_ORDER = ['open', 'claimed', 'pending_approval', 'approved', 'in_p
 
 export default function MyRequests() {
   const ctx = useInventory();
-  const { yInventoryRequests, yInventoryAuditLog, inventorySystemId, userIdentity } = ctx;
-  const { requests, catalogItems } = useInventorySync(
-    { yInventorySystems: ctx.yInventorySystems, yCatalogItems: ctx.yCatalogItems,
-      yInventoryRequests, yProducerCapacities: ctx.yProducerCapacities,
-      yAddressReveals: ctx.yAddressReveals, yPendingAddresses: ctx.yPendingAddresses,
-      yInventoryAuditLog },
-    inventorySystemId
-  );
+  const { yInventoryRequests, yInventoryAuditLog, inventorySystemId, userIdentity,
+    requests, catalogItems } = ctx;
   const { showToast } = useToast();
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [itemFilter, setItemFilter] = useState('all');
+  const [editingId, setEditingId] = useState(null);
+  const [editQty, setEditQty] = useState('');
+  const [editUrgent, setEditUrgent] = useState(false);
+  const [editNotes, setEditNotes] = useState('');
 
   // My requests only
   const myRequests = useMemo(() => {
@@ -64,13 +63,134 @@ export default function MyRequests() {
       id: generateId('aud-'),
       inventorySystemId,
       action: 'request_cancelled',
-      entityId: req.id,
-      entityType: 'request',
-      details: { item: req.catalogItemName, cancelledBy: 'requestor' },
+      targetId: req.id,
+      targetType: 'request',
+      summary: `Request cancelled by requestor: ${req.catalogItemName}`,
+      actorId: userIdentity?.publicKeyBase62 || '',
+      actorRole: 'requestor',
       timestamp: Date.now(),
     }]);
+    // Notify the assigned producer if any
+    if (req.assignedTo) {
+      pushNotification(ctx.yInventoryNotifications, {
+        inventorySystemId,
+        recipientId: req.assignedTo,
+        type: 'request_cancelled',
+        message: `Request for ${req.catalogItemName} was cancelled by the requestor`,
+        relatedId: req.id,
+      });
+    }
     showToast(`Request #${req.id?.slice(4, 10)} cancelled`, 'success');
-  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity, ctx.yInventoryNotifications]);
+
+  const handleConfirmDelivered = useCallback((req) => {
+    const items = yInventoryRequests.toArray();
+    const idx = items.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    yInventoryRequests.delete(idx, 1);
+    yInventoryRequests.insert(idx, [{ ...items[idx], status: 'delivered', deliveredAt: Date.now(), updatedAt: Date.now() }]);
+    yInventoryAuditLog.push([{
+      id: generateId('aud-'),
+      inventorySystemId,
+      action: 'request_delivered',
+      targetId: req.id,
+      targetType: 'request',
+      summary: `Delivery confirmed by requestor: ${req.catalogItemName}`,
+      actorId: userIdentity?.publicKeyBase62 || '',
+      actorRole: 'requestor',
+      timestamp: Date.now(),
+    }]);
+    // Notify the producer that delivery was confirmed
+    if (req.assignedTo) {
+      pushNotification(ctx.yInventoryNotifications, {
+        inventorySystemId,
+        recipientId: req.assignedTo,
+        type: 'request_delivered',
+        message: `Delivery confirmed for ${req.catalogItemName}`,
+        relatedId: req.id,
+      });
+    }
+    showToast(`Request #${req.id?.slice(4, 10)} marked as delivered`, 'success');
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity, ctx.yInventoryNotifications]);
+
+  const handleRequestAgain = useCallback((req) => {
+    const now = Date.now();
+    const requestId = generateId('req-');
+    const newRequest = {
+      id: requestId,
+      displayId: '',
+      inventorySystemId,
+      catalogItemId: req.catalogItemId,
+      catalogItemName: req.catalogItemName,
+      quantity: req.quantity,
+      unit: req.unit,
+      city: req.city,
+      state: req.state,
+      urgent: false,
+      notes: '',
+      status: 'open',
+      requestedBy: userIdentity?.publicKeyBase62 || 'unknown',
+      requestedAt: now,
+      assignedTo: null,
+      approvedAt: null,
+      shippedAt: null,
+      trackingNumber: '',
+      adminNotes: '',
+      estimatedFulfillmentDate: null,
+    };
+    yInventoryRequests.push([newRequest]);
+    yInventoryAuditLog.push([{
+      id: generateId('aud-'),
+      inventorySystemId,
+      action: 'request_submitted',
+      targetId: requestId,
+      targetType: 'request',
+      summary: `Re-request: ${req.catalogItemName} x${req.quantity} to ${req.city}, ${req.state}`,
+      actorId: userIdentity?.publicKeyBase62 || '',
+      actorRole: 'requestor',
+      timestamp: now,
+    }]);
+    showToast(`New request for ${req.catalogItemName} submitted!`, 'success');
+  }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity]);
+
+  const handleStartEdit = useCallback((req) => {
+    setEditingId(req.id);
+    setEditQty(String(req.quantity));
+    setEditUrgent(req.urgent || false);
+    setEditNotes(req.notes || '');
+  }, []);
+
+  const handleSaveEdit = useCallback((req) => {
+    const qty = Number(editQty);
+    if (!qty || qty <= 0) {
+      showToast('Invalid quantity', 'error');
+      return;
+    }
+    const items = yInventoryRequests.toArray();
+    const idx = items.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    yInventoryRequests.delete(idx, 1);
+    yInventoryRequests.insert(idx, [{
+      ...items[idx],
+      quantity: qty,
+      urgent: editUrgent,
+      notes: editNotes.trim(),
+      updatedAt: Date.now(),
+    }]);
+    yInventoryAuditLog.push([{
+      id: generateId('aud-'),
+      inventorySystemId,
+      action: 'request_edited',
+      targetId: req.id,
+      targetType: 'request',
+      summary: `Request edited: qty=${qty}, urgent=${editUrgent}`,
+      actorId: userIdentity?.publicKeyBase62 || '',
+      actorRole: 'requestor',
+      timestamp: Date.now(),
+    }]);
+    setEditingId(null);
+    showToast('Request updated', 'success');
+  }, [editQty, editUrgent, editNotes, yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity]);
 
   // Build timeline for a request
   const getTimeline = (req) => {
@@ -120,9 +240,32 @@ export default function MyRequests() {
                 <div className="my-request-card__header">
                   <span className="my-request-card__id">#{req.id?.slice(4, 10)}</span>
                   <span className="my-request-card__item">{req.catalogItemName}</span>
-                  <span className="my-request-card__qty">{req.quantity?.toLocaleString()} {req.unit}</span>
-                  {req.urgent && <span className="my-request-card__urgent">⚡</span>}
+                  {editingId === req.id ? (
+                    <span className="my-request-card__qty">
+                      <input type="number" value={editQty} onChange={e => setEditQty(e.target.value)} min="1" className="edit-qty-input" />
+                      {req.unit}
+                    </span>
+                  ) : (
+                    <span className="my-request-card__qty">{req.quantity?.toLocaleString()} {req.unit}</span>
+                  )}
+                  {editingId === req.id ? (
+                    <label className="my-request-card__urgent-edit">
+                      <input type="checkbox" checked={editUrgent} onChange={e => setEditUrgent(e.target.checked)} /> ⚡
+                    </label>
+                  ) : (
+                    req.urgent && <span className="my-request-card__urgent">⚡</span>
+                  )}
                 </div>
+
+                {editingId === req.id && (
+                  <div className="my-request-card__edit-notes">
+                    <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Notes..." rows={2} />
+                    <div className="my-request-card__edit-actions">
+                      <button className="btn-sm btn-primary" onClick={() => handleSaveEdit(req)}>💾 Save</button>
+                      <button className="btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="my-request-card__status">
                   Status: <StatusBadge status={req.status} />
@@ -130,7 +273,15 @@ export default function MyRequests() {
 
                 {req.trackingNumber && (
                   <div className="my-request-card__tracking">
-                    Tracking: {req.trackingNumber}
+                    {(() => {
+                      const carrier = parseTrackingNumber(req.trackingNumber);
+                      const url = carrier?.url || genericTrackingUrl(req.trackingNumber);
+                      return (
+                        <a href={url} target="_blank" rel="noopener noreferrer">
+                          {carrier ? `${carrier.icon} ${carrier.carrier}: ` : 'Tracking: '}{req.trackingNumber} ↗
+                        </a>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -160,7 +311,20 @@ export default function MyRequests() {
 
                 {canCancel(req.status) && (
                   <div className="my-request-card__actions">
+                    {req.status === 'open' && editingId !== req.id && (
+                      <button className="btn-sm btn-secondary" onClick={() => handleStartEdit(req)}>✏️ Edit</button>
+                    )}
                     <button className="btn-sm btn-danger" onClick={() => handleCancel(req)}>Cancel Request</button>
+                  </div>
+                )}
+                {req.status === 'shipped' && (
+                  <div className="my-request-card__actions">
+                    <button className="btn-sm btn-success" onClick={() => handleConfirmDelivered(req)}>📬 Confirm Delivered</button>
+                  </div>
+                )}
+                {['shipped', 'delivered', 'cancelled'].includes(req.status) && (
+                  <div className="my-request-card__actions">
+                    <button className="btn-sm btn-secondary" onClick={() => handleRequestAgain(req)}>🔄 Request Again</button>
                   </div>
                 )}
               </div>

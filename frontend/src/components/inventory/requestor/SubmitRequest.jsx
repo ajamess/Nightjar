@@ -9,12 +9,12 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import { useToast } from '../../../contexts/ToastContext';
-import { validateQuantity, validateAddress, generateId, US_STATES } from '../../../utils/inventoryValidation';
+import { validateQuantity, validateAddress, generateId, US_STATES, COUNTRIES } from '../../../utils/inventoryValidation';
 import { getSavedAddresses, storeSavedAddress } from '../../../utils/inventorySavedAddresses';
 import { storeAddress, getWorkspaceKeyMaterial } from '../../../utils/inventoryAddressStore';
 import { encryptAddressForAdmins, getPublicKeyHex } from '../../../utils/addressCrypto';
+import { assignRequests } from '../../../utils/inventoryAssignment';
 import './SubmitRequest.css';
 
 const EMPTY_ADDRESS = {
@@ -25,18 +25,14 @@ const EMPTY_ADDRESS = {
   state: '',
   zip: '',
   phone: '',
+  country: 'US',
 };
 
 export default function SubmitRequest({ currentWorkspace, isOwner }) {
   const ctx = useInventory();
   const { yInventoryRequests, yInventoryAuditLog, yPendingAddresses,
-    inventorySystemId, workspaceId, userIdentity, collaborators } = ctx;
-  const { catalogItems } = useInventorySync(
-    { yCatalogItems: ctx.yCatalogItems, yInventoryRequests, yInventorySystems: ctx.yInventorySystems,
-      yProducerCapacities: ctx.yProducerCapacities, yAddressReveals: ctx.yAddressReveals,
-      yPendingAddresses, yInventoryAuditLog },
-    inventorySystemId
-  );
+    inventorySystemId, workspaceId, userIdentity, collaborators,
+    catalogItems, currentSystem, producerCapacities, requests: existingRequests } = ctx;
   const { showToast } = useToast();
 
   // Active catalog items only
@@ -48,6 +44,9 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
   const [urgent, setUrgent] = useState(false);
   const [notes, setNotes] = useState('');
 
+  // Cart state (batch submit)
+  const [cart, setCart] = useState([]);
+
   // Address state
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
@@ -57,6 +56,15 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
   const [newAddressLabel, setNewAddressLabel] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Rate limiting: 10 requests/day for non-admins
+  const DAILY_LIMIT = 10;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayRequestCount = existingRequests.filter(
+    r => r.requestedBy === userIdentity?.publicKeyBase62 && r.requestedAt >= todayStart.getTime()
+  ).length;
+  const rateLimitReached = !isOwner && todayRequestCount >= DAILY_LIMIT;
 
   const selectedItem = activeItems.find(i => i.id === selectedItemId);
 
@@ -92,18 +100,60 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
     return savedAddresses.find(a => a.id === selectedAddressId) || null;
   };
 
-  const handleSubmit = useCallback(async () => {
-    if (submitting) return;
-
-    // Validate item
+  const handleAddToCart = useCallback(() => {
     if (!selectedItem) {
       showToast('Please select a catalog item', 'error');
       return;
     }
-
-    // Validate quantity
     if (!qtyValidation.valid) {
       showToast(qtyValidation.error, 'error');
+      return;
+    }
+    setCart(prev => [...prev, {
+      id: Date.now().toString(36),
+      itemId: selectedItem.id,
+      itemName: selectedItem.name,
+      quantity: qtyNum,
+      unit: selectedItem.unit,
+      urgent,
+      notes: notes.trim(),
+    }]);
+    // Reset item fields but keep address
+    setQuantity('');
+    setUrgent(false);
+    setNotes('');
+    showToast(`Added ${selectedItem.name} x${qtyNum} to cart`, 'success');
+  }, [selectedItem, qtyNum, qtyValidation, urgent, notes, showToast]);
+
+  const handleRemoveFromCart = useCallback((cartId) => {
+    setCart(prev => prev.filter(c => c.id !== cartId));
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (submitting) return;
+
+    // Rate limit check
+    if (rateLimitReached) {
+      showToast(`Daily limit reached (${DAILY_LIMIT} requests/day). Try again tomorrow.`, 'error');
+      return;
+    }
+
+    // Build list of items to submit: cart items + current form item (if filled)
+    const itemsToSubmit = [...cart];
+    if (selectedItem && qtyValidation.valid) {
+      itemsToSubmit.push({
+        id: 'current',
+        itemId: selectedItem.id,
+        itemName: selectedItem.name,
+        quantity: qtyNum,
+        unit: selectedItem.unit,
+        urgent,
+        notes: notes.trim(),
+      });
+    }
+
+    if (itemsToSubmit.length === 0) {
+      showToast('Please select an item and quantity, or add items to your cart', 'error');
       return;
     }
 
@@ -118,31 +168,22 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
     setSubmitting(true);
 
     try {
-      const requestId = generateId('req-');
       const now = Date.now();
 
-      // Address encryption path depends on role (spec §7.2.6)
-      const km = await getWorkspaceKeyMaterial(currentWorkspace, workspaceId);
+      // Compute displayId base
+      let nextDisplayId = 0;
+      let hasAnyDisplayId = false;
+      try {
+        const existingReqs = yInventoryRequests.toArray();
+        for (const r of existingReqs) {
+          if (r.displayId) hasAnyDisplayId = true;
+          const did = parseInt(r.displayId, 10);
+          if (!isNaN(did) && did > nextDisplayId) nextDisplayId = did;
+        }
+      } catch { /* ignore */ }
 
-      if (isOwner) {
-        // Admin: store address locally with symmetric encryption
-        if (km) {
-          await storeAddress(km, inventorySystemId, requestId, address);
-        }
-      } else {
-        // Requestor: encrypt address to each admin's public key via nacl.box
-        // and write to yPendingAddresses for admin pickup
-        const admins = (collaborators || []).filter(
-          c => c.permission === 'owner' || c.permission === 'admin'
-        );
-        if (admins.length > 0 && userIdentity?.privateKey) {
-          const senderPubHex = getPublicKeyHex(userIdentity);
-          const entries = await encryptAddressForAdmins(
-            address, admins, userIdentity.privateKey, senderPubHex
-          );
-          yPendingAddresses.set(requestId, entries);
-        }
-      }
+      // Address encryption (once for all requests)
+      const km = await getWorkspaceKeyMaterial(currentWorkspace, workspaceId);
 
       // Save new address if requested
       if (showNewAddress && saveNewAddress && newAddressLabel.trim() && km) {
@@ -150,49 +191,112 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
           label: newAddressLabel.trim(),
           ...newAddress,
         });
-        // Refresh saved list
         const refreshed = await getSavedAddresses(km, userIdentity.publicKeyBase62);
         setSavedAddresses(refreshed);
       }
 
-      // Create request in Yjs (city/state only — no full address in CRDT)
-      const request = {
-        id: requestId,
-        inventorySystemId,
-        catalogItemId: selectedItem.id,
-        catalogItemName: selectedItem.name,
-        quantity: qtyNum,
-        unit: selectedItem.unit,
-        city: address.city,
-        state: address.state,
-        urgent,
-        notes: notes.trim(),
-        status: 'open',
-        requestedBy: userIdentity?.publicKeyBase62 || 'unknown',
-        requestedAt: now,
-        assignedTo: null,
-        approvedAt: null,
-        shippedAt: null,
-        trackingNumber: '',
-        adminNotes: '',
-        estimatedFulfillmentDate: null,
-      };
+      const requestIds = [];
+      for (const item of itemsToSubmit) {
+        const requestId = generateId('req-');
+        requestIds.push(requestId);
+        const displayId = hasAnyDisplayId ? String(++nextDisplayId) : '';
 
-      yInventoryRequests.push([request]);
+        // Address encryption per request
+        if (isOwner) {
+          if (km) {
+            await storeAddress(km, inventorySystemId, requestId, address);
+          }
+        } else {
+          const admins = (collaborators || []).filter(
+            c => c.permission === 'owner' || c.permission === 'admin'
+          );
+          if (admins.length > 0 && userIdentity?.privateKey) {
+            const senderPubHex = getPublicKeyHex(userIdentity);
+            const entries = await encryptAddressForAdmins(
+              address, admins, userIdentity.privateKey, senderPubHex
+            );
+            yPendingAddresses.set(requestId, entries);
+          }
+        }
 
-      yInventoryAuditLog.push([{
-        id: generateId('aud-'),
-        inventorySystemId,
-        action: 'request_submitted',
-        entityId: requestId,
-        entityType: 'request',
-        details: { item: selectedItem.name, quantity: qtyNum, city: address.city, state: address.state },
-        timestamp: now,
-      }]);
+        const request = {
+          id: requestId,
+          displayId,
+          inventorySystemId,
+          catalogItemId: item.itemId,
+          catalogItemName: item.itemName,
+          quantity: item.quantity,
+          unit: item.unit,
+          city: address.city,
+          state: address.state,
+          country: address.country || 'US',
+          urgent: item.urgent,
+          notes: item.notes,
+          status: 'open',
+          requestedBy: userIdentity?.publicKeyBase62 || 'unknown',
+          requestedAt: now,
+          assignedTo: null,
+          approvedAt: null,
+          shippedAt: null,
+          trackingNumber: '',
+          adminNotes: '',
+          estimatedFulfillmentDate: null,
+        };
 
-      showToast(`Request #${requestId.slice(4, 10)} submitted!`, 'success');
+        yInventoryRequests.push([request]);
+
+        yInventoryAuditLog.push([{
+          id: generateId('aud-'),
+          inventorySystemId,
+          action: 'request_submitted',
+          targetId: requestId,
+          targetType: 'request',
+          summary: `Request submitted: ${item.itemName} x${item.quantity} to ${address.city}, ${address.state}`,
+          actorId: userIdentity?.publicKeyBase62 || '',
+          actorRole: isOwner ? 'owner' : 'viewer',
+          timestamp: now,
+        }]);
+      }
+
+      // Auto-assign if enabled (spec §5.2)
+      const settings = currentSystem?.settings || {};
+      if (settings.autoAssignEnabled !== false) {
+        try {
+          const capMap = {};
+          if (ctx.yProducerCapacities?.forEach) {
+            ctx.yProducerCapacities.forEach((val, key) => { capMap[key] = val; });
+          }
+          const allReqs = yInventoryRequests.toArray();
+          for (const requestId of requestIds) {
+            const req = allReqs.find(r => r.id === requestId);
+            if (!req) continue;
+            const results = assignRequests(allReqs, capMap, req.catalogItemId);
+            const myAssignment = results.find(a => a.requestId === requestId && a.producerId);
+            if (myAssignment) {
+              const arr = yInventoryRequests.toArray();
+              const idx = arr.findIndex(r => r.id === requestId);
+              if (idx !== -1) {
+                yInventoryRequests.delete(idx, 1);
+                yInventoryRequests.insert(idx, [{
+                  ...arr[idx],
+                  status: 'claimed',
+                  assignedTo: myAssignment.producerId,
+                  assignedAt: now,
+                  estimatedFulfillmentDate: myAssignment.estimatedDate,
+                }]);
+              }
+            }
+          }
+        } catch {
+          // Auto-assign is best-effort
+        }
+      }
+
+      const count = itemsToSubmit.length;
+      showToast(`${count} request${count > 1 ? 's' : ''} submitted!`, 'success');
 
       // Reset form
+      setCart([]);
       setQuantity('');
       setUrgent(false);
       setNotes('');
@@ -207,7 +311,8 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
     }
   }, [selectedItem, qtyNum, qtyValidation, urgent, notes, showNewAddress, newAddress,
     saveNewAddress, newAddressLabel, submitting, currentWorkspace, workspaceId,
-    inventorySystemId, userIdentity, yInventoryRequests, yInventoryAuditLog, showToast]);
+    inventorySystemId, userIdentity, yInventoryRequests, yInventoryAuditLog, showToast, cart,
+    currentSystem, ctx, collaborators, isOwner, yPendingAddresses]);
 
   return (
     <div className="submit-request">
@@ -235,7 +340,7 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
                 <div>
                   <strong>{item.name}</strong>
                   <span className="submit-request__item-range">
-                    {item.quantityMin?.toLocaleString()} – {item.quantityMax?.toLocaleString()} {item.unit}
+                    {item.quantityMin?.toLocaleString()} – {item.quantityMax != null ? item.quantityMax.toLocaleString() : '∞'} {item.unit}
                     {item.quantityStep > 1 && ` (multiples of ${item.quantityStep})`}
                   </span>
                 </div>
@@ -254,9 +359,9 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
               type="number"
               value={quantity}
               onChange={e => setQuantity(e.target.value)}
-              placeholder={`${selectedItem.quantityMin} – ${selectedItem.quantityMax}`}
+              placeholder={`${selectedItem.quantityMin}${selectedItem.quantityMax != null ? ` – ${selectedItem.quantityMax}` : '+'}`}
               min={selectedItem.quantityMin}
-              max={selectedItem.quantityMax}
+              max={selectedItem.quantityMax != null ? selectedItem.quantityMax : undefined}
               step={selectedItem.quantityStep}
             />
             <span className="submit-request__unit">{selectedItem.unit}</span>
@@ -333,6 +438,15 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
                   placeholder="Apt 4B" />
               </label>
             </div>
+            <div className="submit-request__field-row">
+              <label>
+                Country
+                <select value={newAddress.country || 'US'}
+                  onChange={e => setNewAddress({ ...newAddress, country: e.target.value, state: '' })}>
+                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+            </div>
             <div className="submit-request__field-row two-col">
               <label>
                 City *
@@ -341,17 +455,23 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
                   placeholder="Nashville" />
               </label>
               <label>
-                State *
-                <select value={newAddress.state}
-                  onChange={e => setNewAddress({ ...newAddress, state: e.target.value })}>
-                  <option value="">Select state</option>
-                  {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                {(newAddress.country || 'US') === 'US' ? 'State *' : 'State/Province *'}
+                {(newAddress.country || 'US') === 'US' ? (
+                  <select value={newAddress.state}
+                    onChange={e => setNewAddress({ ...newAddress, state: e.target.value })}>
+                    <option value="">Select state</option>
+                    {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={newAddress.state}
+                    onChange={e => setNewAddress({ ...newAddress, state: e.target.value })}
+                    placeholder="Province / State" />
+                )}
               </label>
             </div>
             <div className="submit-request__field-row two-col">
               <label>
-                ZIP *
+                {(newAddress.country || 'US') === 'US' ? 'ZIP *' : 'Postal Code *'}
                 <input type="text" value={newAddress.zip}
                   onChange={e => setNewAddress({ ...newAddress, zip: e.target.value })}
                   placeholder="37201" maxLength={10} />
@@ -418,16 +538,45 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
 
       {/* Submit */}
       <div className="submit-request__footer">
+        {/* Cart display */}
+        {cart.length > 0 && (
+          <div className="submit-request__cart">
+            <h4>🛒 Cart ({cart.length} item{cart.length > 1 ? 's' : ''})</h4>
+            <ul className="submit-request__cart-list">
+              {cart.map(c => (
+                <li key={c.id} className="submit-request__cart-item">
+                  <span>{c.itemName} × {c.quantity} {c.unit} {c.urgent ? '⚡' : ''}</span>
+                  <button className="btn-sm btn-sm--danger" onClick={() => handleRemoveFromCart(c.id)}>✕</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {selectedItem && qtyValidation.valid && (
+          <button
+            className="btn-secondary submit-request__add-cart-btn"
+            onClick={handleAddToCart}
+          >
+            + Add to Cart
+          </button>
+        )}
         <p className="submit-request__privacy">
           🔒 Your full address is encrypted and only visible to workspace admins.
           Producers see only your city and state.
         </p>
+        {!isOwner && (
+          <p className={`submit-request__rate-limit ${rateLimitReached ? 'submit-request__rate-limit--exceeded' : ''}`}>
+            {rateLimitReached
+              ? `⚠️ Daily limit reached (${DAILY_LIMIT}/${DAILY_LIMIT})`
+              : `📊 ${todayRequestCount}/${DAILY_LIMIT} requests used today`}
+          </p>
+        )}
         <button
           className="btn-primary submit-request__submit-btn"
           onClick={handleSubmit}
-          disabled={submitting || !selectedItem || !qtyValidation.valid}
+          disabled={submitting || rateLimitReached || (cart.length === 0 && (!selectedItem || !qtyValidation.valid))}
         >
-          {submitting ? 'Submitting...' : 'Submit Request →'}
+          {submitting ? 'Submitting...' : cart.length > 0 ? `Submit ${cart.length + (selectedItem && qtyValidation.valid ? 1 : 0)} Request${cart.length + (selectedItem && qtyValidation.valid ? 1 : 0) > 1 ? 's' : ''} →` : 'Submit Request →'}
         </button>
       </div>
     </div>

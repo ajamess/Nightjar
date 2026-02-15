@@ -9,7 +9,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
-import { useInventorySync } from '../../../hooks/useInventorySync';
 import SummaryMetrics from './SummaryMetrics';
 import InOutflowChart from './InOutflowChart';
 import FulfillmentHistogram from './FulfillmentHistogram';
@@ -36,7 +35,7 @@ const GRANULARITIES = [
 
 export default function AnalyticsDashboard() {
   const ctx = useInventory();
-  const sync = useInventorySync(ctx, ctx.inventorySystemId);
+  const sync = ctx;
 
   const [preset, setPreset] = useState('30d');
   const [granularity, setGranularity] = useState('day');
