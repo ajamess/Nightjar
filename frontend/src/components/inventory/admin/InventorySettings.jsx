@@ -4,7 +4,6 @@
 import React, { useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import { generateId } from '../../../utils/inventoryValidation';
-import { assignRequests } from '../../../utils/inventoryAssignment';
 import { runAutoAssign } from '../../../utils/autoAssign';
 import { SHIPPING_PROVIDERS, getAllProviderIds } from '../../../utils/shippingProviders';
 import './InventorySettings.css';

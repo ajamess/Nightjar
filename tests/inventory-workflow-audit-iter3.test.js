@@ -400,10 +400,11 @@ describe('SubmitRequest — admin notification on submit', () => {
     expect(submitBlock[0]).toContain('pushNotification(yInventoryNotifications');
   });
 
-  test('filters admins by owner/editor permission', () => {
-    const submitBlock = src.match(/handleSubmit[\s\S]*?(?=return \()/);
+  test('filters admins by owner permission only (not editors)', () => {
+    const submitBlock = src.match(/handleSubmit[\s\S]*?(?=return \()/)
     expect(submitBlock[0]).toContain("permission === 'owner'");
-    expect(submitBlock[0]).toContain("permission === 'editor'");
+    // After iter4 fix: editors should NOT be notified
+    expect(submitBlock[0]).not.toMatch(/filter\([^)]*editor/);
   });
 
   test('does not self-notify', () => {

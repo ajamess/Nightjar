@@ -26,7 +26,7 @@ const EMPTY_ITEM = {
 };
 
 export default function CatalogManager() {
-  const { yCatalogItems, inventorySystemId, yInventoryAuditLog, catalogItems, requests } = useInventory();
+  const { yCatalogItems, inventorySystemId, yInventoryAuditLog, catalogItems, requests, userIdentity } = useInventory();
   const { showToast } = useToast();
 
   const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
@@ -67,7 +67,7 @@ export default function CatalogManager() {
       targetId: item.id,
       targetType: 'catalog_item',
       summary: `Added catalog item "${item.name}"`,
-      actorId: 'system',
+      actorId: userIdentity?.publicKeyBase62 || 'system',
       actorRole: 'owner',
       timestamp: Date.now(),
     }]);
@@ -75,7 +75,7 @@ export default function CatalogManager() {
     setNewItem({ ...EMPTY_ITEM });
     setShowAddForm(false);
     showToast(`Added "${item.name}" to catalog`, 'success');
-  }, [newItem, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [newItem, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast, userIdentity]);
 
   const handleSaveEdit = useCallback(() => {
     if (!editItem || editingId == null) return;
@@ -113,7 +113,7 @@ export default function CatalogManager() {
       targetId: editingId,
       targetType: 'catalog_item',
       summary: `Updated catalog item "${updated.name}"`,
-      actorId: 'system',
+      actorId: userIdentity?.publicKeyBase62 || 'system',
       actorRole: 'owner',
       timestamp: Date.now(),
     }]);
@@ -121,7 +121,7 @@ export default function CatalogManager() {
     setEditingId(null);
     setEditItem(null);
     showToast(`Updated "${updated.name}"`, 'success');
-  }, [editItem, editingId, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast]);
+  }, [editItem, editingId, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast, userIdentity]);
 
   const handleToggleActive = useCallback((item) => {
     const items = yCatalogItems.toArray();
@@ -146,13 +146,13 @@ export default function CatalogManager() {
       targetId: item.id,
       targetType: 'catalog_item',
       summary: `${item.name} ${updated.active ? 'activated' : 'deactivated'}`,
-      actorId: 'system',
+      actorId: userIdentity?.publicKeyBase62 || 'system',
       actorRole: 'owner',
       timestamp: Date.now(),
     }]);
 
     showToast(`${item.name} ${updated.active ? 'activated' : 'deactivated'}`, 'success');
-  }, [yCatalogItems, yInventoryAuditLog, inventorySystemId, requests, showToast]);
+  }, [yCatalogItems, yInventoryAuditLog, inventorySystemId, requests, showToast, userIdentity]);
 
   const startEditing = (item) => {
     setEditingId(item.id);

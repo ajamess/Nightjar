@@ -7,7 +7,7 @@
  * See docs/INVENTORY_SYSTEM_SPEC.md §6.9 (Notifications)
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import { markNotificationRead, markAllRead, getUnreadCount } from '../../../utils/inventoryNotifications';
 import { formatRelativeDate } from '../../../utils/inventoryValidation';
@@ -32,13 +32,22 @@ export default function NotificationInbox() {
 
   const [filter, setFilter] = useState('all'); // 'all' | 'unread' | 'read'
 
+  // Observe Yjs array for live updates (Y.Array ref is stable so useMemo alone won't re-fire)
+  const [notifSnapshot, setNotifSnapshot] = useState([]);
+  useEffect(() => {
+    if (!yInventoryNotifications) { setNotifSnapshot([]); return; }
+    const sync = () => setNotifSnapshot(yInventoryNotifications.toArray());
+    sync();
+    yInventoryNotifications.observe(sync);
+    return () => yInventoryNotifications.unobserve(sync);
+  }, [yInventoryNotifications]);
+
   // Get all notifications for this user in this system
   const allNotifications = useMemo(() => {
-    if (!yInventoryNotifications) return [];
-    return yInventoryNotifications.toArray()
+    return notifSnapshot
       .filter(n => n.recipientId === myKey && n.inventorySystemId === inventorySystemId)
       .sort((a, b) => b.createdAt - a.createdAt);
-  }, [yInventoryNotifications, myKey, inventorySystemId]);
+  }, [notifSnapshot, myKey, inventorySystemId]);
 
   const filteredNotifications = useMemo(() => {
     if (filter === 'unread') return allNotifications.filter(n => !n.read);

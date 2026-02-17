@@ -496,9 +496,9 @@ describe('ProducerNameMapper — dropdown population (source verification)', () 
     );
   });
 
-  test('producers useMemo filters by editor or owner', () => {
-    expect(sourceCode).toContain("c.permission === 'editor'");
-    expect(sourceCode).toContain("c.permission === 'owner'");
+  test('producers useMemo includes ALL collaborators (not filtered by permission)', () => {
+    // After iter4 fix: dropdown shows all collaborators, not just editors/owners
+    expect(sourceCode).toContain('[...collaborators]');
   });
 
   test('self-check uses both publicKey and publicKeyBase62', () => {
@@ -548,7 +548,7 @@ describe('ProducerNameMapper — functional render', () => {
     mockPushNotification.mockClear();
   });
 
-  test('renders all editor/owner collaborators in dropdown when requests have imported names', () => {
+  test('renders all collaborators in dropdown when requests have imported names', () => {
     const collaborators = [
       makeCollaborator('owner-key', 'Alice Admin', 'owner'),
       makeCollaborator('editor-key-1', 'Bob Producer', 'editor'),
@@ -571,11 +571,11 @@ describe('ProducerNameMapper — functional render', () => {
     const select = container.querySelector('.pnm-select');
     expect(select).toBeTruthy();
     const options = select.querySelectorAll('option');
-    // Should have: placeholder + Alice (owner) + Bob (editor) + Charlie (editor) = 4
-    // Dave (viewer) should NOT appear
-    expect(options.length).toBe(4);
+    // Should have: placeholder + Alice (owner) + Bob (editor) + Charlie (editor) + Dave (viewer) = 5
+    // After iter4 fix: ALL collaborators shown
+    expect(options.length).toBe(5);
     const optionTexts = Array.from(options).map(o => o.textContent);
-    expect(optionTexts.some(t => t.includes('Dave'))).toBe(false);
+    expect(optionTexts.some(t => t.includes('Dave'))).toBe(true);
     expect(optionTexts.some(t => t.includes('Bob'))).toBe(true);
     expect(optionTexts.some(t => t.includes('Charlie'))).toBe(true);
   });

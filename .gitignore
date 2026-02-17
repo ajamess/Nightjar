@@ -49,6 +49,9 @@ Thumbs.db
 # Sensitive import data
 data/
 
+# Server data (SQLite databases)
+server/unified/data/*.db
+
 # Environment files
 .env
 .env.local

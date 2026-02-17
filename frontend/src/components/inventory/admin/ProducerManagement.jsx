@@ -66,10 +66,10 @@ export default function ProducerManagement() {
       let avgDays = null;
       if (fulfilled.length > 0) {
         const totalDays = fulfilled.reduce((s, r) => {
-          if (r.shippedAt && r.createdAt) return s + (r.shippedAt - r.createdAt) / 86400000;
+          if (r.shippedAt && r.requestedAt) return s + (r.shippedAt - r.requestedAt) / 86400000;
           return s;
         }, 0);
-        const withDays = fulfilled.filter(r => r.shippedAt && r.createdAt).length;
+        const withDays = fulfilled.filter(r => r.shippedAt && r.requestedAt).length;
         if (withDays > 0) avgDays = +(totalDays / withDays).toFixed(1);
       }
 
@@ -206,7 +206,7 @@ export default function ProducerManagement() {
                   <div className="pm-detail-requests">
                     {producer.assignedRequests.slice(0, 10).map(r => (
                       <div key={r.id} className="pm-detail-req">
-                        <span className="pm-detail-req-item">{r.item}</span>
+                        <span className="pm-detail-req-item">{r.catalogItemName}</span>
                         <span className="pm-detail-req-qty">×{r.quantity}</span>
                         <StatusBadge status={r.status} />
                       </div>

@@ -66,7 +66,7 @@ When Tor is enabled:
 1. The sidecar creates an ephemeral onion service
 2. libp2p node listens on the onion address
 3. GossipSub broadcasts document updates to peers
-4. Peers subscribe to the `/nightjarx/1.0.0` topic
+4. Peers subscribe to the `/nightjar/1.0.0` topic
 
 **Current Limitations:**
 - No peer discovery (manual invite links only)
@@ -79,10 +79,10 @@ When Tor is enabled:
 
 ```javascript
 // Instead of single topic:
-const PUBSUB_TOPIC = '/nightjarx/1.0.0';
+const PUBSUB_TOPIC = '/nightjar/1.0.0';
 
 // Use per-document topics:
-const getDocTopic = (docId) => `/nightjarx/1.0.0/doc/${docId}`;
+const getDocTopic = (docId) => `/nightjar/1.0.0/doc/${docId}`;
 ```
 
 ### Medium-term: WebRTC Direct Connections

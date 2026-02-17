@@ -131,6 +131,7 @@ export default function MyRequests() {
       unit: req.unit,
       city: req.city,
       state: req.state,
+      country: req.country || 'US',
       urgent: false,
       notes: '',
       status: 'open',
@@ -187,6 +188,24 @@ export default function MyRequests() {
       actorRole: 'viewer',
       timestamp: now,
     }]);
+
+    // Notify admins (owners) about the re-request
+    if (ctx.yInventoryNotifications) {
+      const admins = (ctx.collaborators || []).filter(c => c.permission === 'owner');
+      for (const admin of admins) {
+        const adminKey = admin.publicKeyBase62 || admin.publicKey;
+        if (adminKey && adminKey !== userIdentity?.publicKeyBase62) {
+          pushNotification(ctx.yInventoryNotifications, {
+            inventorySystemId,
+            recipientId: adminKey,
+            type: 'request_submitted',
+            message: `Re-request submitted: ${req.catalogItemName}`,
+            relatedId: requestId,
+          });
+        }
+      }
+    }
+
     showToast(`New request for ${req.catalogItemName} submitted!`, 'success');
   }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity, ctx]);
 
