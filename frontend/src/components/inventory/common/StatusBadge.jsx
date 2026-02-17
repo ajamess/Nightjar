@@ -32,6 +32,10 @@ const STATUS_CONFIG = {
     label: 'Approved',
     className: 'status-badge--approved',
   },
+  in_progress: {
+    label: 'In Progress',
+    className: 'status-badge--in-progress',
+  },
   shipped: {
     label: 'Shipped',
     className: 'status-badge--shipped',

@@ -173,6 +173,8 @@ export default function ApprovalQueue() {
       assignedAt: null,
       claimedBy: null,
       claimedAt: null,
+      approvedBy: null,
+      approvedAt: null,
       adminNotes: notes || r.adminNotes,
     }));
     logAudit('request_rejected', requestId, `Request ${requestId.slice(0, 8)} rejected — returned to open pool`);

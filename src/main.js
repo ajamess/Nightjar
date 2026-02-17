@@ -35,7 +35,7 @@ const appIconPath = getAppIconPath();
 
 // Set app user model ID for Windows taskbar icon (must match build.appId in package.json)
 if (process.platform === 'win32') {
-    app.setAppUserModelId('com.nightjarx.Nightjar');
+    app.setAppUserModelId('com.inyanrock.Nightjar');
 }
 
 // Cache the logo as base64 for the loading screen
@@ -166,8 +166,8 @@ function validateSender(event) {
 const awareness = new awarenessProtocol.Awareness(new Y.Doc());
 
 // --- P2P and Yjs Bridge Logic ---
-const DOC_PUBSUB_TOPIC = '/nightjarx/1.0.0/doc';
-const AWARENESS_PUBSUB_TOPIC = '/nightjarx/1.0.0/awareness';
+const DOC_PUBSUB_TOPIC = '/nightjar/1.0.0/doc';
+const AWARENESS_PUBSUB_TOPIC = '/nightjar/1.0.0/awareness';
 
 const bindP2PToYDoc = (doc) => {
     // NOTE: P2P sync is now handled by the sidecar process

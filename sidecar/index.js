@@ -124,7 +124,7 @@ const YJS_WEBSOCKET_SECURE_PORT = parseInt(process.env.YJS_WEBSOCKET_SECURE_PORT
 const METADATA_WEBSOCKET_PORT = parseInt(process.env.METADATA_WEBSOCKET_PORT, 10) || 8081;
 const TOR_CONTROL_PORT = parseInt(process.env.TOR_CONTROL_PORT, 10) || 9051;
 const P2P_PORT = parseInt(process.env.P2P_PORT, 10) || 4001;
-const PUBSUB_TOPIC = '/nightjarx/1.0.0';
+const PUBSUB_TOPIC = '/nightjar/1.0.0';
 
 // WebSocket server instances
 let metaWss;

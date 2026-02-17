@@ -259,7 +259,7 @@ cd android
 
 ```json
 {
-  "appId": "com.nightjarx.Nightjar",
+  "appId": "com.inyanrock.Nightjar",
   "appName": "Nightjar",
   "webDir": "dist",
   "server": {
