@@ -68,3 +68,8 @@ Thumbs.db
 sidecar/identity/*.pem
 server/**/*.pem
 !server/nginx/*.example.pem
+
+# Test output files
+*-output.txt
+hook-test-output.txt
+hooks-output.txt
