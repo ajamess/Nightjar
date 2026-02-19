@@ -49,6 +49,17 @@ const MAX_PEERS_PER_ROOM = parseInt(process.env.MAX_PEERS_PER_ROOM || '100');
 const RATE_LIMIT_WINDOW = 1000;
 const RATE_LIMIT_MAX = 50;
 
+// Base path for sub-path deployments (e.g., '/toot')
+// Normalize: ensure leading slash, strip trailing slash, empty string for root
+const RAW_BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+const BASE_PATH = RAW_BASE_PATH && !RAW_BASE_PATH.startsWith('/') 
+  ? '/' + RAW_BASE_PATH 
+  : RAW_BASE_PATH;
+
+if (BASE_PATH) {
+  console.log(`[Config] BASE_PATH set to: ${BASE_PATH}`);
+}
+
 // Server mode: host, relay, or private
 // - host: Full persistence + mesh participation (default)
 // - relay: Signaling only + mesh participation, no persistence
@@ -1287,7 +1298,12 @@ wssYjs.on('connection', (ws, req) => {
 
 // Handle HTTP upgrade - route to appropriate WebSocket server
 server.on('upgrade', (request, socket, head) => {
-  const pathname = request.url;
+  let pathname = request.url;
+  
+  // Strip BASE_PATH prefix from WebSocket URLs
+  if (BASE_PATH && pathname.startsWith(BASE_PATH)) {
+    pathname = pathname.slice(BASE_PATH.length) || '/';
+  }
   
   if (pathname === '/signal') {
     // WebRTC signaling
@@ -1295,6 +1311,10 @@ server.on('upgrade', (request, socket, head) => {
       wssSignaling.emit('connection', ws, request);
     });
   } else {
+    // Strip BASE_PATH from request.url so y-websocket extracts correct room names
+    if (BASE_PATH && request.url.startsWith(BASE_PATH)) {
+      request.url = request.url.slice(BASE_PATH.length) || '/';
+    }
     // y-websocket for document sync (all other paths)
     wssYjs.handleUpgrade(request, socket, head, (ws) => {
       wssYjs.emit('connection', ws, request);
@@ -1302,8 +1322,13 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
+// Redirect root to BASE_PATH if set
+if (BASE_PATH) {
+  app.get('/', (req, res) => res.redirect(BASE_PATH + '/'));
+}
+
 // CORS headers for API endpoints
-app.use('/api', (req, res, next) => {
+app.use(BASE_PATH + '/api', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -1312,13 +1337,13 @@ app.use('/api', (req, res, next) => {
 });
 
 // Health check
-app.get('/health', (req, res) => {
+app.get(BASE_PATH + '/health', (req, res) => {
   // Only return status - do not expose room count, uptime, or server config to unauthenticated callers
   res.json({ status: 'ok' });
 });
 
 // API: Get mesh network status
-app.get('/api/mesh/status', (req, res) => {
+app.get(BASE_PATH + '/api/mesh/status', (req, res) => {
   if (!meshParticipant) {
     return res.json({ 
       enabled: false, 
@@ -1333,7 +1358,7 @@ app.get('/api/mesh/status', (req, res) => {
 });
 
 // API: Get top relay nodes (for share link embedding)
-app.get('/api/mesh/relays', (req, res) => {
+app.get(BASE_PATH + '/api/mesh/relays', (req, res) => {
   if (!meshParticipant) {
     return res.json({ relays: [] });
   }
@@ -1350,7 +1375,7 @@ app.get('/api/mesh/relays', (req, res) => {
 });
 
 // API: Check if workspace is persisted
-app.get('/api/workspace/:id/persisted', (req, res) => {
+app.get(BASE_PATH + '/api/workspace/:id/persisted', (req, res) => {
   if (!storage) {
     return res.json({ persisted: false, persistenceDisabled: true });
   }
@@ -1365,7 +1390,7 @@ app.get('/api/workspace/:id/persisted', (req, res) => {
 app.use(express.json({ limit: '1mb' }));
 
 // Create an invite (requires active WebSocket session)
-app.post('/api/invites', (req, res) => {
+app.post(BASE_PATH + '/api/invites', (req, res) => {
   try {
     // Authenticate: require a valid session token from an active WebSocket peer
     const authHeader = req.headers.authorization;
@@ -1410,7 +1435,7 @@ app.post('/api/invites', (req, res) => {
 });
 
 // Get invite by token
-app.get('/api/invites/:token', (req, res) => {
+app.get(BASE_PATH + '/api/invites/:token', (req, res) => {
   try {
     if (!storage) {
       return res.status(503).json({ error: 'Persistence disabled on server' });
@@ -1430,7 +1455,7 @@ app.get('/api/invites/:token', (req, res) => {
 });
 
 // Use/redeem an invite (increment use count)
-app.post('/api/invites/:token/use', (req, res) => {
+app.post(BASE_PATH + '/api/invites/:token/use', (req, res) => {
   try {
     if (!storage) {
       return res.status(503).json({ error: 'Persistence disabled on server' });
@@ -1458,25 +1483,32 @@ app.post('/api/invites/:token/use', (req, res) => {
 });
 
 // Static files (React app)
-app.use(express.static(STATIC_PATH));
+app.use(BASE_PATH || '/', express.static(STATIC_PATH));
 
 // SPA fallback
-app.get('*', (req, res) => {
+app.get(BASE_PATH + '/*', (req, res) => {
   res.sendFile(join(STATIC_PATH, 'index.html'));
 });
+if (BASE_PATH) {
+  // Also catch exact BASE_PATH without trailing slash
+  app.get(BASE_PATH, (req, res) => {
+    res.sendFile(join(STATIC_PATH, 'index.html'));
+  });
+}
 
 // Start server
 server.listen(PORT, async () => {
   const persistMode = DISABLE_PERSISTENCE ? 'DISABLED (relay only)' : 'ENABLED';
   const meshMode = MESH_ENABLED ? `ENABLED (${SERVER_MODE})` : 'DISABLED (private)';
+  const basePath = BASE_PATH || '(root)';
   
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════════╗');
   console.log('║              Nightjar Unified Server                      ║');
   console.log('╠═══════════════════════════════════════════════════════════╣');
-  console.log(`║  HTTP:      http://localhost:${PORT}                         ║`);
-  console.log(`║  Y-WS:      ws://localhost:${PORT}/<room>                    ║`);
-  console.log(`║  Signaling: ws://localhost:${PORT}/signal                    ║`);
+  console.log(`║  HTTP:      http://localhost:${PORT}${BASE_PATH || ''}                         ║`);
+  console.log(`║  Y-WS:      ws://localhost:${PORT}${BASE_PATH || ''}/<room>                    ║`);
+  console.log(`║  Signaling: ws://localhost:${PORT}${BASE_PATH || ''}/signal                    ║`);
   console.log('║                                                           ║');
   console.log('║  Modes:                                                   ║');
   console.log('║  • Y-WS:       Real-time document sync                    ║');
@@ -1485,6 +1517,7 @@ server.listen(PORT, async () => {
   console.log('║                                                           ║');
   console.log(`║  Persistence: ${persistMode.padEnd(35)}    ║`);
   console.log(`║  Mesh:        ${meshMode.padEnd(35)}    ║`);
+  console.log(`║  Base Path:   ${basePath.padEnd(35)}    ║`);
   console.log('║                                                           ║');
   console.log('║  Security:                                                ║');
   console.log('║  • Server CANNOT decrypt stored data                      ║');

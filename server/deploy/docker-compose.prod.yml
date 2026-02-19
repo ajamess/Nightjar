@@ -1,0 +1,84 @@
+# =============================================================================
+# Nightjar Production Stack — night-jar.co
+# =============================================================================
+#
+# Services:
+#   1. nightjar-relay   — Public relay server (wss://night-jar.co/signal)
+#   2. nightjar-private — Private instance with storage (night-jar.co/toot)
+#
+# Mailcow runs separately in /opt/mailcow-dockerized (ports 8080/8443).
+# Nginx runs on the host and routes everything (see nginx.conf).
+# The static landing page is served by nginx from /var/www/night-jar.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# =============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # Relay Server — lightweight signaling + mesh participation
+  # No persistence, no storage — just routes encrypted connections
+  # Accessible at night-jar.co/signal, /health, /api/mesh/*, /yjs/*
+  # --------------------------------------------------------------------------
+  nightjar-relay:
+    build:
+      context: ../..
+      dockerfile: server/unified/Dockerfile
+      args:
+        BASE_PATH: "./"
+    container_name: nightjar-relay
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - NIGHTJAR_MODE=relay
+      - PUBLIC_URL=wss://night-jar.co
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nightjar-net
+
+  # --------------------------------------------------------------------------
+  # Private Instance — full persistence, no mesh participation
+  # Accessible at night-jar.co/toot (with BASE_PATH=/toot)
+  # --------------------------------------------------------------------------
+  nightjar-private:
+    build:
+      context: ../..
+      dockerfile: server/unified/Dockerfile
+      args:
+        # Vite builds assets with /toot/ prefix so URLs resolve correctly
+        BASE_PATH: "/toot/"
+    container_name: nightjar-private
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - nightjar-private-data:/app/server/unified/data
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - NIGHTJAR_MODE=private
+      # Express uses this to prefix all routes and strip from incoming requests
+      - BASE_PATH=/toot
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/toot/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nightjar-net
+
+volumes:
+  nightjar-private-data:
+    driver: local
+
+networks:
+  nightjar-net:
+    driver: bridge

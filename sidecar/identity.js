@@ -219,16 +219,33 @@ function hasIdentity() {
 }
 
 /**
- * Delete stored identity
+ * Delete stored identity (both new and legacy paths)
  */
 function deleteIdentity() {
+    let deleted = false;
+    
+    // Delete from new path ({userData}/identity/identity.json)
     const identityPath = getIdentityPath();
     if (fs.existsSync(identityPath)) {
         fs.unlinkSync(identityPath);
-        console.log('[Identity] Deleted identity');
-        return true;
+        console.log('[Identity] Deleted identity at new path:', identityPath);
+        deleted = true;
     }
-    return false;
+    
+    // Also delete from legacy path (~/.Nightjar/identity.json)
+    // This prevents migrateIdentityIfNeeded() from resurrecting the identity on next restart
+    const legacyPath = getLegacyIdentityPath();
+    if (fs.existsSync(legacyPath)) {
+        try {
+            fs.unlinkSync(legacyPath);
+            console.log('[Identity] Deleted legacy identity at:', legacyPath);
+            deleted = true;
+        } catch (e) {
+            console.warn('[Identity] Could not delete legacy identity:', e.message);
+        }
+    }
+    
+    return deleted;
 }
 
 /**

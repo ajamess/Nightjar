@@ -1,3 +1,30 @@
+# =============================================================================
+# Multi-stage Dockerfile for Nightjar Unified Server
+# 
+# Build args:
+#   BASE_PATH  - Vite base path for asset URLs (default: './' for root deploy)
+#                Set to '/toot/' for sub-path deployment
+# =============================================================================
+
+# --- Stage 1: Build frontend ---
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app
+
+# Copy frontend package files and install deps
+COPY package.json package-lock.json ./
+COPY frontend/ ./frontend/
+COPY vite.config.js ./
+
+RUN npm ci --prefer-offline
+
+# Build arg for Vite base path
+ARG BASE_PATH=./
+
+# Build frontend with the specified base path
+RUN npx vite build --base="${BASE_PATH}"
+
+# --- Stage 2: Production server ---
 FROM node:20-alpine
 
 WORKDIR /app
@@ -5,10 +32,8 @@ WORKDIR /app
 # Install dependencies for better-sqlite3 and hyperswarm
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
+# Copy server package files and install deps
 COPY server/unified/package*.json ./server/unified/
-
-# Install server dependencies
 WORKDIR /app/server/unified
 RUN npm install --production
 
@@ -16,9 +41,9 @@ RUN npm install --production
 COPY server/unified/*.js ./
 COPY server/unified/*.mjs ./
 
-# Copy built frontend
+# Copy built frontend from stage 1
 WORKDIR /app
-COPY frontend/dist ./frontend/dist
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Create data directory
 RUN mkdir -p /app/server/unified/data
@@ -27,6 +52,10 @@ RUN mkdir -p /app/server/unified/data
 ENV PORT=3000
 ENV STATIC_PATH=/app/frontend/dist
 ENV DB_PATH=/app/server/unified/data/nightjar.db
+
+# Base path for sub-path deployments (e.g., /toot)
+# Express uses this to prefix all routes and strip it from incoming requests
+ENV BASE_PATH=
 
 # Server mode: host (default), relay, or private
 # - host: Full persistence + mesh participation

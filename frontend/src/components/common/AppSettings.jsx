@@ -285,22 +285,37 @@ export default function AppSettings({ isOpen, onClose }) {
   // Execute the actual factory reset (shared by both paths)
   const executeFactoryReset = useCallback(async () => {
     try {
-      // 1. Clear localStorage
+      // 1. Clear localStorage (removes new-system identities + all settings)
       localStorage.clear();
       
       // 2. Clear sessionStorage
       sessionStorage.clear();
       
-      // 3. Send factory-reset command to sidecar (if Electron)
-      if (isElectron && window.electronAPI?.invoke) {
+      // 3. Delete identity file on disk via Electron IPC
+      // NOTE: window.electronAPI has no generic 'invoke' — use the specific identity.delete() method
+      if (isElectron && window.electronAPI?.identity?.delete) {
         try {
-          await window.electronAPI.invoke('factory-reset');
+          await window.electronAPI.identity.delete();
+          console.log('[FactoryReset] Identity file deleted via IPC');
         } catch (e) {
-          console.warn('[FactoryReset] Sidecar reset failed:', e);
+          console.warn('[FactoryReset] Identity delete failed:', e);
         }
       }
       
-      // 4. Clear IndexedDB databases
+      // 4. Send factory-reset command to sidecar via WebSocket
+      // This cleans up P2P connections, Yjs docs, document DB, metadata DB, encryption keys, etc.
+      if (window.sidecarWs && window.sidecarWs.readyState === WebSocket.OPEN) {
+        try {
+          window.sidecarWs.send(JSON.stringify({ type: 'factory-reset' }));
+          // Give sidecar a moment to process before reloading
+          await new Promise(resolve => setTimeout(resolve, 500));
+          console.log('[FactoryReset] Sidecar factory-reset sent via WebSocket');
+        } catch (e) {
+          console.warn('[FactoryReset] Sidecar WebSocket reset failed:', e);
+        }
+      }
+      
+      // 5. Clear IndexedDB databases
       if (window.indexedDB) {
         const databases = await window.indexedDB.databases?.() || [];
         for (const db of databases) {
@@ -310,7 +325,7 @@ export default function AppSettings({ isOpen, onClose }) {
         }
       }
       
-      // 5. Reload the app
+      // 6. Reload the app
       window.location.reload();
     } catch (err) {
       console.error('[FactoryReset] Error:', err);
@@ -1183,17 +1198,17 @@ export default function AppSettings({ isOpen, onClose }) {
                     </button>
                     
                     {showOwnershipWarning && (
-                      <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(255, 107, 107, 0.1)', border: '1px solid rgba(255, 107, 107, 0.3)', borderRadius: '6px' }}>
-                        <p style={{ fontSize: '13px', color: '#ff6b6b', margin: '0 0 8px 0', fontWeight: 'bold' }}>
+                      <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(255, 107, 107, 0.15)', border: '1px solid rgba(255, 107, 107, 0.4)', borderRadius: '6px' }}>
+                        <p style={{ fontSize: '13px', color: '#ff4444', margin: '0 0 8px 0', fontWeight: 'bold' }}>
                           ⚠️ You are the sole owner of {soleOwnerWorkspaces.length === 1 ? 'this workspace' : 'these workspaces'}:
                         </p>
-                        <ul style={{ margin: '0 0 10px 0', paddingLeft: '20px', fontSize: '12px', color: '#ff6b6b' }}>
+                        <ul style={{ margin: '0 0 10px 0', paddingLeft: '20px', fontSize: '12px', color: '#e0e0e0' }}>
                           {soleOwnerWorkspaces.map(w => (
                             <li key={w.id}>{w.name || 'Untitled Workspace'}</li>
                           ))}
                         </ul>
-                        <p style={{ fontSize: '12px', color: '#ccc', margin: '0 0 10px 0' }}>
-                          Without an owner, other members will not be able to manage these workspaces. Transfer ownership in each workspace's settings first, or type <strong style={{ color: '#ff6b6b' }}>DELETE WORKSPACES</strong> below to proceed anyway.
+                        <p style={{ fontSize: '12px', color: '#e0e0e0', margin: '0 0 10px 0' }}>
+                          Without an owner, other members will not be able to manage these workspaces. Transfer ownership in each workspace's settings first, or type <strong style={{ color: '#ff4444' }}>DELETE WORKSPACES</strong> below to proceed anyway.
                         </p>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <input

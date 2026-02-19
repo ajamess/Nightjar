@@ -20,12 +20,40 @@
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 20px;
-    padding: 40px;
     max-width: 500px;
     width: 100%;
     max-height: 90vh;
-    overflow-y: auto;
+    /* overflow:hidden clips the scrollbar to the border-radius */
+    overflow: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Inner scroll wrapper — keeps scrollbar inside the rounded container */
+.onboarding-container > .onboarding-step {
+    padding: 40px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Thin, dark scrollbar for onboarding scroll area */
+.onboarding-container > .onboarding-step::-webkit-scrollbar {
+    width: 6px;
+}
+
+.onboarding-container > .onboarding-step::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.onboarding-container > .onboarding-step::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.onboarding-container > .onboarding-step::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 .onboarding-step {
@@ -636,7 +664,7 @@
 
 /* Responsive */
 @media (max-width: 500px) {
-    .onboarding-container {
+    .onboarding-container > .onboarding-step {
         padding: 24px;
     }
     

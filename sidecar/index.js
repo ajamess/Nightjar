@@ -3062,7 +3062,7 @@ async function handleMetadataMessage(ws, parsed) {
                 }
                 console.log(`[Sidecar] Deleted ${metaKeysToDelete.length} entries from metadata DB`);
                 
-                // 6. Delete identity files
+                // 6. Delete identity files (new path)
                 const identityDir = path.join(USER_DATA_PATH, 'identity');
                 const fs = require('fs');
                 if (fs.existsSync(identityDir)) {
@@ -3073,6 +3073,21 @@ async function handleMetadataMessage(ws, parsed) {
                             console.log(`[Sidecar] Deleted identity file: ${file}`);
                         } catch (e) {
                             console.warn(`[Sidecar] Could not delete ${file}:`, e.message);
+                        }
+                    }
+                }
+                
+                // 6b. Delete legacy identity file (~/.Nightjar/identity.json)
+                const homeDir = process.env.HOME || process.env.USERPROFILE || '.';
+                const legacyIdentityDir = path.join(homeDir, '.Nightjar');
+                if (fs.existsSync(legacyIdentityDir)) {
+                    const legacyFiles = fs.readdirSync(legacyIdentityDir);
+                    for (const file of legacyFiles) {
+                        try {
+                            fs.unlinkSync(path.join(legacyIdentityDir, file));
+                            console.log(`[Sidecar] Deleted legacy identity file: ${file}`);
+                        } catch (e) {
+                            console.warn(`[Sidecar] Could not delete legacy ${file}:`, e.message);
                         }
                     }
                 }

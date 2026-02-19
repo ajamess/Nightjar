@@ -1832,9 +1832,10 @@ function App() {
                     setShowIdentitySelector(true);
                 }
             }
-        } else if (userIdentity) {
-            // Have legacy identity but not in new system - trigger migration
-            console.log('[App] Legacy identity exists but not in new system, triggering migration');
+        } else if (userIdentity && identityManager.needsMigration()) {
+            // Have legacy identity loaded from disk AND old localStorage markers exist
+            // This is a genuine pre-PIN identity that needs migration
+            console.log('[App] Legacy identity exists with migration markers, triggering migration');
             const legacy = {
                 ...userIdentity,
                 handle: userIdentity.handle || userProfile.name || 'User',
@@ -1844,7 +1845,7 @@ function App() {
             setLegacyIdentity(legacy);
             setNeedsMigration(true);
         }
-        // If no identities at all, IdentityContext will handle showing onboarding via needsOnboarding
+        // If no identities and no migration markers, IdentityContext will handle showing onboarding via needsOnboarding
         setStartupComplete(true);
     }, [identityLoading, handleNeedsMigration, userIdentity, userProfile, syncFromIdentityManager]);
     

@@ -84,19 +84,30 @@ export function IdentityProvider({ children }) {
             // Check if running in Electron with IPC (legacy system)
             if (window.electronAPI?.identity) {
                 const exists = await window.electronAPI.identity.hasIdentity();
-                setHasExistingIdentity(exists);
                 
                 if (exists) {
-                    // Identity exists - load it automatically
-                    // This fixes the double-onboarding issue on Mac
-                    const stored = await window.electronAPI.identity.load();
-                    if (stored) {
-                        const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
-                        // Convert hex keys from Electron IPC to Uint8Arrays for crypto operations
-                        const converted = convertHexKeysToUint8Arrays(parsed);
-                        setIdentity(converted);
-                        setNeedsOnboarding(false);
+                    // Identity file exists on disk, but only load it if there's
+                    // a genuine migration signal (old localStorage keys exist).
+                    // Without migration markers, this is an orphaned file
+                    // (e.g. factory reset cleared localStorage but file survived).
+                    const hasMigrationMarkers = identityManager.needsMigration();
+                    
+                    if (hasMigrationMarkers) {
+                        // Genuine legacy identity — load for migration
+                        setHasExistingIdentity(true);
+                        const stored = await window.electronAPI.identity.load();
+                        if (stored) {
+                            const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
+                            const converted = convertHexKeysToUint8Arrays(parsed);
+                            setIdentity(converted);
+                            setNeedsOnboarding(false);
+                        } else {
+                            setNeedsOnboarding(true);
+                        }
                     } else {
+                        // Disk file exists but no localStorage markers — orphaned identity.
+                        // Treat as fresh install so onboarding shows the Welcome screen.
+                        setHasExistingIdentity(false);
                         setNeedsOnboarding(true);
                     }
                 } else {

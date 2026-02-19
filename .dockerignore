@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build artifacts
+release/
+test-results/
+playwright-report/
+
+# Git
+.git/
+
+# Tor binaries
+tor/
+
+# Tests
+tests/
+
+# Data
+data/
+server/unified/data/
+storage/
+
+# Docs (not needed in image)
+docs/
+*.md
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Misc
+*.exe
+*.blockmap
+*.yml.bak

@@ -188,3 +188,84 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # Deploy to VPS — night-jar.co
+  # ===========================================================================
+  deploy-vps:
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: find artifacts -type f
+
+      # -- Copy installers to VPS download directory --
+      - name: Upload installers to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "artifacts/Nightjar-windows/*,artifacts/Nightjar-macos/*,artifacts/Nightjar-linux/*"
+          target: /tmp/nightjar-deploy
+          strip_components: 2
+
+      # -- SSH into VPS: rebuild containers, deploy landing page, move installers --
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            REPO="/opt/Nightjar"
+            WEB="/var/www/night-jar"
+
+            echo "=== Pulling latest code ==="
+            cd "$REPO"
+            git fetch --all --tags
+            git checkout "${{ github.ref_name }}"
+
+            echo "=== Rebuilding Docker containers ==="
+            docker compose -f server/deploy/docker-compose.prod.yml up -d --build --remove-orphans
+
+            echo "=== Deploying landing page ==="
+            sudo cp "$REPO/frontend/public-site/index.html" "$WEB/index.html"
+            sudo cp "$REPO/frontend/public/assets/nightjar-logo.png" "$WEB/nightjar-logo.png" 2>/dev/null || true
+            sudo cp "$REPO/assets/icons/nightjar-64.png" "$WEB/nightjar-64.png" 2>/dev/null || true
+
+            echo "=== Moving installers to download directory ==="
+            # Find and copy the actual installer files with friendly names
+            # Windows
+            WIN_EXE=$(find /tmp/nightjar-deploy -name '*.exe' | head -1)
+            [ -n "$WIN_EXE" ] && sudo cp "$WIN_EXE" "$WEB/download/Nightjar-Setup.exe"
+
+            # macOS
+            MAC_DMG=$(find /tmp/nightjar-deploy -name '*.dmg' | head -1)
+            [ -n "$MAC_DMG" ] && sudo cp "$MAC_DMG" "$WEB/download/Nightjar.dmg"
+
+            # Linux
+            LINUX_APPIMAGE=$(find /tmp/nightjar-deploy -name '*.AppImage' | head -1)
+            [ -n "$LINUX_APPIMAGE" ] && sudo cp "$LINUX_APPIMAGE" "$WEB/download/Nightjar.AppImage"
+
+            LINUX_DEB=$(find /tmp/nightjar-deploy -name '*.deb' | head -1)
+            [ -n "$LINUX_DEB" ] && sudo cp "$LINUX_DEB" "$WEB/download/Nightjar.deb"
+
+            sudo chown -R www-data:www-data "$WEB"
+
+            echo "=== Updating Nginx config ==="
+            sudo cp "$REPO/server/deploy/nginx.conf" /etc/nginx/sites-available/night-jar
+            sudo nginx -t && sudo systemctl reload nginx
+
+            echo "=== Cleaning up ==="
+            rm -rf /tmp/nightjar-deploy
+
+            echo "=== Deploy complete for ${{ github.ref_name }} ==="
