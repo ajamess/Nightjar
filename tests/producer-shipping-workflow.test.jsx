@@ -861,7 +861,7 @@ describe('ProducerMyRequests — onMarkShipped handler (Bug #5)', () => {
     };
   });
 
-  it('renders View Address button when address reveal exists', () => {
+  it('does not render standalone View Address button (address is shown inline in RequestDetail)', () => {
     const req = createTestRequest({
       id: 'req-pmr1',
       status: 'approved',
@@ -877,7 +877,7 @@ describe('ProducerMyRequests — onMarkShipped handler (Bug #5)', () => {
 
     render(<ProducerMyRequests />);
 
-    expect(screen.getByText('📍 View Address')).toBeInTheDocument();
+    expect(screen.queryByText('📍 View Address')).not.toBeInTheDocument();
   });
 
   it('shows AddressReveal inline in RequestDetail when clicking a card with a reveal', async () => {
@@ -927,7 +927,7 @@ describe('ProducerMyRequests — onMarkShipped handler (Bug #5)', () => {
     expect(screen.getByText('🔨 Mark In Progress')).toBeInTheDocument();
   });
 
-  it('shows View Address for in_progress requests with reveal', () => {
+  it('does not show standalone View Address for in_progress requests (inline in detail)', () => {
     const req = createTestRequest({
       id: 'req-pmr4',
       status: 'in_progress',
@@ -942,7 +942,7 @@ describe('ProducerMyRequests — onMarkShipped handler (Bug #5)', () => {
     mockSyncResult.addressReveals = { 'req-pmr4': MOCK_REVEAL };
 
     render(<ProducerMyRequests />);
-    expect(screen.getByText('📍 View Address')).toBeInTheDocument();
+    expect(screen.queryByText('📍 View Address')).not.toBeInTheDocument();
   });
 });
 

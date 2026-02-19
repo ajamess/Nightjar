@@ -83,12 +83,14 @@ export default function FileCard({
         aria-label={`File ${file.name}`}
       >
         <td className="file-table-cell file-table-check">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={handleCheckbox}
-            className="file-table-checkbox"
-          />
+          <span onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={handleCheckbox}
+              className="file-table-checkbox"
+            />
+          </span>
         </td>
         <td className="file-table-cell file-table-name">
           <FileTypeIcon extension={file.extension} size="sm" />
@@ -130,12 +132,14 @@ export default function FileCard({
         tabIndex={0}
         aria-label={`File ${file.name}, ${formatFileSize(file.sizeBytes)}`}
       >
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={handleCheckbox}
-          className="file-compact-checkbox"
-        />
+        <span className="file-compact-checkbox-wrapper" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={handleCheckbox}
+            className="file-compact-checkbox"
+          />
+        </span>
         <FileTypeIcon extension={file.extension} size="sm" />
         <span className="file-compact-name" title={file.name}>{file.name}</span>
         <span className="file-compact-size">{formatFileSize(file.sizeBytes)}</span>
@@ -169,12 +173,14 @@ export default function FileCard({
       aria-label={`File ${file.name}, ${formatFileSize(file.sizeBytes)}`}
     >
       <div className="file-card-header">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={handleCheckbox}
-          className="file-card-checkbox"
-        />
+        <span className="file-card-checkbox-wrapper" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={handleCheckbox}
+            className="file-card-checkbox"
+          />
+        </span>
         <FileTypeIcon extension={file.extension} size="lg" />
       </div>
       <div className="file-card-name" title={file.name}>{file.name}</div>

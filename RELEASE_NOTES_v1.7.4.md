@@ -42,14 +42,14 @@ This release fixes the address reveal pipeline so producers can see shipping add
 
 ## 🔄 GitHub Account Migration
 
-### Identity Change: InyanRock → SaoneYanpa
-The project has migrated from the suspended `InyanRock` GitHub account to the new `SaoneYanpa` account. All references updated:
+### Identity Consolidation
+All project references consolidated under the `Niyanagi` identity:
 
-| What | Old | New |
-|------|-----|-----|
-| **GitHub** | `github.com/InyanRock/Nightjar` | `github.com/SaoneYanpa/Nightjar` |
-| **Email** | `Tokahe@proton.me` | `SaoneYanpa@proton.me` |
-| **App ID** | `com.inyanrock.Nightjar` | `com.saoneyanpa.Nightjar` |
+| What | Value |
+|------|-------|
+| **GitHub** | `github.com/niyanagi/nightjar` |
+| **Email** | `niyanagi@proton.me` |
+| **App ID** | `com.niyanagi.nightjar` |
 
 ### Files Updated
 - `package.json` — author email, build appId, cap:init script, version bump

@@ -66,7 +66,7 @@ sudo apt install caddy -y
 
 ```bash
 cd /opt
-sudo git clone https://github.com/InyanRock/Nightjar.git
+sudo git clone https://github.com/niyanagi/nightjar.git
 cd Nightjar
 ```
 

@@ -13,7 +13,16 @@ async function loadEd2curve() {
   if (ed2curve) return ed2curve;
   try {
     const mod = await import('ed2curve');
-    ed2curve = mod.default || mod;
+    // Handle various module formats (CJS, ESM, double-wrapped)
+    if (mod.convertPublicKey) {
+      ed2curve = mod;
+    } else if (mod.default?.convertPublicKey) {
+      ed2curve = mod.default;
+    } else if (mod.default?.default?.convertPublicKey) {
+      ed2curve = mod.default.default;
+    } else {
+      ed2curve = mod.default || mod;
+    }
     return ed2curve;
   } catch (err) {
     console.error('[addressCrypto] Failed to load ed2curve:', err);

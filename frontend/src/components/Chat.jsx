@@ -693,6 +693,9 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         };
     }, [ydoc]);
     
+    // Session start time - messages older than this are historical
+    const sessionStartRef = useRef(Date.now());
+    
     // Watch for new messages and send notifications
     useEffect(() => {
         if (messages.length === 0) {
@@ -710,12 +713,20 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         const newMessages = messages.slice(lastMessageCountRef.current);
         lastMessageCountRef.current = messages.length;
         
+        // Grace period: skip notifications for first 5 seconds after session start
+        // This handles delayed P2P sync batches delivering historical messages
+        const SYNC_GRACE_PERIOD = 5000;
+        const sessionAge = Date.now() - sessionStartRef.current;
+        
         // Process each new message
         for (const msg of newMessages) {
             // Skip our own messages
             if (msg.senderPublicKey === userPublicKey) continue;
             // Skip system messages
             if (msg.type === 'system') continue;
+            // Skip historical messages from P2P sync - only notify for messages
+            // that were sent after our session started (with grace period for clock skew)
+            if (msg.timestamp && (msg.timestamp < sessionStartRef.current - 2000 || sessionAge < SYNC_GRACE_PERIOD)) continue;
             
             // Skip notifications when the message's channel is active and window is focused
             const msgChannel = msg.channel || 'general';
@@ -843,13 +854,8 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                     }];
                 });
                 
-                // Clear unread count for the auto-opened DM channel
-                setUnreadCounts(prev => {
-                    const updated = { ...prev };
-                    updated[tabId] = { lastRead: Date.now(), count: 0 };
-                    saveUnreadCounts(workspaceId, updated, userPublicKey);
-                    return updated;
-                });
+                // Don't clear unread count here — let the user see the unread badge.
+                // The count will be cleared when the user actually switches to this tab.
             }
         });
     }, [messages, userPublicKey, chatTabs, onlineUsers, workspaceMembers, workspaceId]);
@@ -1152,7 +1158,9 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     }, [mentionQuery, onlineUsers, workspaceMembers]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const formatTime = (timestamp) => {
+        if (!timestamp || isNaN(timestamp)) return '';
         const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return '';
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 

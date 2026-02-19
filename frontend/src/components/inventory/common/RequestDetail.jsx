@@ -220,7 +220,6 @@ export default function RequestDetail({
             <span className="request-detail__value">{request.city}, {request.state}</span>
           </div>
           {isAdmin && fullAddress && renderAddressBlock(fullAddress, '🔒 Full Address')}
-          {isProducer && fullAddress && renderAddressBlock(fullAddress, '📍 Shipping Address')}
         </div>
       </div>
 
@@ -402,6 +401,7 @@ export default function RequestDetail({
                   identity={ctxIdentity}
                   onShipped={() => onMarkShipped?.(request)}
                   onClose={onClose}
+                  embedded
                 />
               </div>
             ) : (

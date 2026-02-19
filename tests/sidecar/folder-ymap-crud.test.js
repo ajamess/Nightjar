@@ -241,4 +241,91 @@ describe('Persist Metadata From Yjs (Y.Map)', () => {
     
     doc.destroy();
   });
+
+  test('preserves color, icon, and other custom fields via spread', () => {
+    const doc = new Y.Doc();
+    const yFolders = doc.getMap('folders');
+
+    // Folder with color and icon — the exact shape stored by the UI
+    yFolders.set('f1', {
+      id: 'f1',
+      name: 'Colored Folder',
+      workspaceId: 'ws-1',
+      parentId: null,
+      color: '#e74c3c',
+      icon: '🎨',
+      createdAt: 1700000000000,
+    });
+
+    // Simulate the persistence logic from sidecar/index.js P2P-SYNC-PERSIST
+    // After fix: uses { ...folder, ... } spread so all fields survive
+    const persisted = [];
+    yFolders.forEach((folder, folderId) => {
+      const workspaceId = folder.workspaceId || 'default';
+      const folderMeta = {
+        ...folder,
+        id: folder.id || folderId,
+        name: folder.name || 'Untitled Folder',
+        workspaceId,
+        parentId: folder.parentId || null,
+        createdAt: folder.createdAt || Date.now(),
+      };
+      persisted.push(folderMeta);
+    });
+
+    expect(persisted).toHaveLength(1);
+    const saved = persisted[0];
+
+    // Core required fields
+    expect(saved.id).toBe('f1');
+    expect(saved.name).toBe('Colored Folder');
+    expect(saved.workspaceId).toBe('ws-1');
+    expect(saved.parentId).toBeNull();
+    expect(saved.createdAt).toBe(1700000000000);
+
+    // Custom fields that MUST survive (the bug fix)
+    expect(saved.color).toBe('#e74c3c');
+    expect(saved.icon).toBe('🎨');
+
+    doc.destroy();
+  });
+
+  test('spread does not lose fields when folder has extra metadata', () => {
+    const doc = new Y.Doc();
+    const yFolders = doc.getMap('folders');
+
+    yFolders.set('f2', {
+      id: 'f2',
+      name: 'Feature Folder',
+      workspaceId: 'ws-2',
+      parentId: 'f1',
+      color: '#3498db',
+      icon: '📣',
+      sortOrder: 5,
+      description: 'Feature work',
+      createdAt: 1700000001000,
+    });
+
+    const persisted = [];
+    yFolders.forEach((folder, folderId) => {
+      const folderMeta = {
+        ...folder,
+        id: folder.id || folderId,
+        name: folder.name || 'Untitled Folder',
+        workspaceId: folder.workspaceId || 'default',
+        parentId: folder.parentId || null,
+        createdAt: folder.createdAt || Date.now(),
+      };
+      persisted.push(folderMeta);
+    });
+
+    const saved = persisted[0];
+    expect(saved.color).toBe('#3498db');
+    expect(saved.icon).toBe('📣');
+    expect(saved.sortOrder).toBe(5);
+    expect(saved.description).toBe('Feature work');
+    expect(saved.parentId).toBe('f1');
+
+    doc.destroy();
+  });
 });

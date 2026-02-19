@@ -107,7 +107,7 @@ describe('DownloadsView', () => {
 
     render(<DownloadsView {...props} />);
     // Should have open file button(s)
-    const openBtns = screen.getAllByTitle(/Open File/i);
+    const openBtns = screen.getAllByTitle(/Open file/i);
     expect(openBtns.length).toBeGreaterThan(0);
   });
 
@@ -142,7 +142,7 @@ describe('DownloadsView', () => {
     };
 
     render(<DownloadsView {...props} />);
-    const folderBtns = screen.getAllByTitle(/Show in Folder/i);
+    const folderBtns = screen.getAllByTitle(/Open in folder/i);
     expect(folderBtns.length).toBeGreaterThan(0);
   });
 
@@ -163,8 +163,8 @@ describe('DownloadsView', () => {
     };
 
     render(<DownloadsView {...props} />);
-    expect(screen.queryByTitle(/Open File/i)).not.toBeInTheDocument();
-    expect(screen.queryByTitle(/Show in Folder/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/Open file/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/Open in folder/i)).not.toBeInTheDocument();
   });
 
   it('should call electronAPI.fileSystem.openFile when Open File clicked', () => {
@@ -186,7 +186,7 @@ describe('DownloadsView', () => {
     };
 
     render(<DownloadsView {...props} />);
-    const openBtn = screen.getByTitle(/Open File/i);
+    const openBtn = screen.getByTitle(/Open file/i);
     fireEvent.click(openBtn);
     expect(mockOpenFile).toHaveBeenCalledWith(filePath);
   });
@@ -210,7 +210,7 @@ describe('DownloadsView', () => {
     };
 
     render(<DownloadsView {...props} />);
-    const folderBtn = screen.getByTitle(/Show in Folder/i);
+    const folderBtn = screen.getByTitle(/Open in folder/i);
     fireEvent.click(folderBtn);
     expect(mockShowInFolder).toHaveBeenCalledWith(filePath);
   });
@@ -282,7 +282,7 @@ describe('DownloadsBar', () => {
     };
 
     render(<DownloadsBar {...props} />);
-    const openBtn = screen.getByTitle(/Open File/i);
+    const openBtn = screen.getByTitle(/Open file/i);
     expect(openBtn).toBeInTheDocument();
   });
 
@@ -303,7 +303,7 @@ describe('DownloadsBar', () => {
     };
 
     render(<DownloadsBar {...props} />);
-    const openBtn = screen.getByTitle(/Open File/i);
+    const openBtn = screen.getByTitle(/Open file/i);
     fireEvent.click(openBtn);
     expect(mockOpenFile).toHaveBeenCalledWith(filePath);
   });
@@ -325,7 +325,7 @@ describe('DownloadsBar', () => {
     };
 
     render(<DownloadsBar {...props} />);
-    const folderBtn = screen.getByTitle(/Show in Folder/i);
+    const folderBtn = screen.getByTitle(/Open in folder/i);
     fireEvent.click(folderBtn);
     expect(mockShowInFolder).toHaveBeenCalledWith(filePath);
   });

@@ -110,6 +110,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // --- Protocol Link Handling ---
     onProtocolLink: (callback) => ipcRenderer.on('protocol-link', (_e, url) => callback(url)),
 
+    // --- External URLs ---
+    openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
     // --- Diagnostics ---
     getDiagnosticData: () => ipcRenderer.invoke('get-diagnostic-data'),
 

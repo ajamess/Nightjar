@@ -92,7 +92,7 @@ export default function ImportWizard() {
 
             // Build request with correct field names matching InventoryRequest type
             const request = {
-              id: generateId(),
+              id: generateId('req-'),
               inventorySystemId: ctx.inventorySystemId,
 
               // Catalog item (matching InventoryRequest type)
@@ -178,7 +178,7 @@ export default function ImportWizard() {
     if (yAuditLog) {
       doc.transact(() => {
         yAuditLog.push([{
-          id: generateId(),
+          id: generateId('aud-'),
           inventorySystemId: ctx.inventorySystemId,
           timestamp: Date.now(),
           actorId: ctx.userIdentity?.publicKeyBase62 || '',

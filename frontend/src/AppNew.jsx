@@ -32,6 +32,7 @@ import LockScreen from './components/LockScreen';
 import NightjarMascot from './components/NightjarMascot';
 import HelpPage from './components/common/HelpPage';
 import SearchPalette from './components/SearchPalette';
+import BugReportModal from './components/BugReportModal';
 import { handleIndexResults } from './services/SearchIndexCache';
 import { useAutoLock } from './hooks/useAutoLock';
 import identityManager from './utils/identityManager';
@@ -368,6 +369,7 @@ function App() {
     const [showHelp, setShowHelp] = useState(false); // Show help/documentation overlay
     const [helpSection, setHelpSection] = useState(null); // Deep-link to specific help section
     const [showSearchPalette, setShowSearchPalette] = useState(false); // Cross-app search palette
+    const [showBugReport, setShowBugReport] = useState(false); // Bug report modal
     const [expandedFolders, setExpandedFolders] = useState(new Set()); // Lifted from sidebar for search folder-reveal
 
     // --- Auto-Lock Hook ---
@@ -1975,6 +1977,7 @@ function App() {
                             isFullscreen={isFullscreen}
                             onToggleFullscreen={toggleFullscreen}
                             onOpenSearch={() => setShowSearchPalette(true)}
+                            onReportBug={() => setShowBugReport(true)}
                             documents={documents}
                             folders={folders}
                             collaboratorsByDocument={collaboratorsByDocument}
@@ -1991,6 +1994,15 @@ function App() {
                                     data-testid="search-btn-minimal"
                                 >
                                     🔍
+                                </button>
+                                <button
+                                    className="tab-bar-btn"
+                                    onClick={() => setShowBugReport(true)}
+                                    title="Report a bug"
+                                    aria-label="Report a bug"
+                                    data-testid="bug-report-btn-minimal"
+                                >
+                                    🐛
                                 </button>
                                 <button
                                     className="tab-bar-btn"
@@ -2398,6 +2410,17 @@ function App() {
                 isOpen={showHelp}
                 onClose={() => setShowHelp(false)}
                 initialSection={helpSection}
+            />
+
+            {/* Bug Report Modal */}
+            <BugReportModal
+                isOpen={showBugReport}
+                onClose={() => setShowBugReport(false)}
+                context={{
+                    documentName: openTabs.find(t => t.id === activeDocId)?.name || null,
+                    documentType: activeDocType,
+                    workspaceName: currentWorkspace?.name || null,
+                }}
             />
 
             {/* Cross-App Search Palette */}

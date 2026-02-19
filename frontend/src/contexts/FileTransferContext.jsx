@@ -262,16 +262,18 @@ export function FileTransferProvider({
 
   // Reset DB ref and clear pending requests when workspace changes
   useEffect(() => {
-    // Close previous IndexedDB connection
-    if (dbRef.current) {
-      try { dbRef.current.close(); } catch (e) { /* ignore */ }
-    }
-    dbRef.current = null;
-    pendingRequests.current.forEach(({ timer, reject }) => {
-      clearTimeout(timer);
-      if (reject) reject(new Error('Workspace changed, request aborted'));
-    });
-    pendingRequests.current.clear();
+    return () => {
+      // Close previous IndexedDB connection
+      if (dbRef.current) {
+        try { dbRef.current.close(); } catch (e) { /* ignore */ }
+      }
+      dbRef.current = null;
+      pendingRequests.current.forEach(({ timer, reject }) => {
+        clearTimeout(timer);
+        if (reject) reject(new Error('Workspace changed, request aborted'));
+      });
+      pendingRequests.current.clear();
+    };
   }, [workspaceId]);
 
   // ── Chunk serving (incoming chunk-request) ──
@@ -750,12 +752,17 @@ export function FileTransferProvider({
     };
   }, []);
 
-  // ── Cleanup pending requests on unmount ──
+  // ── Cleanup pending requests and close IndexedDB on unmount ──
   useEffect(() => {
     return () => {
       pendingRequests.current.forEach(({ timer }) => clearTimeout(timer));
       pendingRequests.current.clear();
       if (triggerSeedTimeoutRef.current) clearTimeout(triggerSeedTimeoutRef.current);
+      // Close IndexedDB connection to prevent leaks
+      if (dbRef.current) {
+        try { dbRef.current.close(); } catch (e) { /* ignore */ }
+        dbRef.current = null;
+      }
     };
   }, []);
 

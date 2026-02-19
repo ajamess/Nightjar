@@ -352,6 +352,11 @@ export function IdentityProvider({ children }) {
                 }
             }
             
+            // Persist imported identity in web mode (Electron handles this in IPC)
+            if (!window.electronAPI?.identity) {
+                secureStorage.set(IDENTITY_KEY, restored);
+            }
+            
             setIdentity(restored);
             setNeedsOnboarding(false);
             

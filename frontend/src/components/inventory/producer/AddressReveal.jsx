@@ -15,7 +15,7 @@ import './AddressReveal.css';
 /**
  * @param {{ requestId: string, reveal: Object, identity: Object, onShipped: Function, onClose: Function }} props
  */
-export default function AddressReveal({ requestId, reveal, identity, onShipped, onClose }) {
+export default function AddressReveal({ requestId, reveal, identity, onShipped, onClose, embedded = false }) {
   const ctx = useInventory();
   const { showToast } = useToast();
   const [address, setAddress] = useState(null);
@@ -70,8 +70,12 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
       setProviderCopied(provider.id);
       setTimeout(() => setProviderCopied(null), 2500);
     });
-    // Open shipping provider in new tab
-    window.open(provider.url, '_blank', 'noopener,noreferrer');
+    // Open shipping provider in system browser (Electron) or new tab (web)
+    if (window.electronAPI?.openExternal) {
+      window.electronAPI.openExternal(provider.url);
+    } else {
+      window.open(provider.url, '_blank', 'noopener,noreferrer');
+    }
   }, [address, copyToClipboard]);
 
   const handleMarkShipped = useCallback(async () => {
@@ -135,10 +139,12 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
   if (decryptError) {
     return (
       <div className="address-reveal">
-        <div className="ar-header">
-          <h3>Shipping Address</h3>
-          {onClose && <button className="ar-close" onClick={onClose}>✕</button>}
-        </div>
+        {!embedded && (
+          <div className="ar-header">
+            <h3>Shipping Address</h3>
+            {onClose && <button className="ar-close" onClick={onClose}>✕</button>}
+          </div>
+        )}
         <div className="ar-error">{decryptError}</div>
       </div>
     );
@@ -147,10 +153,12 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
   if (!address) {
     return (
       <div className="address-reveal">
-        <div className="ar-header">
-          <h3>Shipping Address</h3>
-          {onClose && <button className="ar-close" onClick={onClose}>✕</button>}
-        </div>
+        {!embedded && (
+          <div className="ar-header">
+            <h3>Shipping Address</h3>
+            {onClose && <button className="ar-close" onClick={onClose}>✕</button>}
+          </div>
+        )}
         <div className="ar-loading">Decrypting address…</div>
       </div>
     );
@@ -158,12 +166,14 @@ export default function AddressReveal({ requestId, reveal, identity, onShipped, 
 
   return (
     <div className="address-reveal">
-      <div className="ar-header">
-        <h3>Shipping Address</h3>
-        {onClose && <button className="ar-close" onClick={onClose}>✕</button>}
-      </div>
+      {!embedded && (
+        <div className="ar-header">
+          <h3>Shipping Address</h3>
+          {onClose && <button className="ar-close" onClick={onClose}>✕</button>}
+        </div>
+      )}
 
-      {requestInfo && (
+      {!embedded && requestInfo && (
         <div className="ar-request-info">
           <div className="ar-request-info__row">
             <span className="ar-request-info__label">Item:</span>

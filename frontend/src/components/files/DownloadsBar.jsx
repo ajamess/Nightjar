@@ -53,15 +53,15 @@ export default function DownloadsBar({
                 <button
                   className="downloads-bar-action"
                   onClick={() => window.electronAPI?.fileSystem?.openFile(d.filePath)}
-                  title="Open File"
+                  title="Open file..."
                   data-testid={`dbar-open-${d.downloadId}`}
                 >
-                  📂
+                  📄
                 </button>
                 <button
                   className="downloads-bar-action"
                   onClick={() => window.electronAPI?.fileSystem?.showInFolder(d.filePath)}
-                  title="Show in Folder"
+                  title="Open in folder..."
                   data-testid={`dbar-folder-${d.downloadId}`}
                 >
                   📁

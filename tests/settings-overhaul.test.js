@@ -507,7 +507,7 @@ describe('AppSettings – About Tab', () => {
     fireEvent.click(aboutTab);
     
     const link = screen.getByText('GitHub Repository');
-    expect(link).toHaveAttribute('href', 'https://github.com/SaoneYanpa/Nightjar');
+    expect(link).toHaveAttribute('href', 'https://github.com/niyanagi/nightjar');
   });
 
   test('About tab does NOT link to Nightjar.dev', () => {

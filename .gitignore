@@ -73,3 +73,4 @@ server/**/*.pem
 *-output.txt
 hook-test-output.txt
 hooks-output.txt
+test-iter*.txt

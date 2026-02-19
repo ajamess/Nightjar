@@ -36,7 +36,7 @@
 .file-card-checkbox {
   accent-color: var(--accent-color, #89b4fa);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.4;
   transition: opacity 0.15s ease;
 }
 

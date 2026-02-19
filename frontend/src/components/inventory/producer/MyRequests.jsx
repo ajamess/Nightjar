@@ -4,7 +4,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import StatusBadge from '../common/StatusBadge';
-import AddressReveal from './AddressReveal';
 import SlidePanel from '../common/SlidePanel';
 import RequestDetail from '../common/RequestDetail';
 import { generateId, formatRelativeDate } from '../../../utils/inventoryValidation';
@@ -20,10 +19,9 @@ const PIPELINE = [
 
 export default function ProducerMyRequests() {
   const ctx = useInventory();
-  const { catalogItems, requests, addressReveals } = ctx;
+  const { catalogItems, requests } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
-  const [revealRequestId, setRevealRequestId] = useState(null);
   const [filterStatus, setFilterStatus] = useState('');
   const [selectedRequest, setSelectedRequest] = useState(null);
 
@@ -270,7 +268,6 @@ export default function ProducerMyRequests() {
             <div className="pmr-stage-cards">
               {stage.requests.map(req => {
                 const item = catalogMap[req.catalogItemId];
-                const hasReveal = addressReveals?.[req.id];
 
                 return (
                   <div key={req.id} className={`pmr-card ${req.urgent ? 'pmr-card--urgent' : ''}`}
@@ -295,11 +292,6 @@ export default function ProducerMyRequests() {
                     )}
 
                     <div className="pmr-card-actions">
-                      {hasReveal && (req.status === 'approved' || req.status === 'in_progress') && (
-                        <button className="pmr-btn pmr-btn--reveal" onClick={(e) => { e.stopPropagation(); setRevealRequestId(req.id); }}>
-                          📍 View Address
-                        </button>
-                      )}
                       {req.status === 'approved' && (
                         <button className="pmr-btn pmr-btn--progress" onClick={(e) => { e.stopPropagation(); handleMarkInProgress(req.id); }}>
                           🔨 Mark In Progress
@@ -322,25 +314,8 @@ export default function ProducerMyRequests() {
         ))}
       </div>
 
-      {/* Address reveal slide panel */}
-      {revealRequestId && addressReveals?.[revealRequestId] && (
-        <SlidePanel
-          isOpen={true}
-          onClose={() => setRevealRequestId(null)}
-          title="Address & Shipping"
-        >
-          <AddressReveal
-            requestId={revealRequestId}
-            reveal={addressReveals[revealRequestId]}
-            identity={ctx.userIdentity}
-            onShipped={() => setRevealRequestId(null)}
-            onClose={() => setRevealRequestId(null)}
-          />
-        </SlidePanel>
-      )}
-
       {/* Request drill-in slide panel */}
-      {selectedRequest && !revealRequestId && (
+      {selectedRequest && (
         <SlidePanel
           isOpen={true}
           onClose={() => setSelectedRequest(null)}
@@ -355,12 +330,7 @@ export default function ProducerMyRequests() {
             onCancel={() => { handleUnclaim(selectedRequest.id); setSelectedRequest(null); }}
             onMarkInProgress={(req) => { handleMarkInProgress(req.id); setSelectedRequest(null); }}
             onMarkShipped={(req, tracking) => {
-              // If there's an address reveal, close detail and open AddressReveal panel
-              // for the full shipping workflow. Otherwise close detail.
               setSelectedRequest(null);
-              if (addressReveals?.[req.id]) {
-                setRevealRequestId(req.id);
-              }
             }}
             onRevertToApproved={(req) => { handleRevertToApproved(req); setSelectedRequest(null); }}
             onRevertToInProgress={(req) => { handleRevertToInProgress(req); setSelectedRequest(null); }}

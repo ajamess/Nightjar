@@ -4,15 +4,32 @@ const startTime = Date.now();
 // Debug mode - reduces verbose logging in hot paths for better performance
 const DEBUG_MODE = process.env.NIGHTJAR_DEBUG === 'true';
 
-// Add global error handlers
+// Add global error handlers — use graceful shutdown instead of hard exit
+// to ensure databases are flushed, UPnP ports unmapped, and connections closed
+let _fatalShutdownTriggered = false;
 process.on('uncaughtException', (error) => {
     console.error('[Sidecar] Uncaught exception:', error);
-    process.exit(1);
+    if (!_fatalShutdownTriggered) {
+        _fatalShutdownTriggered = true;
+        // Attempt graceful shutdown; if shutdown isn't defined yet (early error), exit immediately
+        if (typeof shutdown === 'function') {
+            shutdown().catch(() => process.exit(1));
+        } else {
+            process.exit(1);
+        }
+    }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('[Sidecar] Unhandled rejection at:', promise, 'reason:', reason);
-    process.exit(1);
+    if (!_fatalShutdownTriggered) {
+        _fatalShutdownTriggered = true;
+        if (typeof shutdown === 'function') {
+            shutdown().catch(() => process.exit(1));
+        } else {
+            process.exit(1);
+        }
+    }
 });
 
 console.log(`[Sidecar] Loading modules... (${Date.now() - startTime}ms)`);
@@ -969,7 +986,8 @@ async function persistMetadataFromYjs(workspaceId, metaDoc) {
         for (const [folderId, folder] of folderEntries) {
             if (folder && (folder.id || folderId)) {
                 const folderMeta = {
-                    id: folder.id,
+                    ...folder,
+                    id: folder.id || folderId,
                     name: folder.name || 'Untitled Folder',
                     workspaceId: workspaceId,
                     parentId: folder.parentId || null,

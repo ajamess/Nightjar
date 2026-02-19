@@ -171,8 +171,8 @@ export function secureGet(key) {
   
   const decrypted = decrypt(encrypted);
   if (!decrypted) {
-    // Decryption failed (session key changed), remove invalid data
-    localStorage.removeItem(STORAGE_PREFIX + key);
+    // Decryption failed (session key changed) — do NOT remove the encrypted data.
+    // The data may still be valid and recoverable if the session key is restored.
     return null;
   }
   

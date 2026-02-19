@@ -123,13 +123,12 @@ cross-platform P2P scenarios.
 
 ---
 
-## 🔄 Account Migration *(v1.7.4 – v1.7.5)*
+## 🔄 Account Migration *(v1.7.4 – v1.7.5 – v1.8.0)*
 
-- All source references migrated from `InyanRock` / `tokahe@proton.me` to
-  `SaoneYanpa` / `SaoneYanpa@proton.me` across package.json, capacitor.config.json,
-  main.js, README, docs, and UI components.
-- App ID updated to `com.saoneyanpa.Nightjar`.
-- Full git history rewritten — all 147 commits now attributed to `SaoneYanpa`.
+- All source references consolidated under `Niyanagi` / `niyanagi@proton.me`
+  across package.json, capacitor.config.json, main.js, README, docs, and UI.
+- App ID: `com.niyanagi.nightjar`.
+- Full git history rewritten — all commits attributed to `Niyanagi`.
 
 ---
 

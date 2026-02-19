@@ -141,7 +141,7 @@ function groupByType(commits) {
 
 function generateMarkdown(version, fromTag, groups, commits) {
     const date = new Date().toISOString().split('T')[0];
-    const repoUrl = 'https://github.com/SaoneYanpa/Nightjar';
+    const repoUrl = 'https://github.com/niyanagi/nightjar';
     
     let md = `# Nightjar v${version} Release Notes\n\n`;
     md += `**Release Date:** ${date}\n\n`;

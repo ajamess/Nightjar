@@ -89,12 +89,14 @@ export default function FolderCard({
         onDrop={handleDrop}
         data-testid={`fs-folder-${folder.id}`}
       >
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={handleCheckbox}
-          className="folder-compact-checkbox"
-        />
+        <span className="folder-compact-checkbox-wrapper" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={handleCheckbox}
+            className="folder-compact-checkbox"
+          />
+        </span>
         <span className="folder-compact-icon">{folder.icon || '📁'}</span>
         <span className="folder-compact-name">{folder.name}</span>
         <span className="folder-compact-count">{fileCount} item{fileCount !== 1 ? 's' : ''}</span>
@@ -114,12 +116,14 @@ export default function FolderCard({
         data-testid={`fs-folder-${folder.id}`}
       >
         <td className="file-table-cell file-table-check">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={handleCheckbox}
-            className="file-table-checkbox"
-          />
+          <span onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={handleCheckbox}
+              className="file-table-checkbox"
+            />
+          </span>
         </td>
         <td className="file-table-cell file-table-name">
           <span className="folder-table-icon">{folder.icon || '📁'}</span>
@@ -149,12 +153,14 @@ export default function FolderCard({
       data-testid={`fs-folder-${folder.id}`}
     >
       <div className="folder-card-header">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={handleCheckbox}
-          className="folder-card-checkbox"
-        />
+        <span className="folder-card-checkbox-wrapper" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={handleCheckbox}
+            className="folder-card-checkbox"
+          />
+        </span>
       </div>
       <span className="folder-card-icon" style={folder.color ? { color: folder.color } : {}}>
         {folder.icon || '📁'}

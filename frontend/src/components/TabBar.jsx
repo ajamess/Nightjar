@@ -39,6 +39,7 @@ const TabBar = ({
     isFullscreen,
     onToggleFullscreen,
     onOpenSearch,
+    onReportBug,
     documents = [], // Added for color lookups
     folders = [], // Added for color lookups
     collaboratorsByDocument = {} // Map of documentId -> [{ name, color, icon }]
@@ -171,6 +172,18 @@ const TabBar = ({
                 
                 {/* Do Not Disturb Toggle */}
                 <DoNotDisturbToggle />
+                
+                {/* Bug Report */}
+                <button
+                    type="button"
+                    className="tab-bar-btn"
+                    onClick={onReportBug}
+                    title="Report a bug"
+                    aria-label="Report a bug"
+                    data-testid="bug-report-btn"
+                >
+                    🐛 Report
+                </button>
                 
                 {CONTENT_DOC_TYPES.has(activeDocType) && (
                 <>

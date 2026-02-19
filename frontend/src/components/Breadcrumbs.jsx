@@ -186,9 +186,9 @@ export default function Breadcrumbs({
     return buildBreadcrumbPath(entityType, entityId, {
       workspaces,
       folders,
-      documents: [], // Would need documents context
+      documents: folders.flatMap(f => f.documents || []),
       documentFolders,
-      folderHierarchy: new Map(), // Would need from FolderContext
+      folderHierarchy: new Map(folders.map(f => [f.id, f.parentId || null])),
       canView: (type, id) => canView(id),
     });
   }, [entityType, entityId, workspaces, folders, documentFolders, canView]);

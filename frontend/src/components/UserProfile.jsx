@@ -548,7 +548,7 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile, onLock }) =
                                         <strong>Nightjar</strong>
                                         {' '}
                                         <a 
-                                            href="https://github.com/SaoneYanpa/Nightjar" 
+                                            href="https://github.com/niyanagi/nightjar" 
                                             target="_blank" 
                                             rel="noopener noreferrer"
                                             className="github-link"
@@ -565,7 +565,7 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile, onLock }) =
                                         {isElectron ? (
                                             <>
                                                 <a 
-                                                    href={`https://github.com/SaoneYanpa/Nightjar/releases/tag/v${window.electronAPI?.appVersion || '1.0.0'}`}
+                                                    href={`https://github.com/niyanagi/nightjar/releases/tag/v${window.electronAPI?.appVersion || '1.0.0'}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="version-link"
@@ -574,7 +574,7 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile, onLock }) =
                                                 </a>
                                                 {' · '}
                                                 <a 
-                                                    href="https://github.com/SaoneYanpa/Nightjar/releases"
+                                                    href="https://github.com/niyanagi/nightjar/releases"
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="release-notes-link"

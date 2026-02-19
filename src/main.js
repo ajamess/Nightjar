@@ -35,7 +35,7 @@ const appIconPath = getAppIconPath();
 
 // Set app user model ID for Windows taskbar icon (must match build.appId in package.json)
 if (process.platform === 'win32') {
-    app.setAppUserModelId('com.saoneyanpa.Nightjar');
+    app.setAppUserModelId('com.niyanagi.nightjar');
 }
 
 // Cache the logo as base64 for the loading screen
@@ -216,6 +216,15 @@ function createWindow() {
     mainWindow.once('ready-to-show', () => {
         console.log('[Main] Window ready-to-show event fired');
         mainWindow.show();
+    });
+
+    // Prevent window.open() from creating blank Electron windows —
+    // open external URLs in the system browser instead
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+            shell.openExternal(url);
+        }
+        return { action: 'deny' };
     });
 
     // In dev mode, load from Vite dev server
@@ -1438,6 +1447,20 @@ ipcMain.handle('file:open', async (_event, filePath) => {
 ipcMain.handle('file:showInFolder', async (_event, filePath) => {
     try {
         shell.showItemInFolder(filePath);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
+// Open an external URL in the system browser (for shipping providers, etc.)
+ipcMain.handle('open-external', async (_event, url) => {
+    try {
+        // Only allow http(s) URLs for security
+        if (typeof url !== 'string' || (!url.startsWith('https://') && !url.startsWith('http://'))) {
+            return { success: false, error: 'Only http(s) URLs are allowed' };
+        }
+        await shell.openExternal(url);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };

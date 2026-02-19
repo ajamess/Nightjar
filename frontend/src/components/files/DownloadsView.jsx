@@ -99,15 +99,15 @@ export default function DownloadsView({
                     <button
                       className="downloads-action-btn"
                       onClick={() => window.electronAPI?.fileSystem?.openFile(item.filePath)}
-                      title="Open File"
+                      title="Open file..."
                       data-testid={`download-open-${item.downloadId}`}
                     >
-                      📂
+                      📄
                     </button>
                     <button
                       className="downloads-action-btn"
                       onClick={() => window.electronAPI?.fileSystem?.showInFolder(item.filePath)}
-                      title="Show in Folder"
+                      title="Open in folder..."
                       data-testid={`download-folder-${item.downloadId}`}
                     >
                       📁
@@ -118,7 +118,7 @@ export default function DownloadsView({
                   <button
                     className="downloads-action-btn"
                     onClick={() => onRetryDownload?.(item)}
-                    title="Retry"
+                    title="Retry download"
                     data-testid={`download-retry-${item.downloadId}`}
                   >
                     🔄
@@ -127,7 +127,7 @@ export default function DownloadsView({
                 <button
                   className="downloads-action-btn"
                   onClick={() => onClearDownload?.(item.downloadId)}
-                  title="Remove"
+                  title="Remove from downloads"
                   data-testid={`download-clear-${item.downloadId}`}
                 >
                   ✕

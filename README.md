@@ -124,9 +124,9 @@ Download the latest version for your platform:
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [Nightjar Setup.exe](https://github.com/SaoneYanpa/Nightjar/releases/latest) |
-| **macOS** | [Nightjar.dmg](https://github.com/SaoneYanpa/Nightjar/releases/latest) |
-| **Linux** | [Nightjar.AppImage](https://github.com/SaoneYanpa/Nightjar/releases/latest) |
+| **Windows** | [Nightjar Setup.exe](https://github.com/niyanagi/nightjar/releases/latest) |
+| **macOS** | [Nightjar.dmg](https://github.com/niyanagi/nightjar/releases/latest) |
+| **Linux** | [Nightjar.AppImage](https://github.com/niyanagi/nightjar/releases/latest) |
 
 **Requirements:** Windows 10+ / macOS 10.15+ / Ubuntu 20.04+, 4GB RAM, 200MB disk
 
@@ -816,7 +816,7 @@ Built-in protections against common attacks:
 ### Setup
 
 ```bash
-git clone https://github.com/SaoneYanpa/Nightjar.git
+git clone https://github.com/niyanagi/nightjar.git
 cd Nightjar
 npm install
 npm run dev
@@ -855,13 +855,13 @@ npm run test:e2e:smoke      # Quick smoke tests
 - **New Feature**: StatusTransitions — request outcome summary with delivery rate and stage timing
 - **New Feature**: UnitsShippedByType — stacked bar chart of units shipped by catalog item per time bucket
 - **Security**: Full git history sanitization — all 147 commits rewritten to remove prior identity references
-- **Account Migration**: All references migrated from InyanRock to SaoneYanpa across configs, URLs, and app IDs
+- **Account Migration**: All references consolidated under Niyanagi identity across configs, URLs, and app IDs
 - **Testing**: 125 suites, 3,630 tests (0 failures)
 
 ### v1.7.4 - Curve25519 Scoped Keys, Address Reveal Fix & GitHub Migration
 - **Security**: Inventory subsystem now receives Curve25519 encryption-only key (pre-derived via ed2curve) instead of full Ed25519 signing key — prevents signing capability leakage
 - **Critical Fix**: Address reveal pipeline — `publicIdentity` was missing crypto keys, causing all address encryption/decryption to silently no-op; fixed with `inventoryIdentity` extending `publicIdentity` with `curveSecretKey`
-- **Account Migration**: Migrated all references from InyanRock/Tokahe to SaoneYanpa across package.json, capacitor.config.json, main.js, README, docs, and UI
+- **Account Migration**: Consolidated all references under Niyanagi identity across package.json, capacitor.config.json, main.js, README, docs, and UI
 - **Testing**: 125 suites, 3,630 tests — fixed 5 test regressions (stage bar queries, privacy note text, duplicate emoji element)
 
 ### v1.7.3 - Ownership Transfer, Relay Infrastructure & Y.Map Migration

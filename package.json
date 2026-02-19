@@ -4,8 +4,8 @@
   "description": "Nightjar - Secure P2P Collaboration",
   "main": "src/main.js",
   "author": {
-    "name": "Nightjar",
-    "email": "SaoneYanpa@proton.me"
+    "name": "Niyanagi",
+    "email": "niyanagi@proton.me"
   },
   "license": "ISC",
   "scripts": {
@@ -38,7 +38,7 @@
     "package:linux": "npm run build && electron-builder --linux",
     "postinstall": "node scripts/setup-tor.js && electron-builder install-app-deps",
     "rebuild": "npm rebuild",
-    "cap:init": "npx cap init Nightjar com.saoneyanpa.Nightjar --web-dir dist",
+    "cap:init": "npx cap init Nightjar com.niyanagi.nightjar --web-dir dist",
     "cap:add:android": "npx cap add android",
     "cap:add:ios": "npx cap add ios",
     "cap:sync": "npm run build && npx cap sync",
@@ -84,7 +84,7 @@
     "release:notes:stdout": "node scripts/generate-release-notes.js --stdout"
   },
   "build": {
-    "appId": "com.saoneyanpa.Nightjar",
+    "appId": "com.niyanagi.nightjar",
     "productName": "Nightjar",
     "directories": {
       "output": "release",
@@ -196,6 +196,7 @@
     "ed2curve": "^0.3.0",
     "electron-is-dev": "^3.0.1",
     "hash-wasm": "^4.11.0",
+    "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
     "hyperswarm": "^4.7.15",
     "level": "^8.0.1",

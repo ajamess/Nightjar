@@ -258,13 +258,13 @@ describe('ProducerMyRequests', () => {
     expect(screen.getByText('↩️ Unclaim')).toBeInTheDocument();
   });
 
-  it('shows View Address button for approved requests with address reveal', () => {
+  it('does not show standalone View Address button (address is inline in RequestDetail)', () => {
     mockSyncResult.requests = [
       createTestRequest({ id: 'req-mine3', status: 'approved', assignedTo: 'myKey', inventorySystemId: 'sys1', itemId: 'cat1' }),
     ];
     mockSyncResult.addressReveals = { 'req-mine3': { encrypted: 'data' } };
     render(<ProducerMyRequests />);
-    expect(screen.getByText('📍 View Address')).toBeInTheDocument();
+    expect(screen.queryByText('📍 View Address')).not.toBeInTheDocument();
   });
 });
 

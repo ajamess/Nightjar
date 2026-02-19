@@ -169,6 +169,10 @@ export function WorkspaceProvider({ children }) {
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
   
+  // Ref to always have latest identity (avoids stale closure in createWorkspace/joinWorkspace)
+  const publicIdentityRef = useRef(publicIdentity);
+  publicIdentityRef.current = publicIdentity;
+  
   // AbortController for canceling pending async operations when switching workspaces
   const abortControllerRef = useRef(null);
   
@@ -611,10 +615,11 @@ export function WorkspaceProvider({ children }) {
     });
     
     // Get user identity for owner info
-    // Use publicIdentity from IdentityContext (via useIdentity hook) - single source of truth
-    const userIdentity = publicIdentity ? {
-      publicKey: publicIdentity.publicKeyBase62,
-      handle: publicIdentity.handle || 'You',
+    // Use publicIdentityRef to avoid stale closure - single source of truth
+    const currentIdentity = publicIdentityRef.current;
+    const userIdentity = currentIdentity ? {
+      publicKey: currentIdentity.publicKeyBase62,
+      handle: currentIdentity.handle || 'You',
     } : {
       publicKey: 'local-user',
       handle: 'You',
@@ -682,7 +687,7 @@ export function WorkspaceProvider({ children }) {
    * @param {string} workspaceId - Workspace ID
    */
   const deleteWorkspace = useCallback(async (workspaceId) => {
-    const workspace = workspaces.find(w => w.id === workspaceId);
+    const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
     }
@@ -713,7 +718,7 @@ export function WorkspaceProvider({ children }) {
    * @param {string} workspaceId - Workspace ID
    */
   const leaveWorkspace = useCallback(async (workspaceId) => {
-    const workspace = workspaces.find(w => w.id === workspaceId);
+    const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
     }
@@ -741,7 +746,7 @@ export function WorkspaceProvider({ children }) {
    * @param {string} workspaceId - Workspace ID to switch to
    */
   const switchWorkspace = useCallback((workspaceId) => {
-    const workspace = workspaces.find(w => w.id === workspaceId);
+    const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       secureLog('[WorkspaceContext] Workspace not found:', workspaceId);
       return;
@@ -753,7 +758,7 @@ export function WorkspaceProvider({ children }) {
     setWorkspaces(prev => prev.map(w => 
       w.id === workspaceId ? { ...w, lastAccessedAt: Date.now() } : w
     ));
-  }, [workspaces]);
+  }, []);
 
   /**
    * Join a workspace via share link
@@ -883,8 +888,8 @@ export function WorkspaceProvider({ children }) {
       if (!topic) topic = await generateTopicHash(entityId);
     }
     
-    // Get user identity (prefer context, fallback to IPC)
-    const userIdentity = publicIdentity || window.electronAPI?.identity?.getPublic?.() || {
+    // Get user identity (prefer context ref, fallback to IPC)
+    const userIdentity = publicIdentityRef.current || window.electronAPI?.identity?.getPublic?.() || {
       publicKey: 'local-user',
       handle: 'You',
     };

@@ -5,7 +5,6 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import CapacityInput from '../common/CapacityInput';
 import StatusBadge from '../common/StatusBadge';
-import AddressReveal from './AddressReveal';
 import SlidePanel from '../common/SlidePanel';
 import RequestDetail from '../common/RequestDetail';
 import { generateId, formatRelativeDate } from '../../../utils/inventoryValidation';
@@ -28,7 +27,6 @@ export default function ProducerDashboard() {
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
   const myDisplayName = ctx.userIdentity?.displayName || ctx.userIdentity?.name || '';
-  const [revealRequestId, setRevealRequestId] = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
 
@@ -426,7 +424,6 @@ export default function ProducerDashboard() {
                 <div className="pd-kanban-cards">
                   {colReqs.map(req => {
                     const item = catalogMap[req.catalogItemId];
-                    const hasReveal = addressReveals?.[req.id];
                     return (
                       <div key={req.id} className={`pd-kanban-card ${req.urgent ? 'pd-kanban-card--urgent' : ''}`}
                         onClick={() => setSelectedRequest(req)} tabIndex={0}
@@ -441,15 +438,6 @@ export default function ProducerDashboard() {
                           {req.quantity} {item?.unitName || 'un'} • {req.state}
                         </div>
                         <StatusBadge status={req.status} />
-
-                        {hasReveal && req.status === 'approved' && (
-                          <button
-                            className="pd-reveal-btn"
-                            onClick={(e) => { e.stopPropagation(); setRevealRequestId(req.id); }}
-                          >
-                            📍 View Address
-                          </button>
-                        )}
 
                         {(req.status === 'claimed' || req.status === 'approved') && (
                           <button
@@ -481,25 +469,8 @@ export default function ProducerDashboard() {
         <span>Rank: <strong>#{stats.rank}</strong> of {stats.totalProducers}</span>
       </section>
 
-      {/* Address reveal modal */}
-      {revealRequestId && addressReveals?.[revealRequestId] && (
-        <SlidePanel
-          isOpen={true}
-          onClose={() => setRevealRequestId(null)}
-          title="Address & Shipping"
-        >
-          <AddressReveal
-            requestId={revealRequestId}
-            reveal={addressReveals[revealRequestId]}
-            identity={ctx.userIdentity}
-            onShipped={() => setRevealRequestId(null)}
-            onClose={() => setRevealRequestId(null)}
-          />
-        </SlidePanel>
-      )}
-
       {/* Request drill-in slide panel */}
-      {selectedRequest && !revealRequestId && (
+      {selectedRequest && (
         <SlidePanel
           isOpen={true}
           onClose={() => setSelectedRequest(null)}
@@ -514,25 +485,11 @@ export default function ProducerDashboard() {
             onCancel={() => { handleUnclaim(selectedRequest.id); setSelectedRequest(null); }}
             onMarkInProgress={(req) => { handleMarkInProgress(req.id); setSelectedRequest(null); }}
             onMarkShipped={(req, tracking) => {
-              // Open address reveal for shipping
               setSelectedRequest(null);
-              setRevealRequestId(req.id);
             }}
             onRevertToApproved={(req) => { handleRevertToApproved(req); setSelectedRequest(null); }}
             onRevertToInProgress={(req) => { handleRevertToInProgress(req); setSelectedRequest(null); }}
           />
-          {addressReveals?.[selectedRequest.id] && (selectedRequest.status === 'approved' || selectedRequest.status === 'in_progress') && (
-            <>
-              <div className="slide-panel__divider" />
-              <AddressReveal
-                requestId={selectedRequest.id}
-                reveal={addressReveals[selectedRequest.id]}
-                identity={ctx.userIdentity}
-                onShipped={() => setSelectedRequest(null)}
-                onClose={() => setSelectedRequest(null)}
-              />
-            </>
-          )}
         </SlidePanel>
       )}
     </div>

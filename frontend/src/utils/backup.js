@@ -349,5 +349,10 @@ function uint8ToBase62(bytes) {
     num = num / BigInt(62);
   }
   
+  // Preserve leading zeros (must match cryptoUtils.js uint8ToBase62)
+  for (let i = 0; i < bytes.length && bytes[i] === 0; i++) {
+    result = '0' + result;
+  }
+  
   return result;
 }
