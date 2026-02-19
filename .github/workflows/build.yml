@@ -275,6 +275,9 @@ jobs:
             WEB="/var/www/night-jar"
             IMAGE="ghcr.io/niyanagi/nightjar:latest"
 
+            echo "=== Fixing repo ownership ==="
+            sudo chown -R $(whoami):$(whoami) "$REPO"
+
             echo "=== Pulling latest code (for compose file + static assets) ==="
             cd "$REPO"
             git fetch --all --tags

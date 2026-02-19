@@ -59,6 +59,9 @@ jobs:
             WEB="/var/www/night-jar"
             IMAGE="${{ env.IMAGE }}:latest"
 
+            echo "=== Fixing repo ownership ==="
+            sudo chown -R $(whoami):$(whoami) "$REPO"
+
             echo "=== Pulling latest code ==="
             cd "$REPO"
             git fetch --all
