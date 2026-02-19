@@ -16,7 +16,8 @@ COPY package.json package-lock.json ./
 COPY frontend/ ./frontend/
 COPY vite.config.js ./
 
-RUN npm ci --prefer-offline
+# --ignore-scripts skips the Electron-specific postinstall (setup-tor, electron-builder)
+RUN npm ci --prefer-offline --ignore-scripts
 
 # Build arg for Vite base path
 ARG BASE_PATH=./
