@@ -139,7 +139,9 @@ export async function storeAddress(keyMaterial, inventorySystemId, requestId, ad
   packed.set(ciphertext, nonce.length);
 
   if (isElectron()) {
-    await window.electronAPI.inventory.storeAddress(inventorySystemId, requestId, Array.from(packed));
+    // Base64-encode for IPC transport (handler validates typeof === 'string')
+    const base64Blob = btoa(String.fromCharCode(...packed));
+    await window.electronAPI.inventory.storeAddress(inventorySystemId, requestId, base64Blob);
   } else {
     await idbPut(`inv-addr:${inventorySystemId}:${requestId}`, packed);
   }
@@ -164,7 +166,12 @@ export async function getAddress(keyMaterial, inventorySystemId, requestId) {
   if (isElectron()) {
     const data = await window.electronAPI.inventory.getAddress(inventorySystemId, requestId);
     if (!data) return null;
-    packed = new Uint8Array(data);
+    // Handle both legacy Array format (pre-v1.7.9) and new Base64 string format
+    if (Array.isArray(data)) {
+      packed = new Uint8Array(data);
+    } else {
+      packed = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+    }
   } else {
     packed = await idbGet(`inv-addr:${inventorySystemId}:${requestId}`);
   }

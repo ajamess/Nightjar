@@ -527,6 +527,25 @@ describe('InventoryNavRail', () => {
     render(<InventoryNavRail {...baseProps} pendingApprovalCount={150} />);
     expect(screen.getByText('99+')).toBeInTheDocument();
   });
+
+  test('shows badge for unseenRequestCount on All Requests', () => {
+    render(<InventoryNavRail {...baseProps} unseenRequestCount={5} />);
+    // Both "2" (pendingApproval) and "5" (unseen) should appear
+    expect(screen.getByText('5')).toBeInTheDocument();
+  });
+
+  test('does not show unseen badge when count is 0', () => {
+    render(<InventoryNavRail {...baseProps} unseenRequestCount={0} />);
+    // Only the pendingApprovalCount "2" badge should be visible
+    const badges = document.querySelectorAll('.inventory-nav-item__badge');
+    const badgeTexts = [...badges].map(b => b.textContent);
+    expect(badgeTexts).not.toContain('0');
+  });
+
+  test('shows 99+ for unseen counts over 99', () => {
+    render(<InventoryNavRail {...baseProps} pendingApprovalCount={0} unseenRequestCount={200} />);
+    expect(screen.getByText('99+')).toBeInTheDocument();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

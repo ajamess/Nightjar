@@ -95,7 +95,9 @@ export async function storeSavedAddress(keyMaterial, userPublicKey, savedAddress
   packed.set(ciphertext, nonce.length);
 
   if (isElectron()) {
-    await window.electronAPI.inventory.storeSavedAddress(addressId, Array.from(packed));
+    // Base64-encode for IPC transport (handler validates typeof === 'string')
+    const base64Blob = btoa(String.fromCharCode(...packed));
+    await window.electronAPI.inventory.storeSavedAddress(addressId, base64Blob);
   } else {
     await idbPut(`inv-saved-addr:${userPublicKey}:${addressId}`, packed);
   }
@@ -148,7 +150,11 @@ export async function getSavedAddresses(keyMaterial, userPublicKey) {
   const addresses = [];
   for (const entry of entries) {
     try {
-      const packed = new Uint8Array(entry.data || entry);
+      const raw = entry.data || entry;
+      // Decode Base64 string from IPC, or use raw Uint8Array from IndexedDB
+      const packed = typeof raw === 'string'
+        ? Uint8Array.from(atob(raw), c => c.charCodeAt(0))
+        : new Uint8Array(raw);
       const nonce = packed.slice(0, nacl.secretbox.nonceLength);
       const ciphertext = packed.slice(nacl.secretbox.nonceLength);
       const plaintext = nacl.secretbox.open(ciphertext, nonce, key);

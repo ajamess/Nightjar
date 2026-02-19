@@ -16,7 +16,9 @@ export default function EditPropertiesModal({
     item, // { id, name, icon, color, type: 'folder' | 'document' }
     onSave,
     parentFolder = null, // For gradient previews when editing documents
+    readOnly = false, // When true, all fields are disabled (viewer permission)
 }) {
+    const [name, setName] = useState(item?.name || '');
     const [icon, setIcon] = useState(item?.icon || (item?.type === 'folder' ? '📁' : '📄'));
     const [color, setColor] = useState(item?.color || null);
     const [isSaving, setIsSaving] = useState(false);
@@ -28,17 +30,19 @@ export default function EditPropertiesModal({
     // Sync local state when item changes (e.g., when modal opens with a new item)
     useEffect(() => {
         if (item) {
+            setName(item.name || '');
             setIcon(item.icon || (item.type === 'folder' ? '📁' : '📄'));
             setColor(item.color || null);
         }
-    }, [item?.id, item?.icon, item?.color, item?.type]);
+    }, [item?.id, item?.name, item?.icon, item?.color, item?.type]);
     
     if (!isOpen || !item) return null;
     
     const handleSave = async () => {
+        if (readOnly) return;
         setIsSaving(true);
         try {
-            await onSave?.({ id: item.id, type: item.type, icon, color });
+            await onSave?.({ id: item.id, type: item.type, name: name.trim() || item.name, icon, color });
             onClose();
         } catch (error) {
             console.error('Failed to save properties:', error);
@@ -80,10 +84,17 @@ export default function EditPropertiesModal({
                 <div className="edit-properties-modal__body">
                     <div className="edit-properties-modal__content">
                         <div className="edit-properties-modal__field">
-                            <label className="edit-properties-modal__label">Name</label>
-                            <div className="edit-properties-modal__name">
-                                {item.name}
-                            </div>
+                            <label className="edit-properties-modal__label" htmlFor="edit-properties-name">Name</label>
+                            <input
+                                id="edit-properties-name"
+                                className="edit-properties-modal__name-input"
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                disabled={readOnly}
+                                readOnly={readOnly}
+                                autoFocus={!readOnly}
+                            />
                         </div>
                         
                         <div className="edit-properties-modal__field">
@@ -92,11 +103,12 @@ export default function EditPropertiesModal({
                                 <IconColorPicker
                                     icon={icon}
                                     color={color}
-                                    onIconChange={setIcon}
-                                    onColorChange={setColor}
+                                    onIconChange={readOnly ? undefined : setIcon}
+                                    onColorChange={readOnly ? undefined : setColor}
                                     size="medium"
                                     showColorPreview={false}
                                     compact={true}
+                                    disabled={readOnly}
                                 />
                             </div>
                         </div>
@@ -132,7 +144,7 @@ export default function EditPropertiesModal({
                                 >
                                     {item.type === 'document' && <span className="preview-tree-spacer"></span>}
                                     <span className="preview-tree-icon">{icon}</span>
-                                    <span className="preview-tree-name">{item.name}</span>
+                                    <span className="preview-tree-name">{name || item.name}</span>
                                     <div className="preview-tree-actions">
                                         <button className="preview-tree-edit" title="Edit properties">⚙️</button>
                                         <button className="preview-tree-delete" title="Delete">🗑</button>
@@ -155,7 +167,7 @@ export default function EditPropertiesModal({
                                             ...(color || parentFolder?.color ? { color: '#ffffff' } : {})
                                         }}
                                     >
-                                        <span className="preview-tab-name">{item.name}</span>
+                                        <span className="preview-tab-name">{name || item.name}</span>
                                         <span className="preview-tab-unsaved">●</span>
                                         <button className="preview-tab-close" title="Close tab">✕</button>
                                     </div>
@@ -171,15 +183,17 @@ export default function EditPropertiesModal({
                         onClick={onClose}
                         disabled={isSaving}
                     >
-                        Cancel
+                        {readOnly ? 'Close' : 'Cancel'}
                     </button>
-                    <button 
-                        className="edit-properties-modal__btn edit-properties-modal__btn--save"
-                        onClick={handleSave}
-                        disabled={isSaving}
-                    >
-                        {isSaving ? 'Saving...' : 'Save'}
-                    </button>
+                    {!readOnly && (
+                        <button 
+                            className="edit-properties-modal__btn edit-properties-modal__btn--save"
+                            onClick={handleSave}
+                            disabled={isSaving || !name.trim()}
+                        >
+                            {isSaving ? 'Saving...' : 'Save'}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

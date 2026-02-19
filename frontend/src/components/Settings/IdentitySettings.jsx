@@ -60,7 +60,7 @@ export default function IdentitySettings({ onClose }) {
         setQrPin(pin);
         
         try {
-            const transferData = generateTransferQRData(identity, pin, 5);
+            const transferData = await generateTransferQRData(identity, pin, 5);
             const qrImage = await generateQRCode(transferData, { width: 280 });
             setQrData(qrImage);
         } catch (e) {

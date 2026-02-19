@@ -304,11 +304,13 @@ function validateRecoveryPhrase(mnemonic) {
  * Simple mnemonic encryption using machine-specific key
  * For production, use OS keychain instead
  */
+// Cache to avoid re-deriving on every call
+let _machineKeyCache = null;
+let _legacyKeyCache = null;
+
 function getMachineKey() {
-    // Derive a key from machine-specific info using proper PBKDF2
-    // This is NOT secure against determined attackers, just casual access
-    // Enhancement: use a per-installation random salt to prevent key reproduction
-    // from publicly-known machine info alone
+    if (_machineKeyCache) return _machineKeyCache;
+    
     const os = require('os');
     const info = [
         os.hostname(),
@@ -317,35 +319,15 @@ function getMachineKey() {
         'Nightjar-identity-key-v1'
     ].join(':');
     
-    // Use a per-installation random salt (generated once, stored alongside identity)
-    // IMPORTANT: Use configuredBasePath (module-scope), not 'basePath' which is undefined here
-    const effectiveBasePath = configuredBasePath || (process.env.HOME || process.env.USERPROFILE || '.');
-    const saltPath = path.join(effectiveBasePath, '.machine-salt');
-    let salt;
-    try {
-        if (fs.existsSync(saltPath)) {
-            salt = fs.readFileSync(saltPath);
-        } else {
-            // Generate a new random salt on first use
-            salt = crypto.randomBytes(32);
-            // Ensure directory exists
-            const dir = path.dirname(saltPath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
-            fs.writeFileSync(saltPath, salt, { mode: 0o600 });
-        }
-    } catch (e) {
-        // Fallback to deterministic salt if file operations fail
-        console.warn('[Identity] Could not read/write machine salt file:', e.message, '- using fallback');
-        salt = Buffer.from('Nightjar-machine-key-salt', 'utf-8');
-    }
+    // Use the original deterministic salt and iteration count to maintain
+    // backward compatibility with existing identity files.
+    // Changing the salt or iterations would make all existing encrypted
+    // mnemonics unreadable, locking users out of their identities.
+    const salt = Buffer.from('Nightjar-machine-key-salt', 'utf-8');
+    const key = crypto.pbkdf2Sync(info, salt, 10000, 32, 'sha256');
     
-    // Use PBKDF2 to derive a proper 32-byte key
-    // 100,000 iterations to match export key derivation strength (OWASP recommends ≥600k for SHA-256)
-    const key = crypto.pbkdf2Sync(info, salt, 100000, 32, 'sha256');
-    
-    return new Uint8Array(key);
+    _machineKeyCache = new Uint8Array(key);
+    return _machineKeyCache;
 }
 
 function encryptMnemonic(mnemonic) {

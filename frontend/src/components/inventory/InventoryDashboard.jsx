@@ -112,6 +112,29 @@ export default function InventoryDashboard({
     inventorySystemId
   );
 
+  // --- Unseen request badge (local-only, per user + system) ---
+  const [unseenRequestCount, setUnseenRequestCount] = useState(0);
+  const lastSeenKeyRef = React.useRef(null);
+
+  // Derive the localStorage key once we have user + system
+  useEffect(() => {
+    const uid = userIdentity?.publicKeyBase62;
+    if (uid && inventorySystemId) {
+      lastSeenKeyRef.current = `nightjar_inv_lastSeen_${inventorySystemId}_${uid}`;
+    } else {
+      lastSeenKeyRef.current = null;
+    }
+  }, [userIdentity?.publicKeyBase62, inventorySystemId]);
+
+  // Recompute unseen count whenever requests change or the key changes
+  useEffect(() => {
+    const key = lastSeenKeyRef.current;
+    if (!key) { setUnseenRequestCount(0); return; }
+    const lastSeen = parseInt(localStorage.getItem(key) || '0', 10);
+    const unseen = inventoryState.requests.filter(r => (r.requestedAt || 0) > lastSeen).length;
+    setUnseenRequestCount(unseen);
+  }, [inventoryState.requests]);
+
   // Notification unread count — observe Yjs array for live updates
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   useEffect(() => {
@@ -140,6 +163,16 @@ export default function InventoryDashboard({
   }, [isOwner, isEditor]);
 
   const [activeView, setActiveView] = useState(getDefaultView);
+
+  // When user navigates to all-requests, mark all current requests as seen
+  useEffect(() => {
+    if (activeView !== 'all-requests') return;
+    const key = lastSeenKeyRef.current;
+    if (!key) return;
+    localStorage.setItem(key, String(Date.now()));
+    setUnseenRequestCount(0);
+  }, [activeView]);
+
   // showOnboarding: null = still loading (Yjs hasn't synced yet),
   //                 true = system exists but onboarding not complete,
   //                 false = onboarding finished or system not yet created
@@ -277,6 +310,7 @@ export default function InventoryDashboard({
           systemName={inventoryState.currentSystem?.name || 'Inventory'}
           openRequestCount={inventoryState.openRequestCount}
           pendingApprovalCount={inventoryState.pendingApprovalCount}
+          unseenRequestCount={unseenRequestCount}
           notificationUnreadCount={notificationUnreadCount}
         />
         <div className="inventory-content">

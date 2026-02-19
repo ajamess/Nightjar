@@ -588,14 +588,33 @@ const HierarchicalSidebar = ({
         }
     }, [contextMenu, closeContextMenu]);
     
-    const handleSaveProperties = useCallback(async ({ id, type, icon, color }) => {
-        console.log('[HierarchicalSidebar] handleSaveProperties:', { id, type, icon, color });
+    const handleSaveProperties = useCallback(async ({ id, type, name, icon, color }) => {
+        console.log('[HierarchicalSidebar] handleSaveProperties:', { id, type, name, icon, color });
         if (type === 'folder') {
             updateFolder(id, { icon, color });
-        } else if (type === 'document' && onUpdateDocument) {
-            await onUpdateDocument(id, { icon, color });
+            // Rename folder if name changed
+            if (name) {
+                const folder = folders.find(f => f.id === id);
+                if (folder && folder.name !== name) {
+                    onRenameFolder?.(id, name);
+                }
+            }
+        } else if (type === 'document') {
+            if (onUpdateDocument) {
+                await onUpdateDocument(id, { icon, color });
+            }
+            // Rename document if name changed
+            if (name) {
+                // Find the document to check if name actually changed
+                const allDocs = folders.flatMap(f => f.documents || []);
+                const rootDocs = documents || [];
+                const doc = [...allDocs, ...rootDocs].find(d => d.id === id);
+                if (doc && doc.name !== name) {
+                    onRenameDocument?.(id, name);
+                }
+            }
         }
-    }, [updateFolder, onUpdateDocument]);
+    }, [updateFolder, onUpdateDocument, onRenameFolder, onRenameDocument, folders, documents]);
     
     // Direct edit properties handler (for button, not context menu)
     const handleRequestEdit = useCallback((id, type, item) => {
@@ -1080,6 +1099,7 @@ const HierarchicalSidebar = ({
                 item={editPropertiesItem}
                 onSave={handleSaveProperties}
                 parentFolder={editPropertiesItem?.parentFolder}
+                readOnly={!canEditInWorkspace}
             />
             
             {/* Create Document Modal */}

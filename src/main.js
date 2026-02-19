@@ -1166,8 +1166,8 @@ ipcMain.handle('identity:update', async (event, updates) => {
         if (updates.handle !== undefined && (typeof updates.handle !== 'string' || updates.handle.length > 100)) {
             throw new Error('Invalid handle: must be a string of at most 100 characters');
         }
-        if (updates.color !== undefined && (typeof updates.color !== 'string' || updates.color.length > 30 || !/^#[0-9a-f]{3,8}$/i.test(updates.color))) {
-            throw new Error('Invalid color: must be a valid hex color string');
+        if (updates.color !== undefined && (typeof updates.color !== 'string' || updates.color.length > 30)) {
+            throw new Error('Invalid color: must be a string of at most 30 characters');
         }
         if (updates.icon !== undefined && (typeof updates.icon !== 'string' || updates.icon.length > 20)) {
             throw new Error('Invalid icon: must be a string of at most 20 characters');

@@ -352,6 +352,68 @@
   color: #ef4444;
 }
 
+/* Ownership warning (factory-reset sole-owner panel) */
+.app-settings__ownership-warning {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+}
+
+.app-settings__ownership-warning-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff6b6b;
+  margin: 0 0 8px 0;
+}
+
+.app-settings__ownership-warning-list {
+  margin: 0 0 10px 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: var(--text-primary, #f9fafb);
+}
+
+.app-settings__ownership-warning-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #d1d5db);
+  margin: 0 0 10px 0;
+  line-height: 1.5;
+}
+
+.app-settings__ownership-warning-keyword {
+  color: #ff6b6b;
+  font-weight: 700;
+}
+
+.app-settings__ownership-warning-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.app-settings__ownership-warning-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  color: var(--text-primary, #f9fafb);
+}
+
+.app-settings__ownership-warning-input::placeholder {
+  color: var(--text-tertiary, #6b7280);
+}
+
+.app-settings__ownership-warning-input:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
 /* About section */
 .app-settings__about {
   text-align: center;
@@ -671,6 +733,37 @@
 :root[data-theme="light"] .app-settings__danger-zone {
   background: rgba(239, 68, 68, 0.06);
   border-color: rgba(239, 68, 68, 0.2);
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning {
+  background: rgba(239, 68, 68, 0.07);
+  border-color: rgba(185, 28, 28, 0.25);
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning-title {
+  color: #b91c1c;
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning-list {
+  color: var(--text-primary, #111827);
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning-desc {
+  color: var(--text-secondary, #4b5563);
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning-keyword {
+  color: #b91c1c;
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning-input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(185, 28, 28, 0.25);
+  color: var(--text-primary, #111827);
+}
+
+:root[data-theme="light"] .app-settings__ownership-warning-input::placeholder {
+  color: var(--text-tertiary, #9ca3af);
 }
 
 :root[data-theme="light"] .app-settings__about-name {

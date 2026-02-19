@@ -104,7 +104,7 @@ export default function ScanIdentity({ onComplete, onBack }) {
         setError(null);
         
         try {
-            const identity = decryptTransferQRData(scannedData, pin);
+            const identity = await decryptTransferQRData(scannedData, pin);
             onComplete(identity);
         } catch (err) {
             setError(err.message);

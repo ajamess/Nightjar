@@ -844,13 +844,12 @@ class SignalingServer {
         const pInfo = this.peerInfo.get(peer);
         if (pInfo && pInfo.peerId === targetPeerId) {
           // Forward the payload with sender info
-          // Wrap in envelope instead of spreading untrusted payload (prevents prototype pollution)
-          this.send(peer, {
-            type: 'relay-message',
-            payload: payload,
-            _fromPeerId: info.peerId,
-            _relayed: true,
-          });
+          // Use Object.create(null) as base to prevent prototype pollution from untrusted payload
+          const forwarded = Object.create(null);
+          Object.assign(forwarded, payload);
+          forwarded._fromPeerId = info.peerId;
+          forwarded._relayed = true;
+          this.send(peer, forwarded);
           return;
         }
       }
@@ -884,13 +883,11 @@ class SignalingServer {
       return;
     }
 
-    // Wrap in envelope instead of spreading untrusted payload (prevents prototype pollution)
-    const broadcastPayload = {
-      type: 'relay-broadcast',
-      payload: payload,
-      _fromPeerId: info.peerId,
-      _relayed: true,
-    };
+    // Use Object.create(null) as base to prevent prototype pollution from untrusted payload
+    const broadcastPayload = Object.create(null);
+    Object.assign(broadcastPayload, payload);
+    broadcastPayload._fromPeerId = info.peerId;
+    broadcastPayload._relayed = true;
 
     // Broadcast to all topics this peer is in
     for (const topic of info.topics) {

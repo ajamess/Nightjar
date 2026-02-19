@@ -84,7 +84,8 @@ export default function InOutflowChart({ requests, dateRange, granularity = 'day
         <ComposedChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
           <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={12} />
-          <YAxis stroke="var(--text-muted)" fontSize={12} allowDecimals={false} />
+          <YAxis yAxisId="left" stroke="var(--text-muted)" fontSize={12} allowDecimals={false} label={{ value: 'Requests', angle: -90, position: 'insideLeft', style: { fill: 'var(--text-muted)', fontSize: 11 } }} />
+          <YAxis yAxisId="right" orientation="right" stroke="var(--text-muted)" fontSize={12} allowDecimals={false} label={{ value: 'Quantity', angle: 90, position: 'insideRight', style: { fill: 'var(--text-muted)', fontSize: 11 } }} />
           <Tooltip
             contentStyle={{
               background: 'var(--bg-secondary)',
@@ -107,6 +108,7 @@ export default function InOutflowChart({ requests, dateRange, granularity = 'day
           <Area
             type="monotone"
             dataKey="gap"
+            yAxisId="left"
             fill="rgba(239,68,68,0.15)"
             stroke="none"
             name="Gap"
@@ -114,8 +116,8 @@ export default function InOutflowChart({ requests, dateRange, granularity = 'day
           />
 
           {/* Core lines: Requests In + Fulfilled */}
-          <Line type="monotone" dataKey="created" stroke="#6366f1" strokeWidth={2} dot={false} name="Requests In" hide={hiddenLines.has('created')} />
-          <Line type="monotone" dataKey="fulfilled" stroke="#22c55e" strokeWidth={2} dot={false} name="Fulfilled" hide={hiddenLines.has('fulfilled')} />
+          <Line type="monotone" dataKey="created" yAxisId="left" stroke="#6366f1" strokeWidth={2} dot={false} name="Requests In" hide={hiddenLines.has('created')} />
+          <Line type="monotone" dataKey="fulfilled" yAxisId="left" stroke="#22c55e" strokeWidth={2} dot={false} name="Fulfilled" hide={hiddenLines.has('fulfilled')} />
 
           {/* Per-stage cumulative lines */}
           {PIPELINE_STAGES.map(stage => (
@@ -123,6 +125,7 @@ export default function InOutflowChart({ requests, dateRange, granularity = 'day
               key={stage.key}
               type="monotone"
               dataKey={`stage_${stage.key}`}
+              yAxisId="left"
               stroke={stage.color}
               strokeWidth={1.5}
               strokeDasharray="4 2"
@@ -132,12 +135,13 @@ export default function InOutflowChart({ requests, dateRange, granularity = 'day
             />
           ))}
 
-          {/* Per-catalog-item quantity lines */}
+          {/* Per-catalog-item quantity lines (right axis) */}
           {itemNames.map((name, idx) => (
             <Line
               key={`item_${name}`}
               type="monotone"
               dataKey={`item_${name}`}
+              yAxisId="right"
               stroke={ITEM_COLORS[idx % ITEM_COLORS.length]}
               strokeWidth={1.5}
               strokeDasharray="8 3"

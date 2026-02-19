@@ -1198,34 +1198,25 @@ export default function AppSettings({ isOpen, onClose }) {
                     </button>
                     
                     {showOwnershipWarning && (
-                      <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(255, 107, 107, 0.15)', border: '1px solid rgba(255, 107, 107, 0.4)', borderRadius: '6px' }}>
-                        <p style={{ fontSize: '13px', color: '#ff4444', margin: '0 0 8px 0', fontWeight: 'bold' }}>
+                      <div className="app-settings__ownership-warning">
+                        <p className="app-settings__ownership-warning-title">
                           ⚠️ You are the sole owner of {soleOwnerWorkspaces.length === 1 ? 'this workspace' : 'these workspaces'}:
                         </p>
-                        <ul style={{ margin: '0 0 10px 0', paddingLeft: '20px', fontSize: '12px', color: '#e0e0e0' }}>
+                        <ul className="app-settings__ownership-warning-list">
                           {soleOwnerWorkspaces.map(w => (
                             <li key={w.id}>{w.name || 'Untitled Workspace'}</li>
                           ))}
                         </ul>
-                        <p style={{ fontSize: '12px', color: '#e0e0e0', margin: '0 0 10px 0' }}>
-                          Without an owner, other members will not be able to manage these workspaces. Transfer ownership in each workspace's settings first, or type <strong style={{ color: '#ff4444' }}>DELETE WORKSPACES</strong> below to proceed anyway.
+                        <p className="app-settings__ownership-warning-desc">
+                          Without an owner, other members will not be able to manage these workspaces. Transfer ownership in each workspace's settings first, or type <strong className="app-settings__ownership-warning-keyword">DELETE WORKSPACES</strong> below to proceed anyway.
                         </p>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div className="app-settings__ownership-warning-actions">
                           <input
                             type="text"
+                            className="app-settings__ownership-warning-input"
                             value={factoryResetConfirmText}
                             onChange={(e) => setFactoryResetConfirmText(e.target.value)}
                             placeholder='Type "DELETE WORKSPACES" to confirm'
-                            style={{
-                              flex: 1,
-                              padding: '6px 10px',
-                              fontSize: '13px',
-                              backgroundColor: 'rgba(0,0,0,0.3)',
-                              border: '1px solid rgba(255, 107, 107, 0.3)',
-                              borderRadius: '4px',
-                              color: '#fff',
-                              fontFamily: 'monospace',
-                            }}
                             autoFocus
                           />
                           <button

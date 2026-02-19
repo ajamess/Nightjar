@@ -64,7 +64,15 @@ const loadUserProfile = () => {
     }
     
     try {
-        const saved = localStorage.getItem('nightjar-user-profile');
+        let saved = localStorage.getItem('nightjar-user-profile');
+        // Migrate from old key name (pre-v1.7.9)
+        if (!saved) {
+            saved = localStorage.getItem('nahma-user-profile');
+            if (saved) {
+                localStorage.setItem('nightjar-user-profile', saved);
+                localStorage.removeItem('nahma-user-profile');
+            }
+        }
         if (saved) {
             return JSON.parse(saved);
         }

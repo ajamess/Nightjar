@@ -41,7 +41,7 @@ const VIEWS = {
 // Nav items by role — spec §6.3
 const ADMIN_NAV = [
   { id: VIEWS.ADMIN_DASHBOARD, icon: '🏠', label: 'Dashboard' },
-  { id: VIEWS.ALL_REQUESTS, icon: '📋', label: 'All Requests' },
+  { id: VIEWS.ALL_REQUESTS, icon: '📋', label: 'All Requests', badgeKey: 'unseenRequestCount' },
   { id: VIEWS.APPROVAL_QUEUE, icon: '✅', label: 'Approval Queue', badgeKey: 'pendingApprovalCount' },
   { id: VIEWS.PRODUCERS, icon: '👥', label: 'Producers' },
   { id: VIEWS.NAME_MAPPER, icon: '🔗', label: 'Name Mapper' },
@@ -89,6 +89,7 @@ const REQUESTOR_NAV = [
  * @param {string} props.systemName - Inventory system name for header
  * @param {number} props.openRequestCount
  * @param {number} props.pendingApprovalCount
+ * @param {number} props.unseenRequestCount
  * @param {number} props.notificationUnreadCount
  */
 export default function InventoryNavRail({
@@ -100,11 +101,13 @@ export default function InventoryNavRail({
   systemName,
   openRequestCount = 0,
   pendingApprovalCount = 0,
+  unseenRequestCount = 0,
   notificationUnreadCount = 0,
 }) {
   const badges = {
     openRequestCount,
     pendingApprovalCount,
+    unseenRequestCount,
     notificationUnreadCount,
   };
 
