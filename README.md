@@ -908,6 +908,15 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.10 - Regression Fixes: Bug Report API, Changelog Slider & Rename Double-Fire
+- **Critical**: Restored GitHub API submission in BugReportModal — `createGitHubIssue()` re-added with API-first, clipboard-fallback strategy
+- **Critical**: Dynamic success screen — shows "Bug report submitted!" when API succeeds, "Bug report copied!" on clipboard fallback
+- **UI Fix**: Changelog timeline slider labels swapped — "Newest" now correctly on left (index 0), "Oldest" on right
+- **UI Fix**: Rename double-fire fixed — Enter key now calls `blur()` instead of `onRenameSubmit()` directly, preventing duplicate invocation
+- **React Fix**: IdentitySelector `useEffect` moved above early return to satisfy Rules of Hooks
+- **Testing**: 132 suites, 3,879 tests (0 failures) — updated 23 text references across 2 test files
+- **Scope**: 6 files modified (4 components, 2 test files)
+
 ### v1.7.9 - 30-Iteration Security & Reliability Audit (165+ Bug Fixes)
 - **Critical**: IPC sender validation on 15+ Electron handlers — prevents malicious renderer exploitation
 - **Critical**: Machine key salt fixed — per-installation random salt was silently falling back to deterministic derivation

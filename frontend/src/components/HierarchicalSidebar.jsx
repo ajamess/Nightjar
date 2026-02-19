@@ -139,7 +139,7 @@ const TreeItem = React.memo(function TreeItem({
     const handleRenameKeyDown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            onRenameSubmit?.();
+            e.target.blur();
         }
         if (e.key === 'Escape') {
             e.preventDefault();

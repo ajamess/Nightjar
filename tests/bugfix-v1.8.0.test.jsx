@@ -177,7 +177,7 @@ describe('BugReportModal – Clipboard Copy', () => {
     act(() => jest.runAllTimers());
 
     await act(async () => {
-      fireEvent.click(screen.getByText('📋 Copy Bug Report'));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(mockClipboardWriteText).toHaveBeenCalledTimes(1);

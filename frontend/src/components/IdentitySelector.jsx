@@ -170,6 +170,13 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
     });
   };
 
+  // No identities - trigger onboarding via effect
+  // IMPORTANT: This useEffect MUST be before any early returns to satisfy
+  // React's Rules of Hooks (hooks must be called in the same order every render)
+  useEffect(() => {
+    if (!loading && identities.length === 0) onCreateNew?.();
+  }, [loading, identities.length, onCreateNew]);
+
   if (loading) {
     return (
       <div className="identity-selector">
@@ -180,11 +187,6 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
       </div>
     );
   }
-
-  // No identities - trigger onboarding via effect
-  useEffect(() => {
-    if (!loading && identities.length === 0) onCreateNew?.();
-  }, [loading, identities.length, onCreateNew]);
 
   if (identities.length === 0) {
     return null;

@@ -153,6 +153,37 @@ function downloadDataUrl(dataUrl, filename) {
   document.body.removeChild(a);
 }
 
+/**
+ * Create a GitHub issue via the REST API using a Personal Access Token.
+ * Returns the HTML URL of the created issue on success.
+ */
+export async function createGitHubIssue(title, body) {
+  const pat = typeof process !== 'undefined' && process.env?.VITE_GITHUB_PAT;
+  if (!pat) throw new Error('No GitHub PAT configured');
+
+  const response = await fetch('https://api.github.com/repos/niyanagi/nightjar/issues', {
+    method: 'POST',
+    headers: {
+      'Authorization': `token ${pat}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github.v3+json',
+    },
+    body: JSON.stringify({
+      title,
+      body,
+      labels: ['bug'],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`GitHub API error ${response.status}: ${errorData.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.html_url;
+}
+
 export default function BugReportModal({ isOpen, onClose, context }) {
   const modalRef = useRef(null);
   const titleRef = useRef(null);
@@ -167,6 +198,7 @@ export default function BugReportModal({ isOpen, onClose, context }) {
   const [screenshotDataUrl, setScreenshotDataUrl] = useState(null);
   const [screenshotStatus, setScreenshotStatus] = useState('idle');
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
+  const [submittedViaApi, setSubmittedViaApi] = useState(false);
 
   useFocusTrap(modalRef, isOpen);
 
@@ -208,6 +240,7 @@ export default function BugReportModal({ isOpen, onClose, context }) {
       setScreenshotDataUrl(null);
       setScreenshotStatus('idle');
       setDiagnosticStatus('idle');
+      setSubmittedViaApi(false);
     }
   }, [isOpen, context]);
 
@@ -284,22 +317,34 @@ export default function BugReportModal({ isOpen, onClose, context }) {
 
       // Build issue body with inline diagnostics
       const body = buildIssueBody(description, recentActions, diagnosticText);
-      const fullReport = `# ${title.trim()}\n\n${body}`;
 
-      // Copy report to clipboard so user can paste into GitHub
+      // Try GitHub API first, fall back to clipboard copy
+      let apiSuccess = false;
       try {
-        await navigator.clipboard.writeText(fullReport);
-        showToast('Bug report copied to clipboard!', 'success');
-      } catch {
-        // Fallback: save as local text file
-        const blob = new Blob([fullReport], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        downloadDataUrl(url, `nightjar-bug-report-${Date.now()}.md`);
-        URL.revokeObjectURL(url);
-        showToast('Bug report saved as file', 'success');
+        const url = await createGitHubIssue(title.trim(), body);
+        setIssueUrl(url);
+        setSubmittedViaApi(true);
+        apiSuccess = true;
+        showToast('Bug report submitted to GitHub!', 'success');
+      } catch (apiErr) {
+        console.warn('GitHub API submission failed, falling back to clipboard:', apiErr.message);
+        setSubmittedViaApi(false);
+
+        const fullReport = `# ${title.trim()}\n\n${body}`;
+        try {
+          await navigator.clipboard.writeText(fullReport);
+          showToast('Bug report copied to clipboard!', 'success');
+        } catch {
+          // Fallback: save as local text file
+          const blob = new Blob([fullReport], { type: 'text/markdown' });
+          const url = URL.createObjectURL(blob);
+          downloadDataUrl(url, `nightjar-bug-report-${Date.now()}.md`);
+          URL.revokeObjectURL(url);
+          showToast('Bug report saved as file', 'success');
+        }
+        setIssueUrl(GITHUB_ISSUES_PAGE);
       }
 
-      setIssueUrl(GITHUB_ISSUES_PAGE);
       setSubmitted(true);
     } catch (err) {
       console.error('Bug report preparation failed:', err);
@@ -382,9 +427,10 @@ export default function BugReportModal({ isOpen, onClose, context }) {
 
             <div className="bug-report-field bug-report-info">
               <p>
-                📋 Your bug report will be copied to your clipboard with
-                diagnostic data. You can then paste it into a new GitHub
-                issue. A screenshot will also be captured for you to download.
+                � Your bug report will be submitted directly to GitHub with
+                diagnostic data included. If API submission is unavailable,
+                it will be copied to your clipboard instead. A screenshot
+                will also be captured for you to download.
               </p>
             </div>
 
@@ -403,19 +449,20 @@ export default function BugReportModal({ isOpen, onClose, context }) {
                 onClick={handleSubmit}
                 disabled={isSubmitting}
               >
-                {isSubmitting ? 'Preparing…' : '📋 Copy Bug Report'}
+                {isSubmitting ? 'Submitting…' : '🐛 Submit Bug Report'}
               </button>
             </div>
           </div>
         ) : (
           <div className="bug-report-modal__body bug-report-success">
             <div className="bug-report-success__icon">✅</div>
-            <h3>Bug report copied!</h3>
+            <h3>{submittedViaApi ? 'Bug report submitted!' : 'Bug report copied!'}</h3>
             <p>
-              Your bug report has been copied to the clipboard with
-              diagnostic data included. Click the link below to open
-              GitHub and paste it into a new issue. You can also download
-              a screenshot to attach.
+              {submittedViaApi
+                ? 'Your bug report has been submitted directly to GitHub with diagnostic data included. Click below to view the created issue.'
+                : 'Your bug report has been copied to the clipboard with diagnostic data included. Click the link below to open GitHub and paste it into a new issue.'
+              }
+              {' '}You can also download a screenshot to attach.
             </p>
 
             <div className="bug-report-success__status">
@@ -448,7 +495,7 @@ export default function BugReportModal({ isOpen, onClose, context }) {
                   onClick={handleViewIssue}
                   data-testid="view-issue-btn"
                 >
-                  Open GitHub Issues ↗
+                  {submittedViaApi ? 'View Issue on GitHub ↗' : 'Open GitHub Issues ↗'}
                 </button>
               )}
             </div>

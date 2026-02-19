@@ -323,7 +323,7 @@ const ChangelogPanel = ({
                     <div className="changelog-timeline">
                         <span className="timeline-label">History: {totalCount} changes</span>
                         <div className="timeline-slider-container">
-                            <span className="timeline-oldest">Oldest</span>
+                            <span className="timeline-newest">Newest</span>
                             <input
                                 type="range"
                                 min="0"
@@ -333,7 +333,7 @@ const ChangelogPanel = ({
                                 className="timeline-slider"
                                 aria-label="Navigate changelog history"
                             />
-                            <span className="timeline-newest">Newest</span>
+                            <span className="timeline-oldest">Oldest</span>
                         </div>
                         {selectedEntry && (
                             <span className="timeline-current">{formatFullTime(selectedEntry.timestamp)}</span>

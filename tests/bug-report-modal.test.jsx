@@ -263,7 +263,7 @@ describe('buildIssueBody', () => {
   });
 });
 
-// createGitHubIssue was removed â€“ the component now copies to clipboard instead.
+// createGitHubIssue is restored — the component tries GitHub API first, then falls back to clipboard copy.
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 5. Component Rendering
@@ -315,13 +315,13 @@ describe('Rendering', () => {
 
   test('shows info about clipboard copy', () => {
     renderModal();
-    expect(screen.getByText(/copied to your clipboard/)).toBeInTheDocument();
+    expect(screen.getByText(/submitted directly to GitHub/)).toBeInTheDocument();
   });
 
   test('renders Cancel and Copy buttons', () => {
     renderModal();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
-    expect(screen.getByText(/Copy Bug Report/)).toBeInTheDocument();
+    expect(screen.getByText(/Submit Bug Report/)).toBeInTheDocument();
   });
 });
 
@@ -384,7 +384,7 @@ describe('Interactions', () => {
 
     // Click submit
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // Now Escape should NOT close
@@ -406,7 +406,7 @@ describe('Validation', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(mockShowToast).toHaveBeenCalledWith('Please enter a bug title', 'error');
@@ -421,7 +421,7 @@ describe('Validation', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(mockShowToast).toHaveBeenCalledWith('Please enter a bug title', 'error');
@@ -440,7 +440,7 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // Verify clipboard was called
@@ -465,7 +465,7 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     const clipboardContent = mockClipboardWriteText.mock.calls[0][0];
@@ -484,10 +484,10 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
-    expect(screen.getByText(/Preparing/)).toBeInTheDocument();
+    expect(screen.getByText(/Submitting/)).toBeInTheDocument();
 
     // Resolve the clipboard write
     await act(async () => {
@@ -508,7 +508,7 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // When clipboard fails, the component falls back to file download
@@ -530,7 +530,7 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // Should still succeed (diagnostics are optional)
@@ -548,7 +548,7 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(screen.getByLabelText('Title')).toBeDisabled();
@@ -567,7 +567,7 @@ describe('Success Screen', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
   }
 
@@ -644,7 +644,7 @@ describe('Success Screen', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     fireEvent.click(screen.getByTestId('view-issue-btn'));
@@ -671,7 +671,7 @@ describe('Success Screen', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     fireEvent.click(screen.getByText('Done'));
@@ -721,7 +721,7 @@ describe('Error Handling', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // When clipboard fails, fallback saves as file
@@ -744,12 +744,12 @@ describe('Error Handling', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // Form should be editable again
     expect(screen.getByLabelText('Title')).not.toBeDisabled();
-    expect(screen.getByText(/Copy Bug Report/)).not.toBeDisabled();
+    expect(screen.getByText(/Submit Bug Report/)).not.toBeDisabled();
 
     URL.createObjectURL = origCreateObjectURL;
   });
@@ -763,7 +763,7 @@ describe('Error Handling', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // Should still succeed (screenshot is optional)
@@ -828,7 +828,7 @@ describe('E2E Scenarios', () => {
 
     // Copy
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     // Success screen
@@ -860,7 +860,7 @@ describe('E2E Scenarios', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test bug' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Failed'), 'error');
@@ -870,7 +870,7 @@ describe('E2E Scenarios', () => {
     URL.createObjectURL = origCreateObjectURL;
     mockClipboardWriteText.mockResolvedValueOnce(undefined);
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
@@ -885,7 +885,7 @@ describe('E2E Scenarios', () => {
     expect(screen.getByLabelText('Title')).toHaveValue('Bug report');
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/Copy Bug Report/));
+      fireEvent.click(screen.getByText(/Submit Bug Report/));
     });
 
     expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
