@@ -16,6 +16,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/niyanagi/nightjar
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -40,8 +43,7 @@ jobs:
           context: .
           file: server/unified/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nightjar:latest
+          tags: ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -55,7 +57,7 @@ jobs:
             set -euo pipefail
             REPO="/opt/Nightjar"
             WEB="/var/www/night-jar"
-            IMAGE="ghcr.io/${{ github.repository_owner }}/nightjar:latest"
+            IMAGE="${{ env.IMAGE }}:latest"
 
             echo "=== Pulling latest code ==="
             cd "$REPO"
@@ -63,7 +65,7 @@ jobs:
             git checkout origin/main
 
             echo "=== Logging in to GHCR ==="
-            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ghcr.io -u niyanagi --password-stdin
 
             echo "=== Pulling Docker image ==="
             docker pull "$IMAGE"

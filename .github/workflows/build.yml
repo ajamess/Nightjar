@@ -218,7 +218,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/nightjar
+          images: ghcr.io/niyanagi/nightjar
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest
@@ -273,7 +273,7 @@ jobs:
             set -euo pipefail
             REPO="/opt/Nightjar"
             WEB="/var/www/night-jar"
-            IMAGE="ghcr.io/${{ github.repository_owner }}/nightjar:latest"
+            IMAGE="ghcr.io/niyanagi/nightjar:latest"
 
             echo "=== Pulling latest code (for compose file + static assets) ==="
             cd "$REPO"
@@ -281,7 +281,7 @@ jobs:
             git checkout "${{ github.ref_name }}"
 
             echo "=== Logging in to GHCR ==="
-            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ghcr.io -u niyanagi --password-stdin
 
             echo "=== Pulling Docker image ==="
             docker pull "$IMAGE"
