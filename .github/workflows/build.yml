@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build-windows:
@@ -190,10 +191,54 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ===========================================================================
-  # Deploy to VPS — night-jar.co
+  # Build Docker image on GitHub and push to GHCR
+  # ===========================================================================
+  build-docker:
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/nightjar
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: server/unified/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ===========================================================================
+  # Deploy to VPS — pull image from GHCR, deploy landing page + installers
   # ===========================================================================
   deploy-vps:
-    needs: [create-release]
+    needs: [create-release, build-docker]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -217,7 +262,7 @@ jobs:
           target: /tmp/nightjar-deploy
           strip_components: 2
 
-      # -- SSH into VPS: rebuild containers, deploy landing page, move installers --
+      # -- SSH into VPS: pull image, restart containers, deploy static assets --
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -228,31 +273,35 @@ jobs:
             set -euo pipefail
             REPO="/opt/Nightjar"
             WEB="/var/www/night-jar"
+            IMAGE="ghcr.io/${{ github.repository_owner }}/nightjar:latest"
 
-            echo "=== Pulling latest code ==="
+            echo "=== Pulling latest code (for compose file + static assets) ==="
             cd "$REPO"
             git fetch --all --tags
             git checkout "${{ github.ref_name }}"
 
-            echo "=== Rebuilding Docker containers ==="
-            docker compose -f server/deploy/docker-compose.prod.yml up -d --build --remove-orphans
+            echo "=== Logging in to GHCR ==="
+            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
+            echo "=== Pulling Docker image ==="
+            docker pull "$IMAGE"
+
+            echo "=== Starting containers ==="
+            docker compose -f server/deploy/docker-compose.prod.yml up -d --remove-orphans
 
             echo "=== Deploying landing page ==="
+            sudo mkdir -p "$WEB/download"
             sudo cp "$REPO/frontend/public-site/index.html" "$WEB/index.html"
             sudo cp "$REPO/frontend/public/assets/nightjar-logo.png" "$WEB/nightjar-logo.png" 2>/dev/null || true
             sudo cp "$REPO/assets/icons/nightjar-64.png" "$WEB/nightjar-64.png" 2>/dev/null || true
 
             echo "=== Moving installers to download directory ==="
-            # Find and copy the actual installer files with friendly names
-            # Windows
             WIN_EXE=$(find /tmp/nightjar-deploy -name '*.exe' | head -1)
             [ -n "$WIN_EXE" ] && sudo cp "$WIN_EXE" "$WEB/download/Nightjar-Setup.exe"
 
-            # macOS
             MAC_DMG=$(find /tmp/nightjar-deploy -name '*.dmg' | head -1)
             [ -n "$MAC_DMG" ] && sudo cp "$MAC_DMG" "$WEB/download/Nightjar.dmg"
 
-            # Linux
             LINUX_APPIMAGE=$(find /tmp/nightjar-deploy -name '*.AppImage' | head -1)
             [ -n "$LINUX_APPIMAGE" ] && sudo cp "$LINUX_APPIMAGE" "$WEB/download/Nightjar.AppImage"
 
@@ -264,6 +313,9 @@ jobs:
             echo "=== Updating Nginx config ==="
             sudo cp "$REPO/server/deploy/nginx.conf" /etc/nginx/sites-available/night-jar
             sudo nginx -t && sudo systemctl reload nginx
+
+            echo "=== Pruning old Docker images ==="
+            docker image prune -f
 
             echo "=== Cleaning up ==="
             rm -rf /tmp/nightjar-deploy

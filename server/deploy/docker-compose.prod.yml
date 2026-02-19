@@ -6,12 +6,16 @@
 #   1. nightjar-relay   — Public relay server (wss://night-jar.co/signal)
 #   2. nightjar-private — Private instance with storage (night-jar.co/toot)
 #
+# The Docker image is built on GitHub Actions and pushed to GHCR.
+# This compose file PULLS the pre-built image — no local build needed.
+#
 # Mailcow runs separately in /opt/mailcow-dockerized (ports 8080/8443).
 # Nginx runs on the host and routes everything (see nginx.conf).
 # The static landing page is served by nginx from /var/www/night-jar.
 #
 # Usage:
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker login ghcr.io    (one-time, with PAT)
+#   docker compose -f docker-compose.prod.yml up -d
 #
 # =============================================================================
 
@@ -22,10 +26,7 @@ services:
   # Accessible at night-jar.co/signal, /health, /api/mesh/*, /yjs/*
   # --------------------------------------------------------------------------
   nightjar-relay:
-    image: nightjar:latest
-    build:
-      context: ../..
-      dockerfile: server/unified/Dockerfile
+    image: ghcr.io/niyanagi/nightjar:latest
     container_name: nightjar-relay
     restart: unless-stopped
     ports:
@@ -45,16 +46,11 @@ services:
 
   # --------------------------------------------------------------------------
   # Private Instance — full persistence, no mesh participation
-  # Accessible at night-jar.co/toot (with BASE_PATH=/toot)
+  # Same image, different runtime config (BASE_PATH=/toot)
+  # Accessible at night-jar.co/toot
   # --------------------------------------------------------------------------
   nightjar-private:
-    # Re-uses the same image built by nightjar-relay — no second build needed.
-    # Only the runtime BASE_PATH env var differs; Express prefixes routes and
-    # strips it from incoming requests.  Vite's relative './' base resolves
-    # correctly because the browser resolves ./assets/… relative to /toot/.
-    image: nightjar:latest
-    depends_on:
-      - nightjar-relay
+    image: ghcr.io/niyanagi/nightjar:latest
     container_name: nightjar-private
     restart: unless-stopped
     ports:
