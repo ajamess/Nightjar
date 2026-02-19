@@ -1,0 +1,88 @@
+# =============================================================================
+# Deploy Only — Build Docker image and deploy to VPS
+# =============================================================================
+#
+# Trigger manually from GitHub Actions tab → "Deploy to VPS" → Run workflow
+# Skips desktop builds entirely — just builds the server image and deploys it.
+#
+# =============================================================================
+
+name: Deploy to VPS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: server/unified/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/nightjar:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            REPO="/opt/Nightjar"
+            WEB="/var/www/night-jar"
+            IMAGE="ghcr.io/${{ github.repository_owner }}/nightjar:latest"
+
+            echo "=== Pulling latest code ==="
+            cd "$REPO"
+            git fetch --all
+            git checkout origin/main
+
+            echo "=== Logging in to GHCR ==="
+            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
+            echo "=== Pulling Docker image ==="
+            docker pull "$IMAGE"
+
+            echo "=== Starting containers ==="
+            docker compose -f server/deploy/docker-compose.prod.yml up -d --remove-orphans
+
+            echo "=== Deploying landing page ==="
+            sudo mkdir -p "$WEB/download"
+            sudo cp "$REPO/frontend/public-site/index.html" "$WEB/index.html"
+            sudo cp "$REPO/frontend/public/assets/nightjar-logo.png" "$WEB/nightjar-logo.png" 2>/dev/null || true
+            sudo cp "$REPO/assets/icons/nightjar-64.png" "$WEB/nightjar-64.png" 2>/dev/null || true
+            sudo chown -R www-data:www-data "$WEB"
+
+            echo "=== Updating Nginx config ==="
+            sudo cp "$REPO/server/deploy/nginx.conf" /etc/nginx/sites-available/night-jar
+            sudo nginx -t && sudo systemctl reload nginx
+
+            echo "=== Pruning old Docker images ==="
+            docker image prune -f
+
+            echo "=== Deploy complete ==="
