@@ -90,7 +90,7 @@ function debounce(func, wait) {
 // Default sheet configuration - matches Google Sheets
 const DEFAULT_SHEET = {
     name: 'Sheet1',
-    id: 'sheet-' + Date.now().toString(36),
+    // id intentionally omitted — always use generateSheetId() to avoid collisions
     order: 0,
     row: 100,      // 100 rows like Google Sheets
     column: 26,    // 26 columns (A-Z) like Google Sheets
@@ -125,16 +125,53 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
     const isApplyingRemoteOps = useRef(false);
     const hasSyncedRef = useRef(false);
     const debouncedSaveRef = useRef(null);
-    const lastSavedVersion = useRef(0);         // Version we last saved - to detect our own echoes
-    const lastLoadedVersion = useRef(0);        // Version we last loaded from Yjs - to avoid redundant loads
+    const lastSavedVersion = useRef(null);      // Version we last saved - to detect our own echoes
+    const lastLoadedVersion = useRef(null);     // Version we last loaded from Yjs - to avoid redundant loads
     const hasReceivedFirstData = useRef(false); // Track if we've received initial data from Yjs
     const onChangeCountRef = useRef(0);         // Count onChange calls to skip the first one after mount
     const isReceivingRemoteUpdate = useRef(false); // Track when we're applying a remote update (to skip saving)
     const pendingRemoteUpdateTimeout = useRef(null); // Timeout to clear the remote update flag
     const queuedLocalSaveRef = useRef(null); // Queue local saves during remote update window instead of dropping them
+    const dataRef = useRef(null); // Always holds latest data for stale-closure-safe reads
     
     // Custom presence overlays (Fortune Sheet's API is unreliable)
     const [presenceOverlays, setPresenceOverlays] = useState([]);
+    
+    // Ref-stable callback for stats so the debounced function never goes stale
+    const onStatsChangeRef = useRef(onStatsChange);
+    onStatsChangeRef.current = onStatsChange;
+    
+    // Debounced stats calculator — avoids O(cells × sheets) work on every keystroke.
+    // Uses a stable ref for the callback so it never needs to be recreated.
+    const debouncedReportStats = useMemo(() => {
+        const fn = debounce((sheets) => {
+            const callback = onStatsChangeRef.current;
+            if (!callback) return;
+            let nonEmptyCells = 0;
+            let totalCharacters = 0;
+            for (const sheet of sheets) {
+                const sheetData = sheet?.data;
+                if (sheetData && Array.isArray(sheetData)) {
+                    for (const row of sheetData) {
+                        if (row && Array.isArray(row)) {
+                            for (const cell of row) {
+                                if (cell && cell.v !== null && cell.v !== undefined && cell.v !== '') {
+                                    nonEmptyCells++;
+                                    totalCharacters += String(cell.v).length;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            callback({ cellCount: nonEmptyCells, characterCount: totalCharacters });
+        }, 500);
+        return fn;
+    }, []);
+
+    // Keep dataRef in sync with the latest data state
+    // Updated at render time (not in useEffect) to avoid one-frame stale reads
+    dataRef.current = data;
 
     // Subscribe to awareness for collaborator presence and selections
     useEffect(() => {
@@ -273,7 +310,7 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
             // Clear our selection when leaving the sheet
             awareness.setLocalStateField('selection', null);
         };
-    }, [provider, userHandle, userColor]);
+    }, [provider, userHandle, userColor, userPublicKey]);
 
     // Initialize Yjs map for sheet data
     useEffect(() => {
@@ -296,18 +333,39 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
 
             const storedData = ysheet.get('sheets');
             const storedOps = ysheet.get('pendingOps');
-            const storedVersion = ysheet.get('version') || 0;
+            const storedVersion = ysheet.get('version') || null;
+            
+            // Process pending ops BEFORE version checks.
+            // Ops arrive independently from full-data saves; skipping them
+            // on a version match would leave remote ops unapplied and
+            // the pendingOps array growing unboundedly.
+            if (storedOps && Array.isArray(storedOps) && storedOps.length > 0) {
+                const remoteOps = storedOps.filter(op => op.clientId !== ydoc.clientID);
+                if (remoteOps.length > 0 && workbookRef.current) {
+                    isApplyingRemoteOps.current = true;
+                    try {
+                        const opsToApply = remoteOps.flatMap(entry => entry.ops || (Array.isArray(entry) ? entry : [entry]));
+                        workbookRef.current.applyOp(opsToApply);
+                    } catch (e) {
+                        console.error('[Sheet] Failed to apply remote ops:', e);
+                    } finally {
+                        isApplyingRemoteOps.current = false;
+                    }
+                }
+                // Clear all processed ops (both local and remote)
+                ysheet.set('pendingOps', []);
+            }
             
             console.log('[Sheet] updateFromYjs - version:', storedVersion, 'lastSaved:', lastSavedVersion.current, 'lastLoaded:', lastLoadedVersion.current, 'sheetCount:', storedData?.length);
             
             // Skip if this is our own save echoing back
-            if (storedVersion === lastSavedVersion.current && lastSavedVersion.current > 0) {
+            if (storedVersion === lastSavedVersion.current && lastSavedVersion.current !== null) {
                 console.log('[Sheet] updateFromYjs skipped - our own save (version match)');
                 return;
             }
             
             // Skip if we've already loaded this version (avoid redundant loads from observe + observeDeep)
-            if (storedVersion === lastLoadedVersion.current && lastLoadedVersion.current > 0) {
+            if (storedVersion === lastLoadedVersion.current && lastLoadedVersion.current !== null) {
                 console.log('[Sheet] updateFromYjs skipped - already loaded this version');
                 return;
             }
@@ -322,7 +380,7 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                     console.log('[Sheet] Loaded', sheets.length, 'sheets from Yjs, celldata:', cellCount, 'data rows:', dataRows, 'non-empty cells:', nonEmptyCells);
                     
                     // Check if this is a genuinely new remote update (not initial load or our save)
-                    const isNewRemoteUpdate = lastLoadedVersion.current > 0 && storedVersion !== lastLoadedVersion.current;
+                    const isNewRemoteUpdate = lastLoadedVersion.current !== null && storedVersion !== lastLoadedVersion.current;
                     
                     // Mark that we've received data - used to determine when to start saving
                     if (!hasReceivedFirstData.current) {
@@ -376,25 +434,15 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
             } else if (hasSyncedRef.current) {
                 // Only initialize with default if we've synced and there's truly no data
                 const defaultSheets = [{ ...DEFAULT_SHEET, id: generateSheetId() }];
-                ysheet.set('sheets', defaultSheets);
-                ysheet.set('pendingOps', []);
+                ydoc.transact(() => {
+                    ysheet.set('sheets', defaultSheets);
+                    ysheet.set('pendingOps', []);
+                });
                 setData(defaultSheets);
                 setIsInitialized(true);
             }
 
-            // Apply any pending operations from other peers
-            if (storedOps && Array.isArray(storedOps) && storedOps.length > 0) {
-                isApplyingRemoteOps.current = true;
-                try {
-                    workbookRef.current?.applyOp(storedOps);
-                } catch (e) {
-                    console.error('[Sheet] Failed to apply remote ops:', e);
-                } finally {
-                    isApplyingRemoteOps.current = false;
-                    // Clear applied ops
-                    ysheet.set('pendingOps', []);
-                }
-            }
+            // (Ops are now processed at the top of updateFromYjs, before version checks)
         };
 
         ysheet.observeDeep(updateFromYjs);
@@ -420,8 +468,10 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                 // Check if we need to initialize with defaults after sync
                 if (ysheetRef.current && !ysheetRef.current.get('sheets')) {
                     const defaultSheets = [{ ...DEFAULT_SHEET, id: generateSheetId() }];
-                    ysheetRef.current.set('sheets', defaultSheets);
-                    ysheetRef.current.set('pendingOps', []);
+                    ydoc.transact(() => {
+                        ysheetRef.current.set('sheets', defaultSheets);
+                        ysheetRef.current.set('pendingOps', []);
+                    });
                     setData(defaultSheets);
                     setIsInitialized(true);
                 }
@@ -443,11 +493,13 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                 hasSyncedRef.current = true;
                 if (ysheetRef.current && !ysheetRef.current.get('sheets')) {
                     const defaultSheets = [{ ...DEFAULT_SHEET, id: generateSheetId() }];
-                    ysheetRef.current.set('sheets', defaultSheets);
-                    ysheetRef.current.set('pendingOps', []);
+                    ydoc.transact(() => {
+                        ysheetRef.current.set('sheets', defaultSheets);
+                        ysheetRef.current.set('pendingOps', []);
+                    });
                     setData(defaultSheets);
                     setIsInitialized(true);
-                } else if (!data) {
+                } else if (!dataRef.current) {
                     // Even if ysheetRef is not ready, initialize local state
                     const defaultSheets = [{ ...DEFAULT_SHEET, id: generateSheetId() }];
                     setData(defaultSheets);
@@ -460,7 +512,7 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
             provider.off('sync', handleSync);
             clearTimeout(fallbackTimeout);
         };
-    }, [provider, isInitialized, data]);
+    }, [provider, isInitialized]);
 
     // Helper to convert Fortune Sheet's 2D data array to celldata sparse format
     const convertDataToCelldata = useCallback((sheets) => {
@@ -479,7 +531,8 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                     }
                 });
                 newSheet.celldata = celldata;
-                // Keep data for initialization but ensure celldata is primary
+                // Remove data to avoid doubling Yjs storage
+                delete newSheet.data;
                 console.log('[Sheet] Converted data to celldata:', celldata.length, 'cells');
             }
             return newSheet;
@@ -535,12 +588,13 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         return fn;
     }, [saveToYjs]);
 
-    // Cleanup: cancel pending debounced save on unmount or when debounced fn changes
+    // Cleanup: cancel pending debounced save and stats on unmount or when debounced fn changes
     useEffect(() => {
         return () => {
             debouncedSaveToYjs.cancel();
+            debouncedReportStats.cancel();
         };
-    }, [debouncedSaveToYjs]);
+    }, [debouncedSaveToYjs, debouncedReportStats]);
 
     // Flush pending saves on unmount and force save current state
     useEffect(() => {
@@ -576,6 +630,7 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                                 }
                             });
                             newSheet.celldata = celldata;
+                            delete newSheet.data;
                             console.log('[Sheet] Unmount - converted', celldata.length, 'cells');
                         }
                         return newSheet;
@@ -583,14 +638,44 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                     console.log('[Sheet] Final save on unmount, sheets:', convertedData?.length);
                     capturedYdoc.transact(() => {
                         capturedYsheet.set('sheets', JSON.parse(JSON.stringify(convertedData)));
+                        capturedYsheet.set('version', `${capturedYdoc.clientID}-${Date.now()}`);
                     });
                     console.log('[Sheet] Final state saved to Yjs');
                 } catch (e) {
                     console.error('[Sheet] Failed to save final state:', e);
                 }
+            } else if (dataRef.current && capturedYsheet && capturedYdoc) {
+                // Fallback: workbook ref unavailable, save from latest data ref
+                try {
+                    const fallbackData = dataRef.current.map(sheet => {
+                        const newSheet = { ...sheet };
+                        if (sheet.data && Array.isArray(sheet.data)) {
+                            const celldata = [];
+                            sheet.data.forEach((row, r) => {
+                                if (row && Array.isArray(row)) {
+                                    row.forEach((cell, c) => {
+                                        if (cell !== null && cell !== undefined) {
+                                            celldata.push({ r, c, v: cell });
+                                        }
+                                    });
+                                }
+                            });
+                            newSheet.celldata = celldata;
+                            delete newSheet.data;
+                        }
+                        return newSheet;
+                    });
+                    console.log('[Sheet] Unmount fallback save from dataRef, sheets:', fallbackData?.length);
+                    capturedYdoc.transact(() => {
+                        capturedYsheet.set('sheets', JSON.parse(JSON.stringify(fallbackData)));
+                        capturedYsheet.set('version', `${capturedYdoc.clientID}-${Date.now()}`);
+                    });
+                } catch (e) {
+                    console.error('[Sheet] Failed fallback save from dataRef:', e);
+                }
             }
-            // Also flush any pending debounced saves
-            debouncedSaveRef.current?.flush();
+            // Cancel any pending debounced saves to prevent overwriting the fresh unmount save
+            debouncedSaveRef.current?.cancel();
         };
     }, [ydoc]);
 
@@ -607,36 +692,7 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         
         // Debug: check if data has the expected structure
         if (newData?.[0]) {
-            // Count non-blank cells - a cell is non-blank if it has actual content (v property with value)
-            let nonEmptyCells = 0;
-            let totalCharacters = 0;
-            
-            // Iterate over ALL sheets in the workbook, not just the first
-            for (const sheet of newData) {
-                const sheetData = sheet?.data;
-                if (sheetData && Array.isArray(sheetData)) {
-                    for (const row of sheetData) {
-                        if (row && Array.isArray(row)) {
-                            for (const cell of row) {
-                                // Check if cell has actual content
-                                if (cell && cell.v !== null && cell.v !== undefined && cell.v !== '') {
-                                    nonEmptyCells++;
-                                    // Count characters in the cell value
-                                    const cellValue = String(cell.v);
-                                    totalCharacters += cellValue.length;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            console.log('[Sheet] handleChange #' + onChangeCountRef.current + ' - sheets:', newData.length, 'non-empty cells:', nonEmptyCells, 'chars:', totalCharacters);
-            
-            // Report stats (non-blank cell count and character count)
-            if (onStatsChange) {
-                onStatsChange({ cellCount: nonEmptyCells, characterCount: totalCharacters });
-            }
+            console.log('[Sheet] handleChange #' + onChangeCountRef.current + ' - sheets:', newData.length);
             
             // Skip the FIRST onChange after receiving data from Yjs
             // Fortune Sheet fires onChange with empty/stale data when it first renders with existing data
@@ -645,6 +701,9 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                 setData(newData);
                 return;
             }
+            
+            // Report stats via debounced calculator (avoids O(cells) on every keystroke)
+            debouncedReportStats(newData);
             
             // During the remote update protection window, queue local edits
             // instead of dropping them. They'll be replayed when the window closes.
@@ -658,7 +717,7 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         setData(newData);
         // Save via debounced function for full data sync
         debouncedSaveToYjs(newData);
-    }, [debouncedSaveToYjs, onStatsChange]);
+    }, [debouncedSaveToYjs, debouncedReportStats]);
 
     // Handle operations for real-time sync (immediate, not debounced)
     const handleOp = useCallback((ops) => {
@@ -667,10 +726,11 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         if (!ysheetRef.current || !ydoc) return;
 
         try {
-            // Immediately send ops to peers
+            // Immediately send ops to peers, tagging with our clientID
+            // so the observer can skip ops that originated from us.
             ydoc.transact(() => {
                 const existingOps = ysheetRef.current.get('pendingOps') || [];
-                ysheetRef.current.set('pendingOps', [...existingOps, ...ops]);
+                ysheetRef.current.set('pendingOps', [...existingOps, { ops, clientId: ydoc.clientID }]);
             });
         } catch (e) {
             console.error('[Sheet] Failed to send ops to Yjs:', e);
@@ -808,6 +868,16 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         ],
     }), [userHandle, userColor, readOnly]);
 
+    // Handle add comment from toolbar
+    const handleToolbarAddComment = useCallback((commentData) => {
+        if (onAddComment) {
+            onAddComment(commentData);
+        }
+        // Clear selection after adding comment
+        setCurrentSelection(null);
+        setToolbarPosition(null);
+    }, [onAddComment]);
+
     // Loading state
     if (!isInitialized || !data) {
         return (
@@ -817,16 +887,6 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
             </div>
         );
     }
-
-    // Handle add comment from toolbar
-    const handleToolbarAddComment = (commentData) => {
-        if (onAddComment) {
-            onAddComment(commentData);
-        }
-        // Clear selection after adding comment
-        setCurrentSelection(null);
-        setToolbarPosition(null);
-    };
 
     return (
         <div 

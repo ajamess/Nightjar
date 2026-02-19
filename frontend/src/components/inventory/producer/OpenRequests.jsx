@@ -9,12 +9,14 @@ import { pushNotification } from '../../../utils/inventoryNotifications';
 import { estimateFulfillment, validateClaim } from '../../../utils/inventoryAssignment';
 import SlidePanel from '../common/SlidePanel';
 import RequestDetail from '../common/RequestDetail';
+import { useToast } from '../../../contexts/ToastContext';
 import './OpenRequests.css';
 
 const PAGE_SIZE = 12;
 
 export default function OpenRequests() {
   const ctx = useInventory();
+  const { showToast } = useToast();
   const { catalogItems, requests, producerCapacities } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
@@ -88,6 +90,7 @@ export default function OpenRequests() {
     if (est.source === 'stock') return 'From stock';
     if (est.estimatedDate) {
       const d = new Date(est.estimatedDate);
+      if (isNaN(d.getTime())) return 'Unknown';
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
     return 'Unknown';
@@ -102,6 +105,10 @@ export default function OpenRequests() {
     if (idx === -1) return;
 
     const req = arr[idx];
+    if (req.status !== 'open') {
+      showToast(`Cannot claim: request status is "${req.status}", expected "open"`, 'error');
+      return;
+    }
     const valid = validateClaim(req);
     if (!valid.ok) {
       console.warn('[OpenRequests] Claim rejected:', valid.reason);
@@ -115,9 +122,12 @@ export default function OpenRequests() {
       assignedAt: Date.now(),
       claimedBy: myKey,
       claimedAt: Date.now(),
+      updatedAt: Date.now(),
     };
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [updated]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [updated]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -138,6 +148,138 @@ export default function OpenRequests() {
       type: 'request_claimed',
       message: `Your request for ${req.catalogItemName} was claimed by a producer`,
       relatedId: requestId,
+    });
+  }, [ctx, myKey]);
+
+  const handleMarkInProgress = useCallback((requestId) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === requestId);
+    if (idx === -1) return;
+    const req = arr[idx];
+    if (req.status !== 'approved') {
+      showToast(`Cannot mark in-progress: status is "${req.status}", expected "approved"`, 'error');
+      return;
+    }
+    const updated = { ...req, status: 'in_progress', inProgressAt: Date.now(), updatedAt: Date.now() };
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [updated]);
+    });
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_in_progress',
+      targetType: 'request',
+      targetId: requestId,
+      summary: `Request ${requestId.slice(0, 8)} marked in progress`,
+    }]);
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_in_progress',
+      message: `Your request for ${req.catalogItemName} is now in progress`,
+      relatedId: requestId,
+    });
+  }, [ctx, myKey]);
+
+  const handleMarkShipped = useCallback((req, trackingNumber) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    if (arr[idx].status !== 'in_progress') {
+      showToast(`Cannot mark shipped: status is "${arr[idx].status}", expected "in_progress"`, 'error');
+      return;
+    }
+    const updates = { status: 'shipped', shippedAt: Date.now(), updatedAt: Date.now() };
+    if (trackingNumber) updates.trackingNumber = trackingNumber;
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], ...updates }]);
+    });
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_shipped',
+      targetType: 'request',
+      targetId: req.id,
+      summary: `Request ${req.id.slice(0, 8)} marked shipped`,
+    }]);
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_shipped',
+      message: `Your request for ${req.catalogItemName} has been shipped`,
+      relatedId: req.id,
+    });
+  }, [ctx, myKey]);
+
+  const handleRevertToApproved = useCallback((req) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], status: 'approved', shippedAt: null, inProgressAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    });
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_reverted_approved',
+      targetType: 'request',
+      targetId: req.id,
+      summary: `Request ${req.id.slice(0, 8)} reverted to approved`,
+    }]);
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'status_change',
+      message: `Your request for ${req.catalogItemName} was reverted to approved`,
+      relatedId: req.id,
+    });
+  }, [ctx, myKey]);
+
+  const handleRevertToInProgress = useCallback((req) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], status: 'in_progress', shippedAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    });
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_reverted_in_progress',
+      targetType: 'request',
+      targetId: req.id,
+      summary: `Request ${req.id.slice(0, 8)} reverted to in progress`,
+    }]);
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'status_change',
+      message: `Your request for ${req.catalogItemName} was reverted to in progress`,
+      relatedId: req.id,
     });
   }, [ctx, myKey]);
 
@@ -239,6 +381,10 @@ export default function OpenRequests() {
             isProducer={true}
             collaborators={ctx.collaborators || []}
             onClose={() => setSelectedRequest(null)}
+            onMarkInProgress={(req) => { handleMarkInProgress(req.id); setSelectedRequest(null); }}
+            onMarkShipped={(req, tracking) => { handleMarkShipped(req, tracking); setSelectedRequest(null); }}
+            onRevertToApproved={(req) => { handleRevertToApproved(req); setSelectedRequest(null); }}
+            onRevertToInProgress={(req) => { handleRevertToInProgress(req); setSelectedRequest(null); }}
           />
         )}
       </SlidePanel>

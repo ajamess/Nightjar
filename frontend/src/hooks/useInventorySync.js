@@ -10,36 +10,57 @@
  * See docs/INVENTORY_SYSTEM_SPEC.md §11.2.4b
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 /**
  * Observe a Yjs Map and return its entries as a plain JS object.
+ * Uses a ref alongside state so the returned value is immediately consistent
+ * when the Yjs Map identity changes (no one-frame stale-data window).
  * @param {Y.Map|null} yMap - Yjs Map to observe
  * @returns {Object} Plain JS object with map entries
  */
 function useYjsMap(yMap) {
-  const [data, setData] = useState({});
-  const yMapRef = useRef(yMap);
-  yMapRef.current = yMap;
+  const [, setVersion] = useState(0);
+  const yMapRef = useRef(null);
+  const dataRef = useRef({});
+
+  // CRITICAL FIX: Sync data immediately during render when yMap identity changes.
+  // Without this, there is a one-frame window where yMap is non-null but the
+  // returned data is still {} (stale initial value), because useEffect runs
+  // after paint. Updating dataRef during render ensures consumers see correct
+  // data on the same render cycle that the Yjs type becomes available.
+  if (yMap !== yMapRef.current) {
+    yMapRef.current = yMap;
+    if (yMap) {
+      const result = {};
+      yMap.forEach((value, key) => {
+        result[key] = value;
+      });
+      dataRef.current = result;
+    } else {
+      dataRef.current = {};
+    }
+  }
 
   useEffect(() => {
     if (!yMap) {
-      setData({});
+      dataRef.current = {};
+      setVersion(v => v + 1);
       return;
     }
 
-    // Initial sync
+    // Sync + observe for ongoing changes
     const syncFromMap = () => {
       const result = {};
       yMap.forEach((value, key) => {
         result[key] = value;
       });
-      setData(result);
+      dataRef.current = result;
+      setVersion(v => v + 1);
     };
 
     syncFromMap();
 
-    // Observe changes
     const observer = () => syncFromMap();
     yMap.observe(observer);
 
@@ -48,33 +69,48 @@ function useYjsMap(yMap) {
     };
   }, [yMap]);
 
-  return data;
+  return dataRef.current;
 }
 
 /**
  * Observe a Yjs Array and return its entries as a plain JS array.
+ * Uses a ref alongside state so the returned value is immediately consistent
+ * when the Yjs Array identity changes (no one-frame stale-data window).
  * @param {Y.Array|null} yArray - Yjs Array to observe
  * @returns {Array} Plain JS array
  */
 function useYjsArray(yArray) {
-  const [data, setData] = useState([]);
-  const yArrayRef = useRef(yArray);
-  yArrayRef.current = yArray;
+  const [, setVersion] = useState(0);
+  const yArrayRef = useRef(null);
+  const dataRef = useRef([]);
+
+  // CRITICAL FIX: Same pattern as useYjsMap — sync immediately during render
+  // to eliminate the stale-data window between yArray becoming non-null and
+  // the useEffect firing.
+  if (yArray !== yArrayRef.current) {
+    yArrayRef.current = yArray;
+    if (yArray) {
+      dataRef.current = yArray.toArray();
+    } else {
+      dataRef.current = [];
+    }
+  }
 
   useEffect(() => {
     if (!yArray) {
-      setData([]);
+      dataRef.current = [];
+      setVersion(v => v + 1);
       return;
     }
 
-    // Initial sync
+    // Sync + observe for ongoing changes
     const syncFromArray = () => {
-      setData(yArray.toArray());
+      dataRef.current = yArray.toArray();
+      setVersion(v => v + 1);
     };
 
     syncFromArray();
 
-    // Observe changes
     const observer = () => syncFromArray();
     yArray.observe(observer);
 
@@ -83,7 +119,7 @@ function useYjsArray(yArray) {
     };
   }, [yArray]);
 
-  return data;
+  return dataRef.current;
 }
 
 /**
@@ -119,51 +155,80 @@ export function useInventorySync({
   const allAuditLog = useYjsArray(yInventoryAuditLog);
 
   // Current inventory system
-  const currentSystem = inventorySystemId ? inventorySystemsMap[inventorySystemId] : null;
+  const currentSystem = useMemo(
+    () => inventorySystemId ? inventorySystemsMap[inventorySystemId] : null,
+    [inventorySystemsMap, inventorySystemId]
+  );
 
   // All inventory systems as array
-  const inventorySystems = Object.values(inventorySystemsMap);
+  const inventorySystems = useMemo(
+    () => Object.values(inventorySystemsMap),
+    [inventorySystemsMap]
+  );
 
   // Filter by current inventory system
-  const catalogItems = allCatalogItems.filter(
-    item => item.inventorySystemId === inventorySystemId
+  const catalogItems = useMemo(
+    () => allCatalogItems.filter(item => item.inventorySystemId === inventorySystemId),
+    [allCatalogItems, inventorySystemId]
   );
 
-  const requests = allRequests.filter(
-    req => req.inventorySystemId === inventorySystemId
+  const requests = useMemo(
+    () => allRequests.filter(req => req.inventorySystemId === inventorySystemId),
+    [allRequests, inventorySystemId]
   );
 
-  const auditLog = allAuditLog.filter(
-    entry => entry.inventorySystemId === inventorySystemId
+  const auditLog = useMemo(
+    () => allAuditLog.filter(entry => entry.inventorySystemId === inventorySystemId),
+    [allAuditLog, inventorySystemId]
   );
 
   // Producer capacities for this system (preserved as object keyed by producer public key)
-  const producerCapacities = Object.entries(producerCapacitiesMap)
-    .filter(([, cap]) => cap.inventorySystemId === inventorySystemId)
-    .reduce((acc, [key, val]) => { acc[key] = val; return acc; }, {});
+  const producerCapacities = useMemo(
+    () => Object.entries(producerCapacitiesMap)
+      .filter(([, cap]) => cap.inventorySystemId === inventorySystemId)
+      .reduce((acc, [key, val]) => { acc[key] = val; return acc; }, {}),
+    [producerCapacitiesMap, inventorySystemId]
+  );
 
   // Address reveals for this system
-  const addressReveals = Object.entries(addressRevealsMap)
-    .filter(([, reveal]) => reveal.inventorySystemId === inventorySystemId)
-    .reduce((acc, [key, val]) => { acc[key] = val; return acc; }, {});
+  const addressReveals = useMemo(
+    () => Object.entries(addressRevealsMap)
+      .filter(([, reveal]) => reveal.inventorySystemId === inventorySystemId)
+      .reduce((acc, [key, val]) => { acc[key] = val; return acc; }, {}),
+    [addressRevealsMap, inventorySystemId]
+  );
 
   // Pending addresses for this system (keyed by requestId)
   // Filter by inventorySystemId to match other data types, but also include
   // entries without inventorySystemId for backward compat (older entries)
-  const pendingAddresses = Object.entries(pendingAddressesMap)
-    .filter(([, val]) => !val.inventorySystemId || val.inventorySystemId === inventorySystemId)
-    .reduce((acc, [key, val]) => { acc[key] = val; return acc; }, {});
+  const pendingAddresses = useMemo(
+    () => Object.entries(pendingAddressesMap)
+      .filter(([, val]) => !val.inventorySystemId || val.inventorySystemId === inventorySystemId)
+      .reduce((acc, [key, val]) => { acc[key] = val; return acc; }, {}),
+    [pendingAddressesMap, inventorySystemId]
+  );
+
+  // Ready flag: true when all primary Yjs shared types are available.
+  // Consumers should check this before performing mutations on raw Yjs refs.
+  const ready = !!(yInventorySystems && yCatalogItems && yInventoryRequests);
 
   // Derived counts
-  const openRequestCount = requests.filter(r => r.status === 'open').length;
-  const pendingApprovalCount = requests.filter(
-    r => r.status === 'claimed' || r.status === 'pending_approval'
-  ).length;
-  const activeRequestCount = requests.filter(
-    r => !['cancelled', 'delivered'].includes(r.status)
-  ).length;
+  const openRequestCount = useMemo(
+    () => requests.filter(r => r.status === 'open').length,
+    [requests]
+  );
+  const pendingApprovalCount = useMemo(
+    () => requests.filter(r => r.status === 'claimed' || r.status === 'pending_approval').length,
+    [requests]
+  );
+  const activeRequestCount = useMemo(
+    () => requests.filter(r => !['cancelled', 'delivered'].includes(r.status)).length,
+    [requests]
+  );
 
   return {
+    // Readiness flag (false while Yjs types are still null)
+    ready,
     // Raw data
     currentSystem,
     inventorySystems,

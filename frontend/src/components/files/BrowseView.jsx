@@ -85,6 +85,7 @@ export default function BrowseView({
   const pendingUploadRef = useRef(null);
   const lastSelectedRef = useRef(null);
   const browseItemsRef = useRef(null);
+  const browseViewRef = useRef(null);
 
   // Files in current folder
   const filesInFolder = useMemo(() => {
@@ -271,8 +272,11 @@ export default function BrowseView({
     }
   }, [selectedItems, folderIdSet, onToggleFavorite]);
 
-  // --- Keyboard shortcuts ---
+  // --- Keyboard shortcuts (scoped to BrowseView container) ---
   useEffect(() => {
+    const container = browseViewRef.current;
+    if (!container) return;
+
     const handleKeyDown = (e) => {
       // Don't intercept when user is typing in inputs
       const tag = e.target.tagName;
@@ -309,8 +313,8 @@ export default function BrowseView({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
   }, [handleSelectAll, handleDeselectAll, handleBulkDeleteRequest, handleBulkDownload, selectedItems]);
 
   // Upload handling with collision detection
@@ -328,26 +332,30 @@ export default function BrowseView({
 
   const handleReplace = useCallback(() => {
     const pending = pendingUploadRef.current;
+    // Clear ref/state BEFORE processing remaining files so that
+    // handleFilesSelected can set a new conflict without being overwritten
+    pendingUploadRef.current = null;
+    setReplaceInfo(null);
     if (pending) {
       onUploadFiles?.([pending.file], pending.folderId, { replace: true });
       if (pending.remaining?.length) {
         handleFilesSelected(pending.remaining);
       }
     }
-    pendingUploadRef.current = null;
-    setReplaceInfo(null);
   }, [onUploadFiles, handleFilesSelected]);
 
   const handleKeepBoth = useCallback(() => {
     const pending = pendingUploadRef.current;
+    // Clear ref/state BEFORE processing remaining files so that
+    // handleFilesSelected can set a new conflict without being overwritten
+    pendingUploadRef.current = null;
+    setReplaceInfo(null);
     if (pending) {
       onUploadFiles?.([pending.file], pending.folderId, { keepBoth: true });
       if (pending.remaining?.length) {
         handleFilesSelected(pending.remaining);
       }
     }
-    pendingUploadRef.current = null;
-    setReplaceInfo(null);
   }, [onUploadFiles, handleFilesSelected]);
 
   // Context menu — bulk-aware
@@ -496,7 +504,7 @@ export default function BrowseView({
   const isAdmin = role === 'admin';
 
   return (
-    <div className="browse-view" data-testid="browse-view">
+    <div className="browse-view" data-testid="browse-view" ref={browseViewRef} tabIndex={-1}>
       {/* Toolbar */}
       <div className="browse-toolbar">
         <div className="browse-toolbar-left">

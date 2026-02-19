@@ -908,6 +908,41 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.9 - 30-Iteration Security & Reliability Audit (165+ Bug Fixes)
+- **Critical**: IPC sender validation on 15+ Electron handlers — prevents malicious renderer exploitation
+- **Critical**: Machine key salt fixed — per-installation random salt was silently falling back to deterministic derivation
+- **Critical**: Folder/document share link key derivation — was calling `deriveWorkspaceKey()` instead of entity-specific functions
+- **Critical**: Encryption without key now throws — `encryptData()`/`decryptData()` no longer silently return plaintext
+- **Critical**: Windows sidecar graceful shutdown — WebSocket shutdown message + 10s grace before force-kill (prevents DB corruption)
+- **Critical**: Preload script injection hardened — full escape of backticks, template literals, and newlines
+- **Security**: Server DoS protection — room limits (10K), message size limits, per-peer topic limits, rate limiting
+- **Security**: Prototype pollution prevention — key allowlists on `Object.assign` from untrusted peer data
+- **Security**: CSS injection blocked — peer color values now validated with `sanitizeColor()` before CSS interpolation
+- **Security**: Private key file permissions — now `0o600` on Unix (was world-readable)
+- **Security**: Random 16-byte salt for backup encryption (was hardcoded string)
+- **Security**: Password generator entropy — removed 4 duplicate nouns reducing effective entropy
+- **Security**: Never-expiring invites fixed — `expiresIn` now validated as number before arithmetic
+- **P2P Fix**: Workspace switch race condition — monotonic counter prevents async leave from corrupting concurrent join
+- **P2P Fix**: Unbounded Y.Doc creation — MAX_DOCS=500 limit prevents memory exhaustion from malicious peers
+- **P2P Fix**: Awareness throttle double-fire — proper timestamp tracking prevents duplicate broadcasts
+- **P2P Fix**: Collaborator ID stability — uses `publicKey` instead of ephemeral `clientId` to prevent duplicates
+- **P2P Fix**: Ghost peer cleanup — signaling server checks limits before adding peers to rooms
+- **Data Fix**: Sheet double-apply — ops tracked by clientId, local ops filtered in Yjs observer
+- **Data Fix**: KanbanBoard stale state — CRUD reads from Yjs ref instead of stale React state
+- **Data Fix**: Chunk availability now merges holders instead of overwriting
+- **Data Fix**: Redundant Yjs writes eliminated in collaboratorSync (skip when status unchanged)
+- **UI Fix**: Rename double-fire — Enter key now calls `blur()` instead of handler directly
+- **UI Fix**: Presence flicker — awareness cleanup moved to unmount-only effect
+- **UI Fix**: Rollback button hidden when no state snapshot available
+- **UI Fix**: Changelog slider bounds clamped to prevent out-of-bounds access
+- **UI Fix**: Ordered list double-wrapping in markdown export fixed
+- **Memory**: AwarenessManager listener cleanup, mDNS guard, WebSocket dedup, FolderContext dead code removal
+- **Reliability**: Sidecar timer cleanup on shutdown, workspace leave/delete cleans all P2P state maps
+- **Reliability**: LevelDB safe iteration (collect-then-delete), IndexedDB onblocked handler, formatTimestamp NaN guards
+- **Infrastructure**: Health endpoint stripped of sensitive data, Hyperswarm topic validation (64 hex chars)
+- **Testing**: 132 suites, 3,876 tests (0 failures) — 12 test files updated for new behavior
+- **Scope**: 120+ files modified, ~259 bugs found, ~165 fixed across Electron, sidecar, P2P, React, server, and crypto layers
+
 ### v1.7.8 - Sync Root Cause Fix, Unified StatusBar & Analytics Enhancement
 - **Critical Fix**: Files not appearing without Force Full Sync — peer-identity handler now sends sync-request for ALL shared workspace topics (DHT-discovered peers were previously skipped)
 - **Critical Fix**: "Verifying…" stuck forever — added 30s safety timeout in both sidecar and frontend; transitions to `failed` if no peer responds

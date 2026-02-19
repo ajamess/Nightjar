@@ -158,6 +158,7 @@ export default function InOutflowChart({ requests, dateRange, granularity = 'day
 
 function bucketize(requests, from, to, granularity) {
   const buckets = new Map();
+  const crossesYear = new Date(from).getFullYear() !== new Date(to).getFullYear();
 
   // Create empty buckets with proper boundaries
   const createEmptyBucket = (label) => {
@@ -175,13 +176,13 @@ function bucketize(requests, from, to, granularity) {
     start.setDate(1); start.setHours(0, 0, 0, 0);
     const end = new Date(to);
     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
-      const label = formatBucketLabel(d.getTime(), granularity);
+      const label = formatBucketLabel(d.getTime(), granularity, crossesYear);
       buckets.set(label, createEmptyBucket(label));
     }
   } else {
     const msPerBucket = granularity === 'week' ? 7 * 86400000 : 86400000;
     for (let t = from; t <= to; t += msPerBucket) {
-      const label = formatBucketLabel(t, granularity);
+      const label = formatBucketLabel(t, granularity, crossesYear);
       buckets.set(label, createEmptyBucket(label));
     }
   }
@@ -202,7 +203,7 @@ function bucketize(requests, from, to, granularity) {
   for (const r of requests) {
     const ts = r.requestedAt || r.createdAt || 0;
     if (ts >= from && ts <= to) {
-      const label = formatBucketLabel(ts, granularity);
+      const label = formatBucketLabel(ts, granularity, crossesYear);
       const b = buckets.get(label);
       if (b) {
         b.created++;
@@ -221,7 +222,7 @@ function bucketize(requests, from, to, granularity) {
       }
     }
     if (r.shippedAt && r.shippedAt >= from && r.shippedAt <= to) {
-      const label = formatBucketLabel(r.shippedAt, granularity);
+      const label = formatBucketLabel(r.shippedAt, granularity, crossesYear);
       const b = buckets.get(label);
       if (b) b.fulfilled++;
     }
@@ -252,7 +253,7 @@ function bucketize(requests, from, to, granularity) {
   return result;
 }
 
-function formatBucketLabel(ts, granularity) {
+function formatBucketLabel(ts, granularity, crossesYear = false) {
   const d = new Date(ts);
   if (granularity === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   if (granularity === 'week') {
@@ -260,7 +261,15 @@ function formatBucketLabel(ts, granularity) {
     const start = new Date(d);
     const dow = start.getDay() || 7;
     start.setDate(start.getDate() - dow + 1);
+    if (crossesYear) {
+      const yr = String(start.getFullYear()).slice(-2);
+      return `${start.getMonth() + 1}/${start.getDate()} '${yr}`;
+    }
     return `${start.getMonth() + 1}/${start.getDate()}`;
+  }
+  if (crossesYear) {
+    const yr = String(d.getFullYear()).slice(-2);
+    return `${d.getMonth() + 1}/${d.getDate()} '${yr}`;
   }
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }

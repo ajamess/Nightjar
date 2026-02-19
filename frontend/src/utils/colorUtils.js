@@ -180,6 +180,22 @@ export function createColorGradient(leftColor, rightColor, overlayOpacity = 0.3)
 }
 
 /**
+ * Sanitize a color value for safe use in CSS.
+ * Prevents CSS injection from malicious peers by only allowing valid color formats.
+ * @param {string} color - Color value to sanitize
+ * @param {string} fallback - Fallback color if invalid (default '#808080')
+ * @returns {string} - Safe CSS color value
+ */
+export function sanitizeCssColor(color, fallback = '#808080') {
+    if (typeof color !== 'string') return fallback;
+    // Allow hex colors: #RGB, #RRGGBB, #RRGGBBAA
+    if (/^#[0-9a-fA-F]{3,8}$/.test(color)) return color;
+    // Allow rgb/rgba/hsl/hsla with only digits, commas, dots, spaces, and %
+    if (/^(rgb|hsl)a?\(\s*[\d.,\s%]+\)$/.test(color)) return color;
+    return fallback;
+}
+
+/**
  * Get the dominant/primary color from a gradient or mixed color scenario
  * For folder+document colors, we use folder color as dominant
  * @param {string} folderColor - Folder's color

@@ -42,10 +42,18 @@ export default function NotificationInbox() {
     return () => yInventoryNotifications.unobserve(sync);
   }, [yInventoryNotifications]);
 
-  // Get all notifications for this user in this system
+  // Get all notifications for this user in this system.
+  // Dedup by id: the delete+insert pattern used in markNotificationRead can
+  // produce transient duplicates when two peers mark the same item concurrently.
   const allNotifications = useMemo(() => {
+    const seen = new Set();
     return notifSnapshot
       .filter(n => n.recipientId === myKey && n.inventorySystemId === inventorySystemId)
+      .filter(n => {
+        if (seen.has(n.id)) return false;
+        seen.add(n.id);
+        return true;
+      })
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [notifSnapshot, myKey, inventorySystemId]);
 

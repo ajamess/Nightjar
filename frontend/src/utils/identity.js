@@ -254,7 +254,7 @@ export const EMOJI_OPTIONS = [
  * @param {string} pin - 4-digit PIN for encryption
  * @param {number} expiresInMinutes - How long the QR is valid
  */
-export function generateTransferQRData(identity, pin, expiresInMinutes = 5) {
+export async function generateTransferQRData(identity, pin, expiresInMinutes = 5) {
     // Create transfer payload
     const payload = {
         mnemonic: identity.mnemonic,
@@ -264,9 +264,9 @@ export function generateTransferQRData(identity, pin, expiresInMinutes = 5) {
         expires: Date.now() + (expiresInMinutes * 60 * 1000)
     };
     
-    // Derive encryption key from PIN (using simple hash for short-lived QR)
-    const pinBytes = new TextEncoder().encode(pin.padEnd(32, '0'));
-    const pinKey = pinBytes.slice(0, 32);
+    // Derive encryption key from PIN using SHA-256
+    const pinHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+    const pinKey = new Uint8Array(pinHashBuffer);
     
     // Encrypt payload
     const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
@@ -285,13 +285,25 @@ export function generateTransferQRData(identity, pin, expiresInMinutes = 5) {
 /**
  * Decrypt QR data to restore identity
  */
-export function decryptTransferQRData(qrData, pin) {
+export async function decryptTransferQRData(qrData, pin) {
     try {
-        const packed = base62ToUint8(qrData, qrData.length); // Variable length
+        // Decode base62 back to exact bytes, preserving leading zero bytes.
+        // uint8ToBase62 encodes leading 0x00 bytes as leading '0' characters,
+        // so we must count them and prepend them to the numeric decode.
+        // NOTE: The previous formula  Math.ceil(len * log(62)/log(256))
+        // overestimates by 1 byte ~86% of the time due to ceiling rounding,
+        // which shifts the nonce/ciphertext boundary and breaks decryption.
+        let leadingZeros = 0;
+        while (leadingZeros < qrData.length && qrData[leadingZeros] === '0') {
+            leadingZeros++;
+        }
+        const numericBytes = base62ToUint8(qrData, 0);
+        const packed = new Uint8Array(leadingZeros + numericBytes.length);
+        packed.set(numericBytes, leadingZeros);
         
-        // Derive key from PIN
-        const pinBytes = new TextEncoder().encode(pin.padEnd(32, '0'));
-        const pinKey = pinBytes.slice(0, 32);
+        // Derive key from PIN using SHA-256
+        const pinHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+        const pinKey = new Uint8Array(pinHashBuffer);
         
         // Unpack
         const nonce = packed.slice(0, nacl.secretbox.nonceLength);

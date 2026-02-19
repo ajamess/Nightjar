@@ -301,10 +301,12 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
         if (workspace) {
           // Show toast for permission changes on re-join
           if (workspace.permissionChanged === 'upgraded') {
-            const label = workspace.myPermission?.charAt(0).toUpperCase() + workspace.myPermission?.slice(1);
+            const perm = workspace.myPermission || 'editor';
+            const label = perm.charAt(0).toUpperCase() + perm.slice(1);
             showToast(`Permission upgraded to ${label}`, 'success');
           } else if (workspace.permissionChanged === 'already-higher') {
-            const label = workspace.myPermission?.charAt(0).toUpperCase() + workspace.myPermission?.slice(1);
+            const perm = workspace.myPermission || 'editor';
+            const label = perm.charAt(0).toUpperCase() + perm.slice(1);
             showToast(`You already have ${label} access`, 'info');
           }
           onSuccess?.(workspace);
@@ -341,10 +343,12 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
         });
         // Show toast for permission changes on re-join
         if (workspace?.permissionChanged === 'upgraded') {
-          const label = workspace.myPermission?.charAt(0).toUpperCase() + workspace.myPermission?.slice(1);
+          const perm = workspace.myPermission || 'editor';
+          const label = perm.charAt(0).toUpperCase() + perm.slice(1);
           showToast(`Permission upgraded to ${label}`, 'success');
         } else if (workspace?.permissionChanged === 'already-higher') {
-          const label = workspace.myPermission?.charAt(0).toUpperCase() + workspace.myPermission?.slice(1);
+          const perm = workspace.myPermission || 'editor';
+          const label = perm.charAt(0).toUpperCase() + perm.slice(1);
           showToast(`You already have ${label} access`, 'info');
         }
         onSuccess?.(workspace);
@@ -384,10 +388,12 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
         console.log('[CreateWorkspace] joinWorkspace returned:', workspace);
         // Show toast for permission changes on re-join
         if (workspace?.permissionChanged === 'upgraded') {
-          const label = workspace.myPermission?.charAt(0).toUpperCase() + workspace.myPermission?.slice(1);
+          const perm = workspace.myPermission || 'editor';
+          const label = perm.charAt(0).toUpperCase() + perm.slice(1);
           showToast(`Permission upgraded to ${label}`, 'success');
         } else if (workspace?.permissionChanged === 'already-higher') {
-          const label = workspace.myPermission?.charAt(0).toUpperCase() + workspace.myPermission?.slice(1);
+          const perm = workspace.myPermission || 'editor';
+          const label = perm.charAt(0).toUpperCase() + perm.slice(1);
           showToast(`You already have ${label} access`, 'info');
         }
         onSuccess?.(workspace);
@@ -448,6 +454,9 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
                 setPassword('');
                 setConfirmPassword('');
                 setCreateError('');
+                // Clear join state from previous attempts
+                setJoinError('');
+                setConnectionProgress(null);
               }}
               role="tab"
               aria-selected={activeTab === 'join'}

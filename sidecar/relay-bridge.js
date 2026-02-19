@@ -126,6 +126,10 @@ class RelayBridge {
 
     // Try relay nodes in order
     for (const relay of relays) {
+      // Abort if disconnect() was called during a previous attempt
+      if (!this.pending.has(roomName)) {
+        return;
+      }
       try {
         await this._connectToRelay(roomName, ydoc, relay);
         this.pending.delete(roomName);
@@ -135,6 +139,10 @@ class RelayBridge {
       }
     }
 
+    // Abort if disconnect() was called during connection attempts
+    if (!this.pending.has(roomName)) {
+      return;
+    }
     this.pending.delete(roomName);
     // Graceful degradation: relay is unreachable, continue with direct Hyperswarm P2P
     console.warn(`[RelayBridge] All relay nodes unreachable for ${roomName} — falling back to direct P2P`);
@@ -476,6 +484,9 @@ class RelayBridge {
    * @param {string} roomName - The room name
    */
   disconnect(roomName) {
+    // Cancel any in-progress connection attempts
+    this.pending.delete(roomName);
+    
     // Clear any pending retry
     if (this.retryTimeouts.has(roomName)) {
       clearTimeout(this.retryTimeouts.get(roomName));

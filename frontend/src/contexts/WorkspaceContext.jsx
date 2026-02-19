@@ -176,19 +176,30 @@ export function WorkspaceProvider({ children }) {
   // AbortController for canceling pending async operations when switching workspaces
   const abortControllerRef = useRef(null);
   
+  // Monotonic counter to detect stale workspace transitions (guards leaveWorkspace/switchWorkspace races)
+  const workspaceTransitionIdRef = useRef(0);
+  
   // Persist workspaces to localStorage in web mode (identity-scoped)
   useEffect(() => {
     if (!isElectron && workspaces.length > 0) {
-      const storageKey = getIdentityScopedStorageKey('nahma-workspaces');
-      localStorage.setItem(storageKey, JSON.stringify(workspaces));
+      try {
+        const storageKey = getIdentityScopedStorageKey('nahma-workspaces');
+        localStorage.setItem(storageKey, JSON.stringify(workspaces));
+      } catch (err) {
+        console.warn('[WorkspaceContext] Failed to persist workspaces (storage quota exceeded?):', err);
+      }
     }
   }, [workspaces, isElectron]);
   
   // Persist current workspace selection (identity-scoped)
   useEffect(() => {
     if (!isElectron && currentWorkspaceId) {
-      const storageKey = getIdentityScopedStorageKey('nahma-current-workspace');
-      localStorage.setItem(storageKey, currentWorkspaceId);
+      try {
+        const storageKey = getIdentityScopedStorageKey('nahma-current-workspace');
+        localStorage.setItem(storageKey, currentWorkspaceId);
+      } catch (err) {
+        console.warn('[WorkspaceContext] Failed to persist current workspace (storage quota exceeded?):', err);
+      }
     }
   }, [currentWorkspaceId, isElectron]);
 
@@ -283,15 +294,16 @@ export function WorkspaceProvider({ children }) {
         ));
         break;
         
-      case 'workspace-deleted':
-        setWorkspaces(prev => {
-          const remaining = prev.filter(w => w.id !== data.workspaceId);
-          if (data.workspaceId === currentWorkspaceId) {
-            setCurrentWorkspaceId(remaining.length > 0 ? remaining[0].id : null);
-          }
-          return remaining;
-        });
+      case 'workspace-deleted': {
+        // Filter removed workspace (pure updater, no side effects)
+        setWorkspaces(prev => prev.filter(w => w.id !== data.workspaceId));
+        // Update current workspace selection outside the updater
+        if (data.workspaceId === currentWorkspaceId) {
+          const remaining = workspacesRef.current.filter(w => w.id !== data.workspaceId);
+          setCurrentWorkspaceId(remaining.length > 0 ? remaining[0].id : null);
+        }
         break;
+      }
         
       case 'workspace-joined':
         // When joining via share link - update or add the workspace
@@ -692,53 +704,58 @@ export function WorkspaceProvider({ children }) {
       throw new Error('Workspace not found');
     }
     
-    // Allow deletion if owner OR if you're the only member
+    // Only owners can delete workspaces
     const isOwner = workspace.myPermission === 'owner';
-    const memberCount = workspace.members?.length || workspace.collaborators?.length || 1;
-    const isOnlyMember = memberCount <= 1;
-    
-    if (!isOwner && !isOnlyMember) {
-      throw new Error('Only owners or the last remaining member can delete a workspace');
+    if (!isOwner) {
+      throw new Error('Only owners can delete workspaces');
     }
     
     sendMessage({ type: 'delete-workspace', workspaceId });
     
-    // Optimistic removal and switch if needed
-    setWorkspaces(prev => {
-      const remaining = prev.filter(w => w.id !== workspaceId);
-      if (currentWorkspaceId === workspaceId) {
-        setCurrentWorkspaceId(remaining.length > 0 ? remaining[0].id : null);
-      }
-      return remaining;
-    });
+    // Switch away before removing (side effect outside setState updater)
+    if (currentWorkspaceId === workspaceId) {
+      const remaining = workspacesRef.current.filter(w => w.id !== workspaceId);
+      setCurrentWorkspaceId(remaining.length > 0 ? remaining[0].id : null);
+    }
+    
+    // Optimistic removal
+    setWorkspaces(prev => prev.filter(w => w.id !== workspaceId));
   }, [sendMessage, currentWorkspaceId]);
 
   /**
    * Leave a workspace (for editors/viewers - removes local copy only)
    * @param {string} workspaceId - Workspace ID
    */
-  const leaveWorkspace = useCallback(async (workspaceId) => {
+  const leaveWorkspace = useCallback(async (workspaceId, { force = false } = {}) => {
     const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
     }
     
-    // Owners should delete, not leave
-    if (workspace.myPermission === 'owner') {
+    // Owners should delete, not leave (unless force=true after ownership transfer)
+    if (!force && workspace.myPermission === 'owner') {
       throw new Error('Owners should delete the workspace instead of leaving');
     }
+    
+    // Capture transition ID so we can detect if switchWorkspace was called concurrently
+    const transitionId = ++workspaceTransitionIdRef.current;
     
     // Tell sidecar to remove local workspace data (same as delete but for non-owners)
     sendMessage({ type: 'leave-workspace', workspaceId });
     
-    // Optimistic removal and switch if needed
-    setWorkspaces(prev => {
-      const remaining = prev.filter(w => w.id !== workspaceId);
-      if (currentWorkspaceId === workspaceId) {
-        setCurrentWorkspaceId(remaining.length > 0 ? remaining[0].id : null);
-      }
-      return remaining;
-    });
+    // Only apply post-leave state changes if no concurrent switch occurred
+    if (workspaceTransitionIdRef.current !== transitionId) {
+      return; // A concurrent switchWorkspace took over; skip stale state updates
+    }
+    
+    // Switch away before removing (side effect outside setState updater)
+    if (currentWorkspaceId === workspaceId) {
+      const remaining = workspacesRef.current.filter(w => w.id !== workspaceId);
+      setCurrentWorkspaceId(remaining.length > 0 ? remaining[0].id : null);
+    }
+    
+    // Optimistic removal
+    setWorkspaces(prev => prev.filter(w => w.id !== workspaceId));
   }, [sendMessage, currentWorkspaceId]);
 
   /**
@@ -751,6 +768,9 @@ export function WorkspaceProvider({ children }) {
       secureLog('[WorkspaceContext] Workspace not found:', workspaceId);
       return;
     }
+    
+    // Bump transition counter to invalidate any in-flight leaveWorkspace
+    workspaceTransitionIdRef.current++;
     
     setCurrentWorkspaceId(workspaceId);
     
@@ -785,8 +805,8 @@ export function WorkspaceProvider({ children }) {
     secureLog(`[WorkspaceContext] isElectron: ${checkIsElectron()}`);
     secureLog(`[WorkspaceContext] ====================================`);
     
-    // Check if already have access
-    const existing = workspaces.find(w => w.id === entityId);
+    // Check if already have access (use ref to avoid stale closure during async)
+    const existing = workspacesRef.current.find(w => w.id === entityId);
     if (existing) {
       // Build updates object for any changed/new properties
       const updates = {};
@@ -940,7 +960,7 @@ export function WorkspaceProvider({ children }) {
     secureLog(`[WorkspaceContext] Workspace joined successfully, currentWorkspaceId set to: ${entityId}`);
     
     return workspace;
-  }, [sendMessage, workspaces, updateWorkspace, switchWorkspace]);
+  }, [sendMessage, updateWorkspace, switchWorkspace]);
 
   /**
    * Get workspace by ID

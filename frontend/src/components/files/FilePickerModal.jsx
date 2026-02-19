@@ -7,7 +7,8 @@
  * See docs/FILE_STORAGE_SPEC.md §13
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import FileTypeIcon from './FileTypeIcon';
 import SearchBar from './SearchBar';
 import { formatFileSize, getRelativeTime, getFileTypeCategory } from '../../utils/fileTypeCategories';
@@ -33,6 +34,18 @@ export default function FilePickerModal({
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [currentFolderId, setCurrentFolderId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const modalRef = useRef(null);
+
+  useFocusTrap(modalRef, isOpen);
+
+  // Reset selection state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedFiles(new Set());
+      setCurrentFolderId(null);
+      setSearchTerm('');
+    }
+  }, [isOpen]);
 
   // Filter by mode
   const modeFilter = useMemo(() => {
@@ -120,10 +133,10 @@ export default function FilePickerModal({
 
   return (
     <div className="file-picker-overlay" onClick={onClose} data-testid="file-picker-overlay">
-      <div className="file-picker-modal" onClick={e => e.stopPropagation()} data-testid="file-picker-modal">
+      <div className="file-picker-modal" ref={modalRef} role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} data-testid="file-picker-modal">
         <div className="file-picker-header">
           <h3 className="file-picker-title">{title}</h3>
-          <button className="file-picker-close" onClick={onClose} data-testid="file-picker-close">✕</button>
+          <button type="button" className="file-picker-close" onClick={onClose} aria-label="Close file picker" data-testid="file-picker-close">✕</button>
         </div>
 
         {/* Breadcrumbs + Search */}

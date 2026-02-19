@@ -127,49 +127,32 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
     setError(null);
 
     try {
-      // Verify PIN by checking against the stored hash
-      const identities = identityManager.listIdentities();
-      const metadata = identities.find(i => i.id === selectedIdentity.id);
-      
-      if (!metadata) {
-        throw new Error('Identity not found');
-      }
-      
-      // Hash the provided PIN and compare
-      const pinHash = await identityManager.hashPin(deletePin, metadata.salt);
-      
-      if (pinHash !== metadata.pinHash) {
-        // Increment failed attempts and persist to storage
-        metadata.pinAttempts = (metadata.pinAttempts || 0) + 1;
-        // Save updated identities list so pinAttempts is persisted
-        const updatedIdentities = identityManager.listIdentities().map(i =>
-          i.id === metadata.id ? { ...i, pinAttempts: metadata.pinAttempts } : i
-        );
-        try {
-          localStorage.setItem('nightjar_identities', JSON.stringify(updatedIdentities));
-        } catch (err) {
-          console.warn('[IdentitySelector] Failed to persist pinAttempts:', err);
-        }
-        const remaining = 5 - metadata.pinAttempts;
-        
+      const pinCorrect = await identityManager.verifyPin(selectedIdentity.id, deletePin);
+
+      if (!pinCorrect) {
+        const remaining = identityManager.getRemainingAttempts(selectedIdentity.id);
         if (remaining <= 0) {
-          // Too many attempts - force delete for security
-          await identityManager.deleteIdentity(selectedIdentity.id, true);
+          // Identity was auto-deleted by verifyPin
           loadIdentities();
           setView(VIEWS.LIST);
           return;
         }
-        
         setError(`Incorrect PIN. ${remaining} attempts remaining.`);
         setDeletePin('');
         return;
       }
-      
+
       // PIN verified - proceed with deletion
       await identityManager.deleteIdentity(selectedIdentity.id);
       loadIdentities();
       setView(VIEWS.LIST);
     } catch (err) {
+      // Handle auto-deletion from too many attempts
+      if (err.message.includes('deleted')) {
+        loadIdentities();
+        setView(VIEWS.LIST);
+        return;
+      }
       setError(err.message);
       setDeletePin('');
     } finally {
@@ -198,9 +181,12 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
     );
   }
 
-  // No identities - should go to onboarding
+  // No identities - trigger onboarding via effect
+  useEffect(() => {
+    if (!loading && identities.length === 0) onCreateNew?.();
+  }, [loading, identities.length, onCreateNew]);
+
   if (identities.length === 0) {
-    onCreateNew?.();
     return null;
   }
 
@@ -222,7 +208,7 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
           <div className="identity-selector__unlock-identity">
             <div 
               className="identity-selector__unlock-icon" 
-              style={{ backgroundColor: selectedIdentity.color + '20', color: selectedIdentity.color }}
+              style={{ backgroundColor: (selectedIdentity.color || '#666') + '20', color: selectedIdentity.color || '#666' }}
             >
               {selectedIdentity.icon || '👤'}
             </div>
@@ -233,7 +219,7 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
             value={pin}
             onChange={setPin}
             onComplete={handleUnlock}
-            disabled={unlocking}
+            disabled={unlocking || remaining <= 0}
             error={error}
             label="Enter your 6-digit PIN"
             autoFocus
@@ -353,7 +339,7 @@ export default function IdentitySelector({ onSelect, onCreateNew, onNeedsMigrati
             >
               <div 
                 className="identity-selector__item-icon" 
-                style={{ backgroundColor: identity.color + '20', color: identity.color }}
+                style={{ backgroundColor: (identity.color || '#666') + '20', color: identity.color || '#666' }}
               >
                 {identity.icon || '👤'}
               </div>

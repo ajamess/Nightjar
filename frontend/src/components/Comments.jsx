@@ -105,7 +105,7 @@ const Comments = ({
         
         const debouncedCheck = () => {
             if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(checkOrphanComments, 3000);
+            debounceTimer = setTimeout(checkOrphanComments, 5000);
         };
         
         // Listen to editor updates
@@ -178,11 +178,6 @@ const Comments = ({
     const addReply = (commentId) => {
         if (!replyText.trim() || !ycommentsRef.current) return;
 
-        // Read directly from Yjs to avoid stale closure
-        const currentComments = ycommentsRef.current.toArray();
-        const commentIndex = currentComments.findIndex(c => c.id === commentId);
-        if (commentIndex === -1) return;
-
         const reply = {
             id: `reply-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
             text: replyText.trim(),
@@ -192,14 +187,17 @@ const Comments = ({
             timestamp: Date.now()
         };
 
-        // Update the comment with the new reply
-        const updatedComment = {
-            ...currentComments[commentIndex],
-            replies: [...(currentComments[commentIndex].replies || []), reply]
-        };
-
-        // Replace the comment in the Yjs array atomically
+        // Read and mutate inside transact to prevent stale index from remote updates
         ydoc.transact(() => {
+            const currentComments = ycommentsRef.current.toArray();
+            const commentIndex = currentComments.findIndex(c => c.id === commentId);
+            if (commentIndex === -1) return;
+
+            const updatedComment = {
+                ...currentComments[commentIndex],
+                replies: [...(currentComments[commentIndex].replies || []), reply]
+            };
+
             ycommentsRef.current.delete(commentIndex, 1);
             ycommentsRef.current.insert(commentIndex, [updatedComment]);
         });
@@ -212,18 +210,17 @@ const Comments = ({
     const toggleResolve = (commentId) => {
         if (!ycommentsRef.current) return;
 
-        // Read directly from Yjs to avoid stale closure
-        const currentComments = ycommentsRef.current.toArray();
-        const commentIndex = currentComments.findIndex(c => c.id === commentId);
-        if (commentIndex === -1) return;
-
-        const updatedComment = {
-            ...currentComments[commentIndex],
-            resolved: !currentComments[commentIndex].resolved
-        };
-
-        // Replace atomically
+        // Read and mutate inside transact to prevent stale index from remote updates
         ydoc.transact(() => {
+            const currentComments = ycommentsRef.current.toArray();
+            const commentIndex = currentComments.findIndex(c => c.id === commentId);
+            if (commentIndex === -1) return;
+
+            const updatedComment = {
+                ...currentComments[commentIndex],
+                resolved: !currentComments[commentIndex].resolved
+            };
+
             ycommentsRef.current.delete(commentIndex, 1);
             ycommentsRef.current.insert(commentIndex, [updatedComment]);
         });
@@ -233,12 +230,14 @@ const Comments = ({
     const deleteComment = (commentId) => {
         if (!ycommentsRef.current) return;
 
-        // Read directly from Yjs to avoid stale closure
-        const currentComments = ycommentsRef.current.toArray();
-        const commentIndex = currentComments.findIndex(c => c.id === commentId);
-        if (commentIndex === -1) return;
+        // Read and mutate inside transact to prevent stale index from remote updates
+        ydoc.transact(() => {
+            const currentComments = ycommentsRef.current.toArray();
+            const commentIndex = currentComments.findIndex(c => c.id === commentId);
+            if (commentIndex === -1) return;
 
-        ycommentsRef.current.delete(commentIndex, 1);
+            ycommentsRef.current.delete(commentIndex, 1);
+        });
     };
 
     // Navigate to comment selection in editor
@@ -288,7 +287,9 @@ const Comments = ({
 
     // Format timestamp
     const formatTime = (timestamp) => {
+        if (!timestamp || isNaN(timestamp)) return '';
         const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return '';
         const now = new Date();
         const diff = now - date;
         

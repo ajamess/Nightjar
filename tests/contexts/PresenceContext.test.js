@@ -452,7 +452,7 @@ describe('PresenceContext', () => {
   });
 
   describe('Cleanup', () => {
-    test('clears local state on unmount', () => {
+    test('clears local state fields on unmount', () => {
       const { unmount } = render(
         <PresenceProvider awareness={mockAwareness}>
           <div>Test</div>
@@ -461,7 +461,9 @@ describe('PresenceContext', () => {
 
       unmount();
 
-      expect(mockAwareness.setLocalState).toHaveBeenCalledWith(null);
+      // Should clear individual fields rather than setting entire state to null
+      // to avoid wiping out other contexts sharing the same awareness instance
+      expect(mockAwareness.setLocalStateField).toHaveBeenCalled();
     });
 
     test('clears typing timeout on unmount', () => {

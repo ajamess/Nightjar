@@ -72,8 +72,8 @@ const NOUNS = [
   'violet', 'vista', 'voyage', 'water', 'wave', 'whisper', 'willow', 'wind',
   'wing', 'winter', 'wolf', 'wonder', 'wood', 'wren', 'zenith', 'zephyr',
   'alpha', 'atlas', 'apex', 'arch', 'aspen', 'aura', 'axis', 'azure',
-  'basalt', 'basin', 'bay', 'birch', 'blaze', 'bloom', 'blossom', 'bluff',
-  'brier', 'bronze', 'brook', 'cairn', 'canopy', 'canyon', 'cape', 'cedar'
+  'basalt', 'basin', 'bay', 'birch', 'blaze', 'bamboo', 'blossom', 'bluff',
+  'brier', 'bronze', 'bramble', 'cairn', 'canopy', 'condor', 'cape', 'cinder'
 ];
 
 /**

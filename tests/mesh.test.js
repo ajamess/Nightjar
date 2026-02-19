@@ -463,9 +463,8 @@ describe('Mesh Message Handling', () => {
 
 describe('Mesh Edge Cases', () => {
   test('handles empty workspace ID', () => {
-    const topic = getWorkspaceTopic('');
-    expect(Buffer.isBuffer(topic)).toBe(true);
-    expect(topic.length).toBe(32);
+    // Empty workspace ID should throw - it would produce a silently wrong topic hash
+    expect(() => getWorkspaceTopic('')).toThrow('workspaceId is required');
   });
 
   test('handles very long workspace ID', () => {

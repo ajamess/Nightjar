@@ -275,12 +275,12 @@ function markdownToHtml(markdown) {
         // Paragraphs (double newlines)
         .replace(/\n\n/g, '</p><p>');
     
+    // Wrap consecutive unordered list items in <ul> (before OL to avoid double-wrapping)
+    html = html.replace(/((?:<li>.*?<\/li>\s*)+)/g, '<ul>$1</ul>');
     // Wrap consecutive ordered list items in <ol>
     html = html.replace(/((?:<li data-list="ol">.*?<\/li>\s*)+)/g, (match) => {
         return '<ol>' + match.replace(/ data-list="ol"/g, '') + '</ol>';
     });
-    // Wrap consecutive unordered list items in <ul>
-    html = html.replace(/((?:<li>.*?<\/li>\s*)+)/g, '<ul>$1</ul>');
     
     // Wrap in paragraph if not already wrapped
     if (!html.startsWith('<')) {

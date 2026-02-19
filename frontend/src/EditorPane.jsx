@@ -13,6 +13,7 @@ import Link from '@tiptap/extension-link';
 import * as Y from 'yjs';
 import Toolbar from './components/Toolbar';
 import SelectionToolbar from './components/SelectionToolbar';
+import { sanitizeCssColor } from './utils/colorUtils';
 import { useAutoSave } from './hooks/useAutoSave';
 import { exportDocument, importDocument, exportFormats, getWordCount, getCharacterCount } from './utils/exportUtils';
 import { loadSettings } from './components/common/AppSettings';
@@ -73,25 +74,32 @@ const EditorPane = ({
     useEffect(() => {
         if (!provider?.awareness) return;
         
-        console.log('[EditorPane] Provider awareness initialized, clientID:', provider.awareness.clientID);
+        const awareness = provider.awareness;
+        console.log('[EditorPane] Provider awareness initialized, clientID:', awareness.clientID);
         
         const logAwareness = () => {
-            const states = provider.awareness.getStates();
-            const otherUsers = [];
-            states.forEach((state, clientId) => {
-                if (clientId !== provider.awareness.clientID && state.user) {
-                    otherUsers.push({ clientId, user: state.user });
+            try {
+                const states = awareness.getStates();
+                const otherUsers = [];
+                states.forEach((state, clientId) => {
+                    if (clientId !== awareness.clientID && state.user) {
+                        otherUsers.push({ clientId, user: state.user });
+                    }
+                });
+                if (otherUsers.length > 0) {
+                    console.log('[EditorPane] Other users in document:', otherUsers);
                 }
-            });
-            if (otherUsers.length > 0) {
-                console.log('[EditorPane] Other users in document:', otherUsers);
+            } catch (e) {
+                // Awareness may be destroyed during rapid document switching
             }
         };
         
-        provider.awareness.on('change', logAwareness);
+        awareness.on('change', logAwareness);
         logAwareness(); // Initial check
         
-        return () => provider.awareness.off('change', logAwareness);
+        return () => {
+            try { awareness.off('change', logAwareness); } catch (e) { /* already destroyed */ }
+        };
     }, [provider]);
 
     const editor = useEditor({
@@ -119,11 +127,11 @@ const EditorPane = ({
                 render: user => {
                     const cursor = document.createElement('span');
                     cursor.classList.add('collaboration-cursor__caret');
-                    cursor.setAttribute('style', `border-color: ${user.color}`);
+                    cursor.setAttribute('style', `border-color: ${sanitizeCssColor(user.color)}`);
                     
                     const label = document.createElement('div');
                     label.classList.add('collaboration-cursor__label');
-                    label.setAttribute('style', `background-color: ${user.color}`);
+                    label.setAttribute('style', `background-color: ${sanitizeCssColor(user.color)}`);
                     label.textContent = user.name;
                     cursor.appendChild(label);
                     
@@ -157,6 +165,18 @@ const EditorPane = ({
         },
     });
 
+    // Dynamically update editable state when readOnly prop changes
+    useEffect(() => {
+        if (editor) {
+            editor.setEditable(!readOnly);
+        }
+    }, [editor, readOnly]);
+
+    // Track provider in a ref so unmount-only cleanup always has the latest value
+    // Updated at render time (not in useEffect) to avoid one-frame stale reads
+    const providerRef = useRef(provider);
+    providerRef.current = provider;
+
     // Update awareness and CollaborationCursor when user info changes
     useEffect(() => {
         if (provider && userHandle && editor) {
@@ -187,32 +207,45 @@ const EditorPane = ({
                 console.debug('[EditorPane] Could not update cursor user:', e.message);
             }
         }
-        
-        // Clear awareness state on unmount to remove stale cursor and selection
+        // NOTE: Cleanup intentionally omitted here — moved to unmount-only effect
+        // to prevent presence flicker when dependencies change.
+    }, [userHandle, provider, userColor, userPublicKey, editor, userPrefs.showCursor, userPrefs.showSelection]);
+
+    // Clear awareness state ONLY on unmount to avoid presence flicker
+    useEffect(() => {
         return () => {
-            if (provider?.awareness) {
+            const p = providerRef.current;
+            if (p?.awareness) {
                 try {
-                    provider.awareness.setLocalStateField('user', null);
-                    provider.awareness.setLocalStateField('cursor', null);
-                    provider.awareness.setLocalStateField('selection', null);
+                    p.awareness.setLocalStateField('user', null);
+                    p.awareness.setLocalStateField('cursor', null);
+                    p.awareness.setLocalStateField('selection', null);
                 } catch (e) {
                     // Ignore errors if awareness is already destroyed
                 }
             }
         };
-    }, [userHandle, provider, userColor, userPublicKey, editor, userPrefs.showCursor, userPrefs.showSelection]);
+    }, []);
 
     // Periodic awareness heartbeat to keep lastActive fresh
     useEffect(() => {
         if (!provider?.awareness) return;
         
         const heartbeat = setInterval(() => {
-            const currentState = provider.awareness.getLocalState();
-            if (currentState?.user) {
-                provider.awareness.setLocalStateField('user', {
-                    ...currentState.user,
-                    lastActive: Date.now(),
-                });
+            // Use providerRef to always read the latest provider,
+            // avoiding stale closure if provider is swapped during reconnect
+            const p = providerRef.current;
+            if (!p?.awareness) return;
+            try {
+                const currentState = p.awareness.getLocalState();
+                if (currentState?.user) {
+                    p.awareness.setLocalStateField('user', {
+                        ...currentState.user,
+                        lastActive: Date.now(),
+                    });
+                }
+            } catch (e) {
+                // Awareness may be destroyed during workspace switch
             }
         }, 30000); // Update every 30 seconds
         

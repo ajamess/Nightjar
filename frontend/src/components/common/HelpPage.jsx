@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './HelpPage.css';
 
 // Help content sections — based on actual codebase audit (Feb 2026)
@@ -410,7 +411,7 @@ function ContentBlock({ block }) {
     case 'list':
       return (
         <ul className="help-page__content-list">
-          {block.items.map((item, i) => (
+          {(block.items || []).map((item, i) => (
             <li key={i}>{item}</li>
           ))}
         </ul>
@@ -418,7 +419,7 @@ function ContentBlock({ block }) {
     case 'steps':
       return (
         <ol className="help-page__content-steps">
-          {block.items.map((item, i) => (
+          {(block.items || []).map((item, i) => (
             <li key={i}>{item}</li>
           ))}
         </ol>
@@ -433,7 +434,7 @@ function ContentBlock({ block }) {
     case 'shortcuts':
       return (
         <div className="help-page__shortcuts">
-          {block.items.map((item, i) => (
+          {(block.items || []).map((item, i) => (
             <div key={i} className="help-page__shortcut-row">
               <span className="help-page__shortcut-keys">
                 {item.keys.map((key, ki) => (
@@ -457,6 +458,9 @@ export default function HelpPage({ isOpen, onClose, initialSection }) {
   const [activeSection, setActiveSection] = useState(initialSection || 'getting-started');
   const contentRef = useRef(null);
   const overlayRef = useRef(null);
+  const modalRef = useRef(null);
+
+  useFocusTrap(modalRef, isOpen, { onEscape: onClose });
 
   // Update active section when initialSection prop changes
   useEffect(() => {
@@ -472,7 +476,7 @@ export default function HelpPage({ isOpen, onClose, initialSection }) {
     }
   }, [activeSection]);
 
-  // Handle keyboard
+  // Handle Escape key (backup for when useFocusTrap is not available)
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') {
       onClose?.();
@@ -499,7 +503,7 @@ export default function HelpPage({ isOpen, onClose, initialSection }) {
       aria-modal="true"
       aria-label="Help & Documentation"
     >
-      <div className="help-page-modal">
+      <div className="help-page-modal" ref={modalRef}>
         {/* Header */}
         <div className="help-page__header">
           <h2 className="help-page__title">📖 Help & Documentation</h2>

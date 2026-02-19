@@ -276,6 +276,45 @@ export async function clearChangelog(docId) {
     }
 }
 
+/**
+ * Delete all changelog data for a document (IndexedDB entries + localStorage fallback).
+ * Call this when a document is permanently deleted to prevent orphaned entries.
+ * @param {string} docId - Document ID
+ * @returns {Promise<void>}
+ */
+export async function deleteChangelogForDocument(docId) {
+    // Always clean up localStorage entry regardless of IndexedDB success
+    localStorage.removeItem('Nightjar-changelog-' + docId);
+
+    try {
+        const db = await openDatabase();
+
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const index = store.index('docId');
+            const range = IDBKeyRange.only(docId);
+
+            const request = index.openCursor(range);
+
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor) {
+                    resolve();
+                    return;
+                }
+                cursor.delete();
+                cursor.continue();
+            };
+
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.warn('[ChangelogStore] deleteChangelogForDocument IndexedDB failed:', error);
+        // localStorage already cleaned up above
+    }
+}
+
 // --- Settings Management ---
 
 /**

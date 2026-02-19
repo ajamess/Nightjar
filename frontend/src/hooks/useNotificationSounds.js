@@ -9,7 +9,7 @@
  * - Sound preview/test functionality
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 
 // Available notification sounds (royalty-free)
 export const NOTIFICATION_SOUNDS = [
@@ -239,27 +239,62 @@ function synthesizeSound(soundId, volume = 0.5) {
 export function useNotificationSounds() {
     const [settings, setSettings] = useState(loadNotificationSettings);
     
+    // Ref to avoid stale closures in callbacks
+    // Updated at render time (not in useEffect) to avoid one-frame stale reads
+    const settingsRef = useRef(settings);
+    settingsRef.current = settings;
+
+    // Bug fix: Keep DND state in sync with TabBar toggle and cross-tab changes.
+    // TabBar writes doNotDisturb to localStorage and dispatches 'nightjar-dnd-change'.
+    // We listen for that event (same window) and the 'storage' event (cross-tab).
+    useEffect(() => {
+        const reloadDnd = () => {
+            const fresh = loadNotificationSettings();
+            setSettings(prev => {
+                if (prev.doNotDisturb !== fresh.doNotDisturb) {
+                    return { ...prev, doNotDisturb: fresh.doNotDisturb };
+                }
+                return prev;
+            });
+        };
+
+        // Same-window custom event dispatched by TabBar
+        window.addEventListener('nightjar-dnd-change', reloadDnd);
+        // Cross-tab sync via Storage API
+        const handleStorageEvent = (e) => {
+            if (e.key === 'Nightjar-notification-settings') reloadDnd();
+        };
+        window.addEventListener('storage', handleStorageEvent);
+
+        return () => {
+            window.removeEventListener('nightjar-dnd-change', reloadDnd);
+            window.removeEventListener('storage', handleStorageEvent);
+        };
+    }, []);
+
     // Play a notification sound (synthesized via Web Audio API)
     const playSound = useCallback((soundId = null, volumeOverride = null) => {
+        const s = settingsRef.current;
         // Check if sounds are enabled and not in DND mode
-        if (!settings.enabled || !settings.soundEnabled || settings.doNotDisturb) {
+        if (!s.enabled || !s.soundEnabled || s.doNotDisturb) {
             return;
         }
         
-        const sound = soundId || settings.selectedSound;
-        const volume = volumeOverride ?? settings.soundVolume;
+        const sound = soundId || s.selectedSound;
+        const volume = volumeOverride ?? s.soundVolume;
         
         try {
             synthesizeSound(sound, volume);
         } catch (err) {
             console.error('[Sounds] Failed to play sound:', err);
         }
-    }, [settings.enabled, settings.soundEnabled, settings.doNotDisturb, settings.selectedSound, settings.soundVolume]);
+    }, []);
     
     // Play sound for a specific message type
     const playForMessageType = useCallback((messageType) => {
+        const s = settingsRef.current;
         // Check if sounds are enabled and not in DND mode
-        if (!settings.enabled || !settings.soundEnabled || settings.doNotDisturb) {
+        if (!s.enabled || !s.soundEnabled || s.doNotDisturb) {
             return;
         }
         
@@ -267,16 +302,16 @@ export function useNotificationSounds() {
         let shouldPlay = false;
         switch (messageType) {
             case MESSAGE_TYPES.DIRECT_MESSAGE:
-                shouldPlay = settings.soundOnDirectMessage;
+                shouldPlay = s.soundOnDirectMessage;
                 break;
             case MESSAGE_TYPES.MENTION:
-                shouldPlay = settings.soundOnMention;
+                shouldPlay = s.soundOnMention;
                 break;
             case MESSAGE_TYPES.GROUP_MESSAGE:
-                shouldPlay = settings.soundOnGroupMessage;
+                shouldPlay = s.soundOnGroupMessage;
                 break;
             case MESSAGE_TYPES.GENERAL_MESSAGE:
-                shouldPlay = settings.soundOnGeneralMessage;
+                shouldPlay = s.soundOnGeneralMessage;
                 break;
             default:
                 shouldPlay = false;
@@ -285,16 +320,16 @@ export function useNotificationSounds() {
         if (shouldPlay) {
             playSound();
         }
-    }, [settings, playSound]);
+    }, [playSound]);
     
     // Test/preview a sound (plays regardless of enabled/DND state)
     const testSound = useCallback((soundId) => {
         try {
-            synthesizeSound(soundId, settings.soundVolume);
+            synthesizeSound(soundId, settingsRef.current.soundVolume);
         } catch (err) {
             console.error('[Sounds] Failed to test sound:', err);
         }
-    }, [settings.soundVolume]);
+    }, []);
     
     // Update settings
     const updateSettings = useCallback((updates) => {
@@ -307,8 +342,8 @@ export function useNotificationSounds() {
     
     // Toggle DND mode
     const toggleDoNotDisturb = useCallback(() => {
-        updateSettings({ doNotDisturb: !settings.doNotDisturb });
-    }, [settings.doNotDisturb, updateSettings]);
+        updateSettings({ doNotDisturb: !settingsRef.current.doNotDisturb });
+    }, [updateSettings]);
     
     // Request notification permission (call this on user interaction)
     const requestNotificationPermission = useCallback(async () => {
@@ -331,8 +366,9 @@ export function useNotificationSounds() {
     
     // Send a desktop notification
     const sendDesktopNotification = useCallback((title, body, options = {}) => {
+        const s = settingsRef.current;
         // Check if enabled and not in DND mode
-        if (!settings.enabled || !settings.desktopNotifications || settings.doNotDisturb) {
+        if (!s.enabled || !s.desktopNotifications || s.doNotDisturb) {
             return null;
         }
         
@@ -342,12 +378,12 @@ export function useNotificationSounds() {
         
         try {
             const notification = new Notification(title, {
-                body: settings.showPreview ? body : 'New message',
+                body: s.showPreview ? body : 'New message',
                 icon: '/icons/icon-192.png', // App icon
                 badge: '/icons/icon-72.png',
                 tag: options.tag || 'nightjar-chat',
                 renotify: options.renotify || false,
-                silent: !settings.soundEnabled, // Let our sound system handle it
+                silent: !s.soundEnabled, // Let our sound system handle it
                 ...options,
             });
             
@@ -366,24 +402,25 @@ export function useNotificationSounds() {
             console.error('[Notifications] Failed to send notification:', err);
             return null;
         }
-    }, [settings.enabled, settings.desktopNotifications, settings.doNotDisturb, settings.showPreview, settings.soundEnabled]);
+    }, []);
     
     // Send notification for a specific message type
     const notifyForMessageType = useCallback((messageType, title, body, options = {}) => {
+        const s = settingsRef.current;
         // Check if notifications are enabled for this type
         let shouldNotify = false;
         switch (messageType) {
             case MESSAGE_TYPES.DIRECT_MESSAGE:
-                shouldNotify = settings.notifyOnDirectMessage;
+                shouldNotify = s.notifyOnDirectMessage;
                 break;
             case MESSAGE_TYPES.MENTION:
-                shouldNotify = settings.notifyOnMention;
+                shouldNotify = s.notifyOnMention;
                 break;
             case MESSAGE_TYPES.GROUP_MESSAGE:
-                shouldNotify = settings.notifyOnGroupMessage;
+                shouldNotify = s.notifyOnGroupMessage;
                 break;
             case MESSAGE_TYPES.GENERAL_MESSAGE:
-                shouldNotify = settings.notifyOnGeneralMessage;
+                shouldNotify = s.notifyOnGeneralMessage;
                 break;
             default:
                 shouldNotify = false;
@@ -392,7 +429,7 @@ export function useNotificationSounds() {
         if (shouldNotify) {
             sendDesktopNotification(title, body, options);
         }
-    }, [settings, sendDesktopNotification]);
+    }, [sendDesktopNotification]);
     
     return {
         settings,

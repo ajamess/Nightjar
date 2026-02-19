@@ -18,6 +18,7 @@ export class WebSocketTransport extends BaseTransport {
     this.maxReconnectAttempts = 10;
     this.reconnectDelay = 1000;
     this.reconnectPending = false;
+    this.reconnectTimer = null;
     this.intentionalClose = false;
     this.pingInterval = null;
     this.identity = null;
@@ -34,9 +35,8 @@ export class WebSocketTransport extends BaseTransport {
     
     if (serverUrl) {
       await this.connectToServer(serverUrl);
+      this.connected = true;
     }
-    
-    this.connected = true;
   }
 
   /**
@@ -44,10 +44,16 @@ export class WebSocketTransport extends BaseTransport {
    * @param {string} url - WebSocket URL
    */
   async connectToServer(url) {
-    // Close existing connection if any
+    // Close existing connection if any, detaching handlers first to prevent
+    // the old socket's onclose from triggering _handleServerDisconnect/reconnect.
     if (this.serverSocket) {
-      this.serverSocket.close();
+      const oldSocket = this.serverSocket;
+      oldSocket.onclose = null;
+      oldSocket.onerror = null;
+      oldSocket.onmessage = null;
+      this._stopPingInterval();
       this.serverSocket = null;
+      oldSocket.close();
     }
 
     // Validate URL scheme - must be ws, wss, http, or https (not file://)
@@ -112,7 +118,7 @@ export class WebSocketTransport extends BaseTransport {
       // Handle special message types
       switch (message.type) {
         case MessageTypes.PEER_LIST:
-          this.emit('peers-discovered', { peers: message.peers });
+          this.emit('peers-discovered', { peers: message.peers || [] });
           break;
           
         case MessageTypes.PEER_ANNOUNCE:
@@ -181,6 +187,7 @@ export class WebSocketTransport extends BaseTransport {
   _handleServerDisconnect() {
     console.log('[WebSocketTransport] Server disconnected');
     this.serverSocket = null;
+    this.connected = false;
     this._stopPingInterval();
     this.emit('server-disconnected');
     
@@ -189,6 +196,15 @@ export class WebSocketTransport extends BaseTransport {
       console.log('[WebSocketTransport] Intentional close, skipping reconnection');
       return;
     }
+    
+    this._scheduleReconnect();
+  }
+
+  /**
+   * Schedule a reconnection attempt with exponential backoff
+   */
+  _scheduleReconnect() {
+    if (this.intentionalClose) return;
     
     // Guard against double reconnection timers
     if (this.reconnectPending) {
@@ -202,10 +218,13 @@ export class WebSocketTransport extends BaseTransport {
       const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
       console.log(`[WebSocketTransport] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
       
-      setTimeout(() => {
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
         this.reconnectPending = false;
         this.connectToServer(this.serverUrl).catch((e) => {
           console.warn('[WebSocketTransport] Reconnect failed:', e.message);
+          // Schedule another retry if not destroyed
+          this._scheduleReconnect();
         });
       }, delay);
     }
@@ -365,6 +384,13 @@ export class WebSocketTransport extends BaseTransport {
   async destroy() {
     this._stopPingInterval();
     this.intentionalClose = true;
+    
+    // Cancel any pending reconnect timer to prevent zombie reconnections
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      this.reconnectPending = false;
+    }
     
     if (this.serverSocket) {
       this.serverSocket.close();

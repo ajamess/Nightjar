@@ -12,7 +12,7 @@ import StatusBadge from './StatusBadge';
 import { formatRelativeDate } from '../../../utils/inventoryValidation';
 import './RequestCard.css';
 
-export default function RequestCard({
+export default React.memo(function RequestCard({
   request,
   showClaim = false,
   claimEstimate = null,
@@ -64,4 +64,4 @@ export default function RequestCard({
       )}
     </div>
   );
-}
+})

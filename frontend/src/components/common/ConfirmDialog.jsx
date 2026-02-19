@@ -173,14 +173,19 @@ export function useConfirmDialog() {
 
     const confirm = useCallback((options) => {
         return new Promise((resolve) => {
-            setDialogState({
-                isOpen: true,
-                title: options.title || 'Confirm',
-                message: options.message || '',
-                confirmText: options.confirmText || 'Confirm',
-                cancelText: options.cancelText || 'Cancel',
-                variant: options.variant || 'default',
-                resolve
+            setDialogState(prev => {
+                // Auto-reject any pending confirm before opening a new one
+                // to prevent unresolved Promises from hanging forever
+                if (prev.resolve) prev.resolve(false);
+                return {
+                    isOpen: true,
+                    title: options.title || 'Confirm',
+                    message: options.message || '',
+                    confirmText: options.confirmText || 'Confirm',
+                    cancelText: options.cancelText || 'Cancel',
+                    variant: options.variant || 'default',
+                    resolve
+                };
             });
         });
     }, []);

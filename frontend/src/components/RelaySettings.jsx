@@ -72,17 +72,6 @@ export default function RelaySettings({ isOpen, onClose }) {
     return () => clearInterval(interval);
   }, [isOpen]);
   
-  // Handle Escape key
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose?.();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-  
   // Toggle relay on/off
   const handleToggleRelay = useCallback(async () => {
     if (!isElectron()) return;

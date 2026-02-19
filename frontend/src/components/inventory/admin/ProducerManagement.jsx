@@ -50,7 +50,7 @@ export default function ProducerManagement() {
       const assigned = requests.filter(r => r.assignedTo === key);
       const fulfilled = assigned.filter(r => r.status === 'shipped' || r.status === 'delivered');
       const active = assigned.filter(r =>
-        ['claimed', 'pending_approval', 'approved'].includes(r.status)
+        ['claimed', 'pending_approval', 'approved', 'in_progress'].includes(r.status)
       );
 
       // Calculate total stock across items
@@ -94,7 +94,7 @@ export default function ProducerManagement() {
         assignedRequests: assigned,
       };
     }).sort((a, b) => b.fulfilledCount - a.fulfilledCount);
-  }, [ctx.collaborators, capacities, requests]);
+  }, [ctx.collaborators, ctx.userIdentity, capacities, requests]);
 
   const activeCount = producers.filter(p => p.status !== 'none').length;
 

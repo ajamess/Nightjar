@@ -8,6 +8,7 @@ import Table from '@tiptap/extension-table';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import TableRow from '@tiptap/extension-table-row';
+import { sanitizeCssColor } from './utils/colorUtils';
 import './Editor.css';
 
 const Editor = ({ ydoc, provider, userHandle }) => {
@@ -36,6 +37,7 @@ const Editor = ({ ydoc, provider, userHandle }) => {
         return () => {
             undoManager.off('stack-item-added', updateUndoRedoState);
             undoManager.off('stack-item-popped', updateUndoRedoState);
+            undoManager.destroy();
         };
     }, [undoManager]);
 
@@ -59,11 +61,11 @@ const Editor = ({ ydoc, provider, userHandle }) => {
                 render: user => {
                     const cursor = document.createElement('span');
                     cursor.classList.add('collaboration-cursor__caret');
-                    cursor.setAttribute('style', `border-color: ${user.color}`);
+                    cursor.setAttribute('style', `border-color: ${sanitizeCssColor(user.color)}`);
                     
                     const label = document.createElement('div');
                     label.classList.add('collaboration-cursor__label');
-                    label.setAttribute('style', `background-color: ${user.color}`);
+                    label.setAttribute('style', `background-color: ${sanitizeCssColor(user.color)}`);
                     label.textContent = user.name;
                     cursor.appendChild(label);
                     

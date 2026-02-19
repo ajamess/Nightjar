@@ -1,7 +1,7 @@
 // frontend/src/components/inventory/admin/InventorySettings.jsx
 // System settings panel for admins — see spec §3.1 InventorySettings
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import { generateId } from '../../../utils/inventoryValidation';
 import { runAutoAssign } from '../../../utils/autoAssign';
@@ -17,42 +17,57 @@ export default function InventorySettings() {
   const [assigning, setAssigning] = useState(false);
   const [assignResult, setAssignResult] = useState(null);
 
+  // Sync systemName from Yjs when data arrives or remote rename is received
+  useEffect(() => {
+    if (currentSystem?.name && !dirty) {
+      setSystemName(currentSystem.name);
+    }
+  }, [currentSystem?.name]);
+
   const settings = currentSystem?.settings || {};
 
   const updateSetting = useCallback((key, value) => {
     if (!ctx.yInventorySystems) return;
-    const current = ctx.yInventorySystems.get(ctx.inventorySystemId);
-    if (!current) return;
+    const doc = ctx.yInventorySystems.doc;
+    const doUpdate = () => {
+      const current = ctx.yInventorySystems.get(ctx.inventorySystemId);
+      if (!current) return;
 
-    const updated = {
-      ...current,
-      settings: { ...current.settings, [key]: value },
-      updatedAt: Date.now(),
+      const updated = {
+        ...current,
+        settings: { ...current.settings, [key]: value },
+        updatedAt: Date.now(),
+      };
+      ctx.yInventorySystems.set(ctx.inventorySystemId, updated);
+
+      ctx.yInventoryAuditLog?.push([{
+        id: generateId(),
+        inventorySystemId: ctx.inventorySystemId,
+        timestamp: Date.now(),
+        actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
+        actorRole: 'owner',
+        action: 'settings_changed',
+        targetType: 'settings',
+        targetId: ctx.inventorySystemId,
+        summary: `Setting "${key}" changed to ${JSON.stringify(value)}`,
+      }]);
     };
-    ctx.yInventorySystems.set(ctx.inventorySystemId, updated);
-
-    ctx.yInventoryAuditLog?.push([{
-      id: generateId(),
-      inventorySystemId: ctx.inventorySystemId,
-      timestamp: Date.now(),
-      actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
-      actorRole: 'owner',
-      action: 'settings_changed',
-      targetType: 'settings',
-      targetId: ctx.inventorySystemId,
-      summary: `Setting "${key}" changed to ${JSON.stringify(value)}`,
-    }]);
+    if (doc) doc.transact(doUpdate); else doUpdate();
   }, [ctx]);
 
   const handleRename = useCallback(() => {
     if (!systemName.trim() || !ctx.yInventorySystems) return;
-    const current = ctx.yInventorySystems.get(ctx.inventorySystemId);
-    if (!current) return;
-    ctx.yInventorySystems.set(ctx.inventorySystemId, {
-      ...current,
-      name: systemName.trim(),
-      updatedAt: Date.now(),
-    });
+    const doc = ctx.yInventorySystems.doc;
+    const doRename = () => {
+      const current = ctx.yInventorySystems.get(ctx.inventorySystemId);
+      if (!current) return;
+      ctx.yInventorySystems.set(ctx.inventorySystemId, {
+        ...current,
+        name: systemName.trim(),
+        updatedAt: Date.now(),
+      });
+    };
+    if (doc) doc.transact(doRename); else doRename();
     setDirty(false);
   }, [systemName, ctx]);
 

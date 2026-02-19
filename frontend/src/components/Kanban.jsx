@@ -24,6 +24,7 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
     const hasSyncedRef = useRef(false);
     const syncTimeoutRef = useRef(null);
     const { confirm, ConfirmDialogComponent } = useConfirmDialog();
+    const editCancelledRef = useRef(false); // Track Escape cancel to prevent onBlur race
 
     // Initialize Yjs map for kanban data with sync awareness
     useEffect(() => {
@@ -41,6 +42,10 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
             const data = ykanban.get('columns');
             if (data) {
                 const parsed = JSON.parse(JSON.stringify(data));
+                // Ensure every column has a cards array (remote sync may deliver malformed data)
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(col => { if (!Array.isArray(col.cards)) col.cards = []; });
+                }
                 setColumns(parsed);
                 setIsLoading(false);
                 // Clear editing state if the edited card was removed by a remote change
@@ -119,11 +124,13 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
         
         const awareness = provider.awareness;
         
-        // Set our user info in awareness
+        // Set our user info in awareness, preserving existing fields (e.g. showCursor)
+        const existingUser = awareness.getLocalState()?.user || {};
         awareness.setLocalStateField('user', {
+            ...existingUser,
             name: userHandle || 'Anonymous',
             color: userColor || '#6366f1',
-            publicKey: userPublicKey || null,
+            publicKey: userPublicKey || existingUser.publicKey || null,
             lastActive: Date.now(),
         });
         
@@ -193,7 +200,11 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
         // Initialize with defaults if no data
         const data = ykanbanRef.current?.get('columns');
         if (data) {
-            setColumns(JSON.parse(JSON.stringify(data)));
+            const parsed = JSON.parse(JSON.stringify(data));
+            if (Array.isArray(parsed)) {
+                parsed.forEach(col => { if (!Array.isArray(col.cards)) col.cards = []; });
+            }
+            setColumns(parsed);
         } else {
             const defaultColumns = [
                 { id: generateId(), name: 'To Do', color: '#6366f1', cards: [] },
@@ -237,14 +248,16 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
     // Column operations
     const addColumn = useCallback(() => {
         if (!newColumnName.trim()) return;
-        if (columns.some(c => c.name.toLowerCase() === newColumnName.trim().toLowerCase())) return;
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        if (base.some(c => c.name.toLowerCase() === newColumnName.trim().toLowerCase())) return;
         const newColumn = {
             id: generateId(),
             name: newColumnName.trim(),
             color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
             cards: []
         };
-        const newColumns = [...columns, newColumn];
+        const newColumns = [...base, newColumn];
         setColumns(newColumns);
         saveToYjs(newColumns);
         setNewColumnName('');
@@ -260,14 +273,21 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
         });
         if (!confirmed) return;
         setEditingColumn(prev => prev === columnId ? null : prev);
-        const newColumns = columns.filter(c => c.id !== columnId);
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        const newColumns = base.filter(c => c.id !== columnId);
         setColumns(newColumns);
         saveToYjs(newColumns);
     }, [columns, saveToYjs, confirm]);
 
     const updateColumnName = useCallback((columnId, name) => {
-        const newColumns = columns.map(c => 
-            c.id === columnId ? { ...c, name } : c
+        if (!name.trim()) return; // Guard empty names
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        // Reject if another column already has this name (case-insensitive)
+        if (base.some(c => c.id !== columnId && c.name.toLowerCase() === name.trim().toLowerCase())) return;
+        const newColumns = base.map(c => 
+            c.id === columnId ? { ...c, name: name.trim() } : c
         );
         setColumns(newColumns);
         saveToYjs(newColumns, columnId);
@@ -275,7 +295,9 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
     }, [columns, saveToYjs]);
 
     const updateColumnColor = useCallback((columnId, color) => {
-        const newColumns = columns.map(c => 
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        const newColumns = base.map(c => 
             c.id === columnId ? { ...c, color } : c
         );
         setColumns(newColumns);
@@ -311,8 +333,12 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
     }, [columns, saveToYjs]);
 
     const updateCard = useCallback((columnId, cardId, updates) => {
-        const newColumns = columns.map(c => {
-            if (c.id === columnId) {
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        // Find which column actually contains the card (may have been moved by a remote peer)
+        const actualColumnId = base.find(c => c.cards?.some(card => card.id === cardId))?.id || columnId;
+        const newColumns = base.map(c => {
+            if (c.id === actualColumnId) {
                 return {
                     ...c,
                     cards: c.cards.map(card =>
@@ -323,7 +349,7 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
             return c;
         });
         setColumns(newColumns);
-        saveToYjs(newColumns, columnId);
+        saveToYjs(newColumns, actualColumnId);
     }, [columns, saveToYjs]);
 
     const deleteCard = useCallback(async (columnId, cardId) => {
@@ -334,8 +360,12 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
             variant: 'danger'
         });
         if (!confirmed) return;
-        const newColumns = columns.map(c => {
-            if (c.id === columnId) {
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        // Find which column actually contains the card (may have been moved during confirm dialog)
+        const actualColumnId = base.find(c => c.cards?.some(card => card.id === cardId))?.id || columnId;
+        const newColumns = base.map(c => {
+            if (c.id === actualColumnId) {
                 return {
                     ...c,
                     cards: c.cards.filter(card => card.id !== cardId)
@@ -344,7 +374,7 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
             return c;
         });
         setColumns(newColumns);
-        saveToYjs(newColumns, columnId);
+        saveToYjs(newColumns, actualColumnId);
         if (editingCard === cardId) setEditingCard(null);
     }, [columns, saveToYjs, confirm, editingCard]);
 
@@ -375,60 +405,59 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
         const { card, fromColumnId } = draggedCard;
         
         if (fromColumnId === toColumnId) {
-            // Same-column reorder: single operation to avoid off-by-one
-            const newColumns = columns.map(c => {
-                if (c.id !== toColumnId) return c;
-                const cards = [...c.cards];
-                const fromIdx = cards.findIndex(cc => cc.id === card.id);
-                if (fromIdx === -1) return c;
-                const [movedCard] = cards.splice(fromIdx, 1);
-                const insertIdx = toIndex !== null
-                    ? (toIndex > fromIdx ? toIndex - 1 : toIndex)
-                    : cards.length;
-                cards.splice(insertIdx, 0, movedCard);
-                return { ...c, cards };
-            });
-            setColumns(newColumns);
-            saveToYjs(newColumns, toColumnId);
-        } else {
-            // Cross-column move
-            const newColumns = columns.map(c => {
-                if (c.id === fromColumnId) {
-                    return { ...c, cards: c.cards.filter(cc => cc.id !== card.id) };
-                }
-                if (c.id === toColumnId) {
-                    const cards = [...c.cards];
-                    if (toIndex !== null) {
-                        cards.splice(toIndex, 0, card);
-                    } else {
-                        cards.push(card);
-                    }
-                    return { ...c, cards };
-                }
-                return c;
-            });
-            setColumns(newColumns);
-            // Cross-column move: wrap both column updates in a single transaction
+            // Same-column reorder: read from Yjs inside transaction
             if (ykanbanRef.current) {
                 const ykanban = ykanbanRef.current;
                 const doc = ykanban.doc;
                 const doSave = () => {
                     const existing = ykanban.get('columns');
-                    if (Array.isArray(existing)) {
-                        const updated = JSON.parse(JSON.stringify(existing));
-                        const fromIdx = updated.findIndex(c => c.id === fromColumnId);
-                        const toIdx = updated.findIndex(c => c.id === toColumnId);
-                        const newFrom = newColumns.find(c => c.id === fromColumnId);
-                        const newTo = newColumns.find(c => c.id === toColumnId);
-                        if (fromIdx !== -1 && newFrom) updated[fromIdx] = JSON.parse(JSON.stringify(newFrom));
-                        if (toIdx !== -1 && newTo) updated[toIdx] = JSON.parse(JSON.stringify(newTo));
-                        ykanban.set('columns', updated);
-                    } else {
-                        ykanban.set('columns', JSON.parse(JSON.stringify(newColumns)));
-                    }
+                    if (!Array.isArray(existing)) return;
+                    const updated = JSON.parse(JSON.stringify(existing));
+                    const col = updated.find(c => c.id === toColumnId);
+                    if (!col) return;
+                    const fromIdx = col.cards.findIndex(cc => cc.id === card.id);
+                    if (fromIdx === -1) return;
+                    const [movedCard] = col.cards.splice(fromIdx, 1);
+                    const insertIdx = toIndex !== null
+                        ? (toIndex > fromIdx ? toIndex - 1 : toIndex)
+                        : col.cards.length;
+                    col.cards.splice(insertIdx, 0, movedCard);
+                    ykanban.set('columns', updated);
                 };
                 if (doc) doc.transact(doSave);
                 else doSave();
+                const latest = ykanbanRef.current.get('columns');
+                if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
+            }
+        } else {
+            // Cross-column move — do everything inside a Yjs transaction
+            if (ykanbanRef.current) {
+                const ykanban = ykanbanRef.current;
+                const doc = ykanban.doc;
+                const doSave = () => {
+                    const existing = ykanban.get('columns');
+                    if (!Array.isArray(existing)) return;
+                    const updated = JSON.parse(JSON.stringify(existing));
+                    const fromCol = updated.find(c => c.id === fromColumnId);
+                    const toCol = updated.find(c => c.id === toColumnId);
+                    // Guard: if source or target column was deleted, abort the move
+                    if (!fromCol || !toCol) return;
+                    // Read current card data from Yjs source column (not stale drag snapshot)
+                    const cardIdx = fromCol.cards.findIndex(cc => cc.id === card.id);
+                    if (cardIdx === -1) return; // card already moved or deleted
+                    const [currentCard] = fromCol.cards.splice(cardIdx, 1);
+                    if (toIndex !== null) {
+                        toCol.cards.splice(toIndex, 0, currentCard);
+                    } else {
+                        toCol.cards.push(currentCard);
+                    }
+                    ykanban.set('columns', updated);
+                };
+                if (doc) doc.transact(doSave);
+                else doSave();
+                // Update React state from Yjs after transaction
+                const latest = ykanbanRef.current.get('columns');
+                if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
             }
         }
         setDraggedCard(null);
@@ -455,14 +484,16 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
         
         if (!draggedColumn || draggedColumn.id === targetColumnId) return;
         
-        const fromIndex = columns.findIndex(c => c.id === draggedColumn.id);
-        const toIndex = columns.findIndex(c => c.id === targetColumnId);
+        const currentColumns = ykanbanRef.current?.get('columns');
+        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
+        
+        const fromIndex = base.findIndex(c => c.id === draggedColumn.id);
+        const toIndex = base.findIndex(c => c.id === targetColumnId);
         
         if (fromIndex === -1 || toIndex === -1) return;
         
-        // Use the current version of the column, not the stale drag snapshot
-        const currentColumn = columns[fromIndex] || draggedColumn;
-        const newColumns = [...columns];
+        const currentColumn = base[fromIndex];
+        const newColumns = [...base];
         newColumns.splice(fromIndex, 1);
         newColumns.splice(toIndex, 0, currentColumn);
         
@@ -534,7 +565,7 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                         style={{ '--column-color': column.color }}
                         role="region"
                         aria-labelledby={`column-header-${column.id}`}
-                        data-testid={`kanban-column-${column.name.toLowerCase().replace(/\s+/g, '-')}`}
+                        data-testid={`kanban-column-${(column.name || '').toLowerCase().replace(/\s+/g, '-')}`}
                         draggable={!readOnly}
                         onDragStart={(e) => !readOnly && handleColumnDragStart(e, column)}
                         onDragEnd={!readOnly ? handleColumnDragEnd : undefined}
@@ -555,16 +586,17 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                                     autoFocus
                                     aria-label="Edit column name"
                                     onBlur={(e) => {
-                                        if (!e.target.dataset.cancelled) {
+                                        if (!editCancelledRef.current) {
                                             updateColumnName(column.id, e.target.value);
                                         }
+                                        editCancelledRef.current = false;
                                     }}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             updateColumnName(column.id, e.target.value);
                                         }
                                         if (e.key === 'Escape') {
-                                            e.target.dataset.cancelled = 'true';
+                                            editCancelledRef.current = true;
                                             setEditingColumn(null);
                                         }
                                     }}
@@ -588,6 +620,7 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                                         aria-label={`Change ${column.name} column color`}
                                     />
                                     <button 
+                                        type="button"
                                         className="btn-delete-column"
                                         onClick={() => deleteColumn(column.id)}
                                         title="Delete column"
@@ -663,6 +696,7 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                                                 <h4>{card.title}</h4>
                                                 {!readOnly && (
                                                     <button 
+                                                        type="button"
                                                         className="btn-edit-card"
                                                         onClick={(e) => {
                                                             e.stopPropagation();

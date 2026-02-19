@@ -39,6 +39,9 @@ export function openChunkStore(workspaceId) {
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+    request.onblocked = () => {
+      console.warn(`[ChunkStore] IndexedDB open blocked for ${dbName} - another tab may hold an older version. Close other tabs and retry.`);
+    };
   });
 }
 
@@ -57,6 +60,7 @@ export function storeChunk(db, fileId, chunkIndex, chunkData) {
     store.put({ ...chunkData, fileId, chunkIndex }, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Chunk store transaction aborted (possibly quota exceeded)'));
   });
 }
 

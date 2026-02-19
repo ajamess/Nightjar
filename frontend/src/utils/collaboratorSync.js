@@ -23,6 +23,13 @@ const PERMISSION_LEVELS = {
   none: 0,
 };
 
+// Scope breadth hierarchy: broader scopes cover more entities
+const SCOPE_BREADTH = {
+  workspace: 3,
+  folder: 2,
+  document: 1,
+};
+
 /**
  * Collaborator entry structure in Y.Map
  * @typedef {Object} CollaboratorEntry
@@ -79,56 +86,65 @@ export function addCollaborator(collaboratorsMap, collaborator) {
     throw new Error('Collaborator public key is required');
   }
 
-  const existing = collaboratorsMap.get(publicKey);
-  const now = Date.now();
+  collaboratorsMap.doc.transact(() => {
+    const existing = collaboratorsMap.get(publicKey);
+    const now = Date.now();
 
-  if (existing) {
-    // Check if new permission is higher
-    const existingLevel = PERMISSION_LEVELS[existing.permission] || 0;
-    const newLevel = PERMISSION_LEVELS[permission] || 0;
+    if (existing) {
+      // Check if new permission is higher
+      const existingLevel = PERMISSION_LEVELS[existing.permission] || 0;
+      const newLevel = PERMISSION_LEVELS[permission] || 0;
 
-    if (newLevel > existingLevel) {
-      // Upgrade permission (highest wins)
+      if (newLevel > existingLevel) {
+        // Upgrade permission (highest wins)
+        // Preserve the broader scope when upgrading from a narrower scope
+        // e.g. workspace-editor + folder-owner → workspace-owner (not folder-owner)
+        const existingBreadth = SCOPE_BREADTH[existing.scope] || 0;
+        const newBreadth = SCOPE_BREADTH[scope] || 0;
+        const effectiveScope = newBreadth >= existingBreadth ? scope : existing.scope;
+        const effectiveScopeId = newBreadth >= existingBreadth ? scopeId : existing.scopeId;
+
+        collaboratorsMap.set(publicKey, {
+          ...existing,
+          handle: handle || existing.handle,
+          color: color || existing.color,
+          icon: icon || existing.icon,
+          permission,
+          scope: effectiveScope,
+          scopeId: effectiveScopeId,
+          grantedBy: grantedBy || existing.grantedBy,
+          grantedAt: now,
+          lastSeen: now,
+        });
+        console.log(`[CollaboratorSync] Upgraded ${publicKey} to ${permission} (scope: ${effectiveScope})`);
+      } else {
+        // Just update activity
+        collaboratorsMap.set(publicKey, {
+          ...existing,
+          handle: handle || existing.handle,
+          color: color || existing.color,
+          icon: icon || existing.icon,
+          lastSeen: now,
+        });
+      }
+    } else {
+      // New collaborator
       collaboratorsMap.set(publicKey, {
-        ...existing,
-        handle: handle || existing.handle,
-        color: color || existing.color,
-        icon: icon || existing.icon,
-        permission,
-        scope,
-        scopeId,
-        grantedBy: grantedBy || existing.grantedBy,
+        publicKey,
+        handle: handle || 'Anonymous',
+        color: color || '#888888',
+        icon: icon || '👤',
+        permission: permission || 'viewer',
+        scope: scope || 'workspace',
+        scopeId: scopeId || '',
+        grantedBy: grantedBy || publicKey, // Self if not specified
         grantedAt: now,
         lastSeen: now,
+        online: true,
       });
-      console.log(`[CollaboratorSync] Upgraded ${publicKey} to ${permission}`);
-    } else {
-      // Just update activity
-      collaboratorsMap.set(publicKey, {
-        ...existing,
-        handle: handle || existing.handle,
-        color: color || existing.color,
-        icon: icon || existing.icon,
-        lastSeen: now,
-      });
+      console.log(`[CollaboratorSync] Added collaborator ${publicKey} as ${permission}`);
     }
-  } else {
-    // New collaborator
-    collaboratorsMap.set(publicKey, {
-      publicKey,
-      handle: handle || 'Anonymous',
-      color: color || '#888888',
-      icon: icon || '👤',
-      permission: permission || 'viewer',
-      scope: scope || 'workspace',
-      scopeId: scopeId || '',
-      grantedBy: grantedBy || publicKey, // Self if not specified
-      grantedAt: now,
-      lastSeen: now,
-      online: true,
-    });
-    console.log(`[CollaboratorSync] Added collaborator ${publicKey} as ${permission}`);
-  }
+  });
 }
 
 /**
@@ -138,14 +154,16 @@ export function addCollaborator(collaboratorsMap, collaborator) {
  * @param {boolean} online - Online status
  */
 export function updateOnlineStatus(collaboratorsMap, publicKey, online) {
-  const existing = collaboratorsMap.get(publicKey);
-  if (existing) {
-    collaboratorsMap.set(publicKey, {
-      ...existing,
-      online,
-      lastSeen: Date.now(),
-    });
-  }
+  collaboratorsMap.doc.transact(() => {
+    const existing = collaboratorsMap.get(publicKey);
+    if (existing && existing.online !== online) {
+      collaboratorsMap.set(publicKey, {
+        ...existing,
+        online,
+        lastSeen: Date.now(),
+      });
+    }
+  });
 }
 
 /**
@@ -259,26 +277,31 @@ export function promoteToOwner(collaboratorsMap, publicKey, promoterKey) {
     return false;
   }
 
-  const target = collaboratorsMap.get(publicKey);
-  if (!target) {
-    console.error('[CollaboratorSync] Target collaborator not found');
-    return false;
-  }
+  let result = false;
+  collaboratorsMap.doc.transact(() => {
+    const target = collaboratorsMap.get(publicKey);
+    if (!target) {
+      console.error('[CollaboratorSync] Target collaborator not found');
+      return;
+    }
 
-  if (target.permission === 'owner') {
-    console.log('[CollaboratorSync] Target is already an owner');
-    return true;
-  }
+    if (target.permission === 'owner') {
+      console.log('[CollaboratorSync] Target is already an owner');
+      result = true;
+      return;
+    }
 
-  collaboratorsMap.set(publicKey, {
-    ...target,
-    permission: 'owner',
-    grantedBy: promoterKey,
-    grantedAt: Date.now(),
+    collaboratorsMap.set(publicKey, {
+      ...target,
+      permission: 'owner',
+      grantedBy: promoterKey,
+      grantedAt: Date.now(),
+    });
+
+    console.log(`[CollaboratorSync] ${publicKey} promoted to owner by ${promoterKey}`);
+    result = true;
   });
-
-  console.log(`[CollaboratorSync] ${publicKey} promoted to owner by ${promoterKey}`);
-  return true;
+  return result;
 }
 
 /**
@@ -330,12 +353,14 @@ export function syncLocalCollaborator(collaboratorsMap, identity, permission, sc
 export function cleanupStaleCollaborators(collaboratorsMap) {
   const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days
   
-  collaboratorsMap.forEach((value, key) => {
-    if (value.online && value.lastSeen < staleThreshold) {
-      collaboratorsMap.set(key, {
-        ...value,
-        online: false,
-      });
-    }
+  collaboratorsMap.doc.transact(() => {
+    collaboratorsMap.forEach((value, key) => {
+      if (value.online && value.lastSeen < staleThreshold) {
+        collaboratorsMap.set(key, {
+          ...value,
+          online: false,
+        });
+      }
+    });
   });
 }

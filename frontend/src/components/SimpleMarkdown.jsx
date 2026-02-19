@@ -48,7 +48,13 @@ const SimpleMarkdown = ({ text, className = '' }) => {
                 const match = remaining.match(regex);
                 if (match && match.index === 0) {
                     elements.push(render(match));
-                    remaining = remaining.slice(match[0].length);
+                    if (match[0].length === 0) {
+                        // Zero-length match: advance by 1 to prevent infinite loop
+                        elements.push(remaining[0]);
+                        remaining = remaining.slice(1);
+                    } else {
+                        remaining = remaining.slice(match[0].length);
+                    }
                     matched = true;
                     break;
                 }

@@ -30,34 +30,38 @@ export function runAutoAssign(ctx) {
 
     for (const a of assignments) {
       if (!a.producerId || a.source === 'blocked') continue;
-      const arr = yArr.toArray();
-      const idx = arr.findIndex(r => r.id === a.requestId);
-      if (idx === -1) continue;
-      const req = arr[idx];
-      if (req.status !== 'open') continue;
+      let didApply = false;
+      yArr.doc.transact(() => {
+        const arr = yArr.toArray();
+        const idx = arr.findIndex(r => r.id === a.requestId);
+        if (idx === -1) return;
+        const req = arr[idx];
+        if (req.status !== 'open') return;
 
-      const updated = {
-        ...req,
-        status: settings.requireApproval ? 'pending_approval' : 'approved',
-        assignedTo: a.producerId,
-        assignedAt: Date.now(),
-        estimatedFulfillmentDate: a.estimatedDate,
-      };
-      yArr.delete(idx, 1);
-      yArr.insert(idx, [updated]);
-      applied++;
+        const updated = {
+          ...req,
+          status: settings.requireApproval ? 'pending_approval' : 'approved',
+          assignedTo: a.producerId,
+          assignedAt: Date.now(),
+          estimatedFulfillmentDate: a.estimatedDate,
+        };
+        yArr.delete(idx, 1);
+        yArr.insert(idx, [updated]);
+        didApply = true;
 
-      yInventoryAuditLog?.push([{
-        id: generateId(),
-        inventorySystemId,
-        timestamp: Date.now(),
-        actorId: userIdentity?.publicKeyBase62 || 'unknown',
-        actorRole: 'owner',
-        action: 'request_auto_assigned',
-        targetType: 'request',
-        targetId: a.requestId,
-        summary: `Auto-assigned to ${a.producerId.slice(0, 8)} (${a.source})`,
-      }]);
+        yInventoryAuditLog?.push([{
+          id: generateId(),
+          inventorySystemId,
+          timestamp: Date.now(),
+          actorId: userIdentity?.publicKeyBase62 || 'unknown',
+          actorRole: 'owner',
+          action: 'request_auto_assigned',
+          targetType: 'request',
+          targetId: a.requestId,
+          summary: `Auto-assigned to ${a.producerId.slice(0, 8)} (${a.source})`,
+        }]);
+      });
+      if (didApply) applied++;
     }
 
     const blocked = assignments.filter(a => a.source === 'blocked').length;

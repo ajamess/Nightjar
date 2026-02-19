@@ -41,7 +41,7 @@ jest.mock('../../frontend/src/utils/chunkStore', () => ({
     COMPLETE: 'complete',
     ERROR: 'error',
   },
-  openChunkStore: jest.fn(),
+  openChunkStore: jest.fn(async () => mockDb),
   storeChunk: jest.fn(),
   deleteFileChunks: jest.fn(),
 }));
@@ -51,11 +51,23 @@ const mockPutFn = jest.fn();
 const mockObjectStore = {
   put: mockPutFn,
   get: jest.fn(() => ({ onsuccess: null, onerror: null, result: null })),
+  getAllKeys: jest.fn(() => {
+    const req = { onsuccess: null, onerror: null, result: [] };
+    setTimeout(() => { if (req.onsuccess) req.onsuccess(); }, 0);
+    return req;
+  }),
 };
 const mockDb = {
-  transaction: jest.fn(() => ({
-    objectStore: () => mockObjectStore,
-  })),
+  transaction: jest.fn(() => {
+    const tx = {
+      objectStore: () => mockObjectStore,
+      oncomplete: null,
+      onerror: null,
+    };
+    // Fire oncomplete asynchronously to resolve any awaiting Promises
+    setTimeout(() => { if (tx.oncomplete) tx.oncomplete(); }, 0);
+    return tx;
+  }),
 };
 
 global.indexedDB = {

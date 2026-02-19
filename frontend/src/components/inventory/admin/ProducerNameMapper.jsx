@@ -12,6 +12,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { useInventory } from '../../../contexts/InventoryContext';
 import { generateId } from '../../../utils/inventoryValidation';
 import { resolveUserName } from '../../../utils/resolveUserName';
+import { pushNotification } from '../../../utils/inventoryNotifications';
 import './ProducerNameMapper.css';
 
 export default function ProducerNameMapper() {
@@ -90,6 +91,7 @@ export default function ProducerNameMapper() {
               assignedTo: collabKey,
               assignedToName: collab.displayName || collab.name || '',
               assignedAt: Date.now(),
+              updatedAt: Date.now(),
               importedProducerName: undefined, // Clear the unresolved marker
             };
             // Remove undefined keys
@@ -101,11 +103,9 @@ export default function ProducerNameMapper() {
           }
         }
       }
-    });
 
-    // Audit log
-    if (ctx.yInventoryAuditLog) {
-      doc.transact(() => {
+      // Audit log (inside same transaction for atomicity)
+      if (ctx.yInventoryAuditLog) {
         ctx.yInventoryAuditLog.push([{
           id: generateId(),
           inventorySystemId: ctx.inventorySystemId,
@@ -117,13 +117,45 @@ export default function ProducerNameMapper() {
           targetId: '',
           summary: `Mapped ${totalUpdated} imported requests to producers`,
         }]);
+      }
+    });
+
+    // Notify assigned producers and original requestors (batched in single transaction)
+    if (ctx.yInventoryNotifications) {
+      doc.transact(() => {
+        for (const [importedName, collabKey] of Object.entries(assignments)) {
+          if (!collabKey) continue;
+          const collab = producers.find(c => (c.publicKeyBase62 || c.publicKey) === collabKey);
+          if (!collab) continue;
+          const mapped = requests.filter(r => r.importedProducerName === importedName);
+          for (const req of mapped) {
+            // Notify the producer they've been assigned
+            pushNotification(ctx.yInventoryNotifications, {
+              inventorySystemId: ctx.inventorySystemId,
+              recipientId: collabKey,
+              type: 'request_assigned',
+              message: `You were assigned a request for ${req.catalogItemName || 'item'} (×${req.quantity || 1})`,
+              relatedId: req.id,
+            });
+            // Notify the requestor their request was assigned
+            if (req.requestedBy && req.requestedBy !== collabKey) {
+              pushNotification(ctx.yInventoryNotifications, {
+                inventorySystemId: ctx.inventorySystemId,
+                recipientId: req.requestedBy,
+                type: 'request_assigned',
+                message: `Your request for ${req.catalogItemName || 'item'} was assigned to ${collab.displayName || collab.name || 'a producer'}`,
+                relatedId: req.id,
+              });
+            }
+          }
+        }
       });
     }
 
     setSavedCount(totalUpdated);
     setAssignments({});
     setSaving(false);
-  }, [assignments, producers, ctx]);
+  }, [assignments, producers, ctx, requests]);
 
   const assignedCount = Object.values(assignments).filter(v => v).length;
 

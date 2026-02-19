@@ -28,7 +28,7 @@ export function exportRequests(requests, format = 'csv', filename) {
     Quantity: r.quantity,
     Status: r.status,
     Urgency: r.urgent ? 'urgent' : 'normal',
-    'Requester': r.requestedBy || '',
+    'Requester': r.requesterDisplayName || 'Anonymous',
     State: r.state || '',
     City: r.city || '',
     'Assigned To': r.assignedTo || '',

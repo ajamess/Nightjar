@@ -18,6 +18,8 @@ export class HyperswarmTransport extends BaseTransport {
     this.topics = new Set();
     this.isElectron = false;
     this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 10;
   }
 
   /**
@@ -126,7 +128,7 @@ export class HyperswarmTransport extends BaseTransport {
           break;
 
         case 'p2p-peers-discovered':
-          this.emit('peers-discovered', { peers: message.peers });
+          this.emit('peers-discovered', { peers: message.peers || [] });
           break;
 
         case 'p2p-error':
@@ -151,6 +153,13 @@ export class HyperswarmTransport extends BaseTransport {
    */
   _scheduleReconnect() {
     if (this.reconnectTimer) return;
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.warn(`[HyperswarmTransport] Max reconnect attempts (${this.maxReconnectAttempts}) reached`);
+      return;
+    }
+    
+    this.reconnectAttempts++;
+    const delay = Math.min(5000 * Math.pow(1.5, this.reconnectAttempts - 1), 60000);
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
@@ -158,6 +167,7 @@ export class HyperswarmTransport extends BaseTransport {
         try {
           await this._connectToSidecar();
           this.connected = true;
+          this.reconnectAttempts = 0; // Reset on success
           // Rejoin topics
           for (const topic of this.topics) {
             await this.joinTopic(topic);
@@ -167,7 +177,7 @@ export class HyperswarmTransport extends BaseTransport {
           this._scheduleReconnect();
         }
       }
-    }, 5000);
+    }, delay);
   }
 
   /**

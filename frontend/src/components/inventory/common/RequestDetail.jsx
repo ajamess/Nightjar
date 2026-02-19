@@ -63,6 +63,7 @@ export default function RequestDetail({
   useEffect(() => {
     setAdminNotes(request.adminNotes || '');
     setTrackingNumber(request.trackingNumber || '');
+    setFullAddress(null); // Clear decrypted address to prevent PII leak across requests
   }, [request.id, request.adminNotes, request.trackingNumber]);
   const currentUserKey = ctxIdentity?.publicKeyBase62;
 
@@ -113,8 +114,10 @@ export default function RequestDetail({
     const idx = items.findIndex(r => r.id === request.id);
     if (idx === -1) return;
     const updated = { ...items[idx], adminNotes: adminNotes.trim(), updatedAt: Date.now() };
-    yInventoryRequests.delete(idx, 1);
-    yInventoryRequests.insert(idx, [updated]);
+    yInventoryRequests.doc.transact(() => {
+      yInventoryRequests.delete(idx, 1);
+      yInventoryRequests.insert(idx, [updated]);
+    });
     showToast('Notes saved', 'success');
   }, [adminNotes, request.id, yInventoryRequests, showToast]);
 

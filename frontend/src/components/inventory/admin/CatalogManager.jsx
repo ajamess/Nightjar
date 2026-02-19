@@ -35,95 +35,114 @@ export default function CatalogManager() {
   const [showAddForm, setShowAddForm] = useState(false);
 
   const handleAddItem = useCallback(() => {
+    if (!yCatalogItems || !yInventoryAuditLog) return;
     const validation = validateCatalogItem(newItem);
     if (!validation.valid) {
       showToast(validation.errors[0], 'error');
       return;
     }
 
-    const item = {
-      id: generateId('cat-'),
-      inventorySystemId,
-      ...newItem,
-      name: newItem.name.trim(),
-      unitName: newItem.unitName.trim(),
-      sku: newItem.sku?.trim() || '',
-      category: newItem.category?.trim() || '',
-      description: newItem.description?.trim() || '',
-      quantityMin: Number(newItem.quantityMin),
-      quantityMax: newItem.noMax ? null : Number(newItem.quantityMax),
-      quantityStep: Number(newItem.quantityStep),
-      active: true,
-      createdAt: Date.now(),
-    };
+    try {
+      const item = {
+        id: generateId('cat-'),
+        inventorySystemId,
+        ...newItem,
+        name: newItem.name.trim(),
+        unitName: newItem.unitName.trim(),
+        sku: newItem.sku?.trim() || '',
+        category: newItem.category?.trim() || '',
+        description: newItem.description?.trim() || '',
+        quantityMin: Number(newItem.quantityMin),
+        quantityMax: newItem.noMax ? null : Number(newItem.quantityMax),
+        quantityStep: Number(newItem.quantityStep),
+        active: true,
+        createdAt: Date.now(),
+      };
 
-    yCatalogItems.push([item]);
+      const doc = yCatalogItems.doc;
+      const doAdd = () => {
+        yCatalogItems.push([item]);
 
-    // Audit log
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'catalog_item_added',
-      targetId: item.id,
-      targetType: 'catalog_item',
-      summary: `Added catalog item "${item.name}"`,
-      actorId: userIdentity?.publicKeyBase62 || 'system',
-      actorRole: 'owner',
-      timestamp: Date.now(),
-    }]);
+        // Audit log
+        yInventoryAuditLog.push([{
+          id: generateId('aud-'),
+          inventorySystemId,
+          action: 'catalog_item_added',
+          targetId: item.id,
+          targetType: 'catalog_item',
+          summary: `Added catalog item "${item.name}"`,
+          actorId: userIdentity?.publicKeyBase62 || 'system',
+          actorRole: 'owner',
+          timestamp: Date.now(),
+        }]);
+      };
+      if (doc) doc.transact(doAdd); else doAdd();
 
-    setNewItem({ ...EMPTY_ITEM });
-    setShowAddForm(false);
-    showToast(`Added "${item.name}" to catalog`, 'success');
+      setNewItem({ ...EMPTY_ITEM });
+      setShowAddForm(false);
+      showToast(`Added "${item.name}" to catalog`, 'success');
+    } catch (err) {
+      console.error('[CatalogManager] handleAddItem error:', err);
+      showToast(`Failed to add item: ${err.message}`, 'error');
+    }
   }, [newItem, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast, userIdentity]);
 
   const handleSaveEdit = useCallback(() => {
     if (!editItem || editingId == null) return;
+    if (!yCatalogItems || !yInventoryAuditLog) return;
     const validation = validateCatalogItem(editItem);
     if (!validation.valid) {
       showToast(validation.errors[0], 'error');
       return;
     }
 
-    // Find the index in the Yjs array
-    const items = yCatalogItems.toArray();
-    const idx = items.findIndex(item => item.id === editingId);
-    if (idx === -1) return;
+    try {
+      // Find the index in the Yjs array
+      const items = yCatalogItems.toArray();
+      const idx = items.findIndex(item => item.id === editingId);
+      if (idx === -1) return;
 
-    const updated = {
-      ...items[idx],
-      name: editItem.name.trim(),
-      unitName: editItem.unitName.trim(),
-      sku: editItem.sku?.trim() || '',
-      category: editItem.category?.trim() || '',
-      description: editItem.description?.trim() || '',
-      quantityMin: Number(editItem.quantityMin),
-      quantityMax: editItem.noMax ? null : Number(editItem.quantityMax),
-      quantityStep: Number(editItem.quantityStep),
-      updatedAt: Date.now(),
-    };
+      const updated = {
+        ...items[idx],
+        name: editItem.name.trim(),
+        unitName: editItem.unitName.trim(),
+        sku: editItem.sku?.trim() || '',
+        category: editItem.category?.trim() || '',
+        description: editItem.description?.trim() || '',
+        quantityMin: Number(editItem.quantityMin),
+        quantityMax: editItem.noMax ? null : Number(editItem.quantityMax),
+        quantityStep: Number(editItem.quantityStep),
+        updatedAt: Date.now(),
+      };
 
-    yCatalogItems.delete(idx, 1);
-    yCatalogItems.insert(idx, [updated]);
+      yCatalogItems.doc.transact(() => {
+        yCatalogItems.delete(idx, 1);
+        yCatalogItems.insert(idx, [updated]);
+      });
 
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'catalog_item_updated',
-      targetId: editingId,
-      targetType: 'catalog_item',
-      summary: `Updated catalog item "${updated.name}"`,
-      actorId: userIdentity?.publicKeyBase62 || 'system',
-      actorRole: 'owner',
-      timestamp: Date.now(),
-    }]);
+      yInventoryAuditLog.push([{
+        id: generateId('aud-'),
+        inventorySystemId,
+        action: 'catalog_item_updated',
+        targetId: editingId,
+        targetType: 'catalog_item',
+        summary: `Updated catalog item "${updated.name}"`,
+        actorId: userIdentity?.publicKeyBase62 || 'system',
+        actorRole: 'owner',
+        timestamp: Date.now(),
+      }]);
 
-    setEditingId(null);
-    setEditItem(null);
-    showToast(`Updated "${updated.name}"`, 'success');
+      setEditingId(null);
+      setEditItem(null);
+      showToast(`Updated "${updated.name}"`, 'success');
+    } catch (err) {
+      console.error('[CatalogManager] handleSaveEdit error:', err);
+      showToast(`Failed to save: ${err.message}`, 'error');
+    }
   }, [editItem, editingId, yCatalogItems, yInventoryAuditLog, inventorySystemId, showToast, userIdentity]);
 
   const handleToggleActive = useCallback((item) => {
+    if (!yCatalogItems || !yInventoryAuditLog) return;
     const items = yCatalogItems.toArray();
     const idx = items.findIndex(i => i.id === item.id);
     if (idx === -1) return;
@@ -136,8 +155,10 @@ export default function CatalogManager() {
     }
 
     const updated = { ...items[idx], active: !item.active, updatedAt: Date.now() };
-    yCatalogItems.delete(idx, 1);
-    yCatalogItems.insert(idx, [updated]);
+    yCatalogItems.doc.transact(() => {
+      yCatalogItems.delete(idx, 1);
+      yCatalogItems.insert(idx, [updated]);
+    });
 
     yInventoryAuditLog.push([{
       id: generateId('aud-'),

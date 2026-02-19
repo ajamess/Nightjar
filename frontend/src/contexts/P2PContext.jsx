@@ -48,15 +48,22 @@ export function P2PProvider({ children, config = {} }) {
   const [isEnabled, setIsEnabled] = useState(config.enabled ?? DEFAULT_P2P_CONFIG.enabled);
   const [connectedPeers, setConnectedPeers] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [peerManager, setPeerManagerState] = useState(null);
+  const [mergedConfig, setMergedConfig] = useState({ ...DEFAULT_P2P_CONFIG, ...config });
   
   const peerManagerRef = useRef(null);
   const configRef = useRef({ ...DEFAULT_P2P_CONFIG, ...config });
   
-  // Update config ref when config changes
+  // Update config ref and state when config prop changes
+  // Serialize config to a stable string to avoid infinite loops from new object references
+  const configKey = JSON.stringify(config);
   useEffect(() => {
-    configRef.current = { ...DEFAULT_P2P_CONFIG, ...config };
-    setIsEnabled(config.enabled ?? DEFAULT_P2P_CONFIG.enabled);
-  }, [config]);
+    const parsed = JSON.parse(configKey);
+    const newConfig = { ...DEFAULT_P2P_CONFIG, ...parsed };
+    configRef.current = newConfig;
+    setMergedConfig(newConfig);
+    setIsEnabled(parsed.enabled ?? DEFAULT_P2P_CONFIG.enabled);
+  }, [configKey]);
 
   /**
    * Get WebSocket factory for y-websocket WebsocketProvider
@@ -123,6 +130,7 @@ export function P2PProvider({ children, config = {} }) {
           maxConnections: configRef.current.maxConnections,
         });
         peerManagerRef.current = pm;
+        setPeerManagerState(pm);
 
         // Setup event listeners
         pm.on('peer-connected', handlePeerConnected);
@@ -184,15 +192,15 @@ export function P2PProvider({ children, config = {} }) {
     // State
     isEnabled,
     isInitialized,
-    peerManager: peerManagerRef.current,
+    peerManager,
     connectedPeers,
-    config: configRef.current,
+    config: mergedConfig,
     
     // Methods
     getWebSocketFactory,
     createP2PSocket,
     setP2PEnabled,
-  }), [isEnabled, isInitialized, connectedPeers, getWebSocketFactory, createP2PSocket, setP2PEnabled]);
+  }), [isEnabled, isInitialized, peerManager, connectedPeers, mergedConfig, getWebSocketFactory, createP2PSocket, setP2PEnabled]);
 
   return (
     <P2PContext.Provider value={value}>

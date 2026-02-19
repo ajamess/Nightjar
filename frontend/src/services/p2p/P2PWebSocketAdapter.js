@@ -66,6 +66,9 @@ export class P2PWebSocketAdapter {
     this.onclose = null;
     this.onerror = null;
     
+    // Registered event listeners (addEventListener API, supports multiple per type)
+    this._listeners = new Map(); // type -> Set<handler>
+    
     // Internal state
     this._messageHandler = null;
     this._errorHandler = null;
@@ -125,9 +128,7 @@ export class P2PWebSocketAdapter {
       }
 
       // Notify consumer
-      if (this.onopen) {
-        this.onopen({ type: 'open', target: this });
-      }
+      this._dispatch('open', { type: 'open', target: this });
 
     } catch (error) {
       this._isConnecting = false;
@@ -135,12 +136,8 @@ export class P2PWebSocketAdapter {
       
       console.error('[P2PWebSocketAdapter] Connection failed:', error);
       
-      if (this.onerror) {
-        this.onerror({ type: 'error', target: this, error });
-      }
-      if (this.onclose) {
-        this.onclose({ type: 'close', target: this, code: 1006, reason: error.message });
-      }
+      this._dispatch('error', { type: 'error', target: this, error });
+      this._dispatch('close', { type: 'close', target: this, code: 1006, reason: error.message });
     }
   }
 
@@ -148,46 +145,49 @@ export class P2PWebSocketAdapter {
    * Setup event handlers on PeerManager
    */
   _setupHandlers() {
+    // Remove any previously registered handlers to prevent leaks on reconnect
+    this._removeHandlers();
+
     // Handle sync messages (Yjs updates)
     this._messageHandler = (event) => {
       const { message } = event;
       
-      // Convert to MessageEvent-like object for y-websocket
-      if (this.onmessage) {
-        // Extract the actual Yjs data
-        let data = message.data || message.update || message.payload;
-        
-        // If it's a sync message with binary data, extract it
-        if (message.type === MessageTypes.SYNC && message.data) {
-          data = message.data;
-        }
-        
-        // Convert to ArrayBuffer if it's a Uint8Array
-        if (data instanceof Uint8Array) {
-          data = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-        } else if (typeof data === 'string') {
-          // Keep as string for text protocol
-        } else if (data && typeof data === 'object') {
-          // Serialize objects
-          data = JSON.stringify(data);
-        }
-        
-        if (data !== undefined) {
-          this.onmessage({
-            type: 'message',
-            target: this,
-            data,
-            origin: this.url,
-          });
-        }
+      // Only forward SYNC messages to y-websocket
+      if (!message || message.type !== MessageTypes.SYNC) {
+        return;
+      }
+      
+      // Extract the actual Yjs data
+      let data = message.data || message.update || message.payload;
+      
+      // If it's a sync message with binary data, extract it
+      if (message.type === MessageTypes.SYNC && message.data) {
+        data = message.data;
+      }
+      
+      // Convert to ArrayBuffer if it's a Uint8Array
+      if (data instanceof Uint8Array) {
+        data = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      } else if (typeof data === 'string') {
+        // Keep as string for text protocol
+      } else if (data && typeof data === 'object') {
+        // Serialize objects
+        data = JSON.stringify(data);
+      }
+      
+      if (data !== undefined) {
+        this._dispatch('message', {
+          type: 'message',
+          target: this,
+          data,
+          origin: this.url,
+        });
       }
     };
 
     this._errorHandler = (event) => {
       console.error('[P2PWebSocketAdapter] Error:', event.error);
-      if (this.onerror) {
-        this.onerror({ type: 'error', target: this, error: event.error });
-      }
+      this._dispatch('error', { type: 'error', target: this, error: event.error });
     };
 
     this._disconnectHandler = (event) => {
@@ -199,22 +199,39 @@ export class P2PWebSocketAdapter {
       console.log('[P2PWebSocketAdapter] Disconnected');
       this.readyState = CLOSED;
       
-      if (this.onclose) {
-        this.onclose({
-          type: 'close',
-          target: this,
-          code: 1000,
-          reason: 'Peer disconnected',
-          wasClean: true,
-        });
-      }
+      this._dispatch('close', {
+        type: 'close',
+        target: this,
+        code: 1000,
+        reason: 'Peer disconnected',
+        wasClean: true,
+      });
     };
 
-    // Subscribe to PeerManager events
-    this.peerManager.on('message', this._messageHandler);
+    // Subscribe to PeerManager events - only 'sync' to avoid duplicate delivery
     this.peerManager.on('sync', this._messageHandler);
     this.peerManager.on('transport-error', this._errorHandler);
     this.peerManager.on('workspace-left', this._disconnectHandler);
+  }
+
+  /**
+   * Dispatch event to both the on* property handler and all addEventListener listeners
+   * @param {string} type - Event type ('open', 'message', 'close', 'error')
+   * @param {Object} event - Event object to dispatch
+   */
+  _dispatch(type, event) {
+    // Call the on* property handler
+    const propHandler = this[`on${type}`];
+    if (propHandler) {
+      propHandler(event);
+    }
+    // Call all addEventListener listeners
+    const listeners = this._listeners.get(type);
+    if (listeners) {
+      for (const listener of listeners) {
+        listener(event);
+      }
+    }
   }
 
   /**
@@ -223,7 +240,6 @@ export class P2PWebSocketAdapter {
   _removeHandlers() {
     if (this.peerManager) {
       if (this._messageHandler) {
-        this.peerManager.off('message', this._messageHandler);
         this.peerManager.off('sync', this._messageHandler);
       }
       if (this._errorHandler) {
@@ -298,22 +314,27 @@ export class P2PWebSocketAdapter {
     
     // Remove handlers
     this._removeHandlers();
+
+    // Clear any queued messages to release memory
+    this._messageQueue.length = 0;
     
-    // Leave workspace if we own the manager
-    if (this.peerManager && this.ownsManager) {
-      this.peerManager.leaveWorkspace().catch(() => {});
-    }
-    
-    this.readyState = CLOSED;
-    
-    if (this.onclose) {
-      this.onclose({
+    // Leave workspace if we own the manager, then dispatch close event
+    // after the workspace is actually left to prevent race conditions
+    const finishClose = () => {
+      this.readyState = CLOSED;
+      this._dispatch('close', {
         type: 'close',
         target: this,
         code,
         reason,
         wasClean: true,
       });
+    };
+
+    if (this.peerManager && this.ownsManager) {
+      this.peerManager.leaveWorkspace().then(finishClose).catch(finishClose);
+    } else {
+      finishClose();
     }
   }
 
@@ -321,39 +342,19 @@ export class P2PWebSocketAdapter {
    * Add event listener (for compatibility with EventTarget interface)
    */
   addEventListener(type, listener) {
-    switch (type) {
-      case 'open':
-        this.onopen = listener;
-        break;
-      case 'message':
-        this.onmessage = listener;
-        break;
-      case 'close':
-        this.onclose = listener;
-        break;
-      case 'error':
-        this.onerror = listener;
-        break;
+    if (!this._listeners.has(type)) {
+      this._listeners.set(type, new Set());
     }
+    this._listeners.get(type).add(listener);
   }
 
   /**
    * Remove event listener
    */
   removeEventListener(type, listener) {
-    switch (type) {
-      case 'open':
-        if (this.onopen === listener) this.onopen = null;
-        break;
-      case 'message':
-        if (this.onmessage === listener) this.onmessage = null;
-        break;
-      case 'close':
-        if (this.onclose === listener) this.onclose = null;
-        break;
-      case 'error':
-        if (this.onerror === listener) this.onerror = null;
-        break;
+    const listeners = this._listeners.get(type);
+    if (listeners) {
+      listeners.delete(listener);
     }
   }
 
@@ -361,10 +362,7 @@ export class P2PWebSocketAdapter {
    * Dispatch event (for compatibility)
    */
   dispatchEvent(event) {
-    const handler = this[`on${event.type}`];
-    if (handler) {
-      handler(event);
-    }
+    this._dispatch(event.type, event);
     return true;
   }
 }
@@ -378,6 +376,12 @@ export class P2PWebSocketAdapter {
  *   });
  */
 export function createP2PWebSocketPolyfill(options) {
+  // Get or create the shared PeerManager once so individual adapters don't
+  // each think they own (and can destroy) the singleton.
+  const sharedManager = options.peerManager || getPeerManager({
+    sidecarUrl: options.serverUrl,
+  });
+
   // Return a constructor-like function that creates adapters
   return function P2PWebSocket(url) {
     // Parse URL to extract room/document ID if present
@@ -398,6 +402,7 @@ export function createP2PWebSocketPolyfill(options) {
     return new P2PWebSocketAdapter({
       ...options,
       workspaceId,
+      peerManager: sharedManager,
       url,
     });
   };

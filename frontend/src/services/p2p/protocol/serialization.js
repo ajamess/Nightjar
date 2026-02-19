@@ -111,7 +111,7 @@ export function generatePeerId() {
  * @returns {Promise<string|null>} Base64-encoded IV + ciphertext
  */
 export async function encryptData(data, key) {
-  if (!key) return data; // No encryption if no key
+  if (!key) throw new Error('Encryption key is required — refusing to send plaintext');
   
   try {
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -150,7 +150,7 @@ export async function encryptData(data, key) {
  * @returns {Promise<string|null>} Decrypted string
  */
 export async function decryptData(encryptedBase64, key) {
-  if (!key) return encryptedBase64; // No decryption if no key
+  if (!key) throw new Error('Decryption key is required — refusing to return raw ciphertext');
   
   try {
     const combined = decodeBase64(encryptedBase64);

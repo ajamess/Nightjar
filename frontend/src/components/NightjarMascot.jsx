@@ -64,6 +64,7 @@ function NightjarMascot({
     const fadeTimerRef = useRef(null);
     const holdTimerRef = useRef(null);
     const innerFadeTimerRef = useRef(null);
+    const holdResumeTimerRef = useRef(null);
     const isHoldingRef = useRef(false);
     
     // Load sayings on mount
@@ -144,8 +145,8 @@ function NightjarMascot({
         clearTimeout(holdTimerRef.current);
         
         if (isHoldingRef.current) {
-            // Was holding, resume after a moment
-            setTimeout(() => {
+            // Was holding, resume after a moment (tracked for cleanup)
+            holdResumeTimerRef.current = setTimeout(() => {
                 isHoldingRef.current = false;
                 setIsPaused(false);
             }, 100);
@@ -159,6 +160,7 @@ function NightjarMascot({
             clearTimeout(fadeTimerRef.current);
             clearTimeout(holdTimerRef.current);
             clearTimeout(innerFadeTimerRef.current);
+            clearTimeout(holdResumeTimerRef.current);
         };
     }, []);
     

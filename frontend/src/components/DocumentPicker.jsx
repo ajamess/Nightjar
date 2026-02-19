@@ -158,7 +158,7 @@ export function DocumentPicker({
               onChange={(e) => setRenameValue(e.target.value)}
               onBlur={() => finishRename('folder')}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') finishRename('folder');
+                if (e.key === 'Enter') e.target.blur();
                 if (e.key === 'Escape') setRenamingId(null);
               }}
               onClick={(e) => e.stopPropagation()}
@@ -219,7 +219,7 @@ export function DocumentPicker({
               onChange={(e) => setRenameValue(e.target.value)}
               onBlur={() => finishRename('document')}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') finishRename('document');
+                if (e.key === 'Enter') e.target.blur();
                 if (e.key === 'Escape') setRenamingId(null);
               }}
               onClick={(e) => e.stopPropagation()}
@@ -395,8 +395,10 @@ export function DocumentPicker({
 
 // Helper: Format relative time
 function formatRelativeTime(timestamp) {
+  if (!timestamp || isNaN(timestamp)) return 'Unknown';
   const now = Date.now();
   const diff = now - timestamp;
+  if (isNaN(diff) || diff < 0) return new Date(timestamp).toLocaleDateString();
   
   const minute = 60 * 1000;
   const hour = 60 * minute;

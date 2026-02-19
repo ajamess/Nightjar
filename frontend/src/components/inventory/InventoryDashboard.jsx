@@ -117,7 +117,14 @@ export default function InventoryDashboard({
   useEffect(() => {
     if (!yInventoryNotifications) { setNotificationUnreadCount(0); return; }
     const computeCount = () => {
-      const all = yInventoryNotifications.toArray();
+      // Dedup by id: the delete+insert pattern in markNotificationRead can
+      // produce transient duplicates when two peers mark the same item concurrently.
+      const seen = new Set();
+      const all = yInventoryNotifications.toArray().filter(n => {
+        if (seen.has(n.id)) return false;
+        seen.add(n.id);
+        return true;
+      });
       setNotificationUnreadCount(getUnreadCount(all, userIdentity?.publicKeyBase62, inventorySystemId));
     };
     computeCount();

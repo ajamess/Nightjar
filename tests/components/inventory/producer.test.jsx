@@ -421,7 +421,7 @@ describe('AddressReveal', () => {
   });
 
   it('has unclaim button', async () => {
-    render(<AddressReveal requestId="req-reveal1" reveal={reveal} identity={identity} />);
+    render(<AddressReveal requestId="req-reveal1" reveal={reveal} identity={identity} request={{ id: 'req-reveal1', status: 'approved' }} />);
     
     await waitFor(() => {
       expect(screen.getByText(/Unclaim this request/)).toBeInTheDocument();

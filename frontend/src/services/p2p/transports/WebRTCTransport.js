@@ -70,9 +70,8 @@ export class WebRTCTransport extends BaseTransport {
     // Handle connection state changes
     pc.onconnectionstatechange = () => {
       console.log(`[WebRTCTransport] Connection to ${peerId}: ${pc.connectionState}`);
-      if (pc.connectionState === 'connected') {
-        this._onPeerConnected(peerId, { connectionType: 'webrtc-direct' });
-      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      // Note: 'connected' is emitted from data channel onopen only, to avoid duplicates
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         this._handleDisconnect(peerId);
       }
     };
@@ -115,8 +114,9 @@ export class WebRTCTransport extends BaseTransport {
       }
     };
 
-    // Store channel reference
-    this.dataChannels.set(peerId, channel);
+    // Only store channel once it's open (via onopen handler above).
+    // Storing it here prematurely would cause broadcast() to attempt
+    // sends on a 'connecting' channel, throwing InvalidStateError.
   }
 
   /**
@@ -178,6 +178,22 @@ export class WebRTCTransport extends BaseTransport {
 
     try {
       if (signalData.type === 'offer') {
+        // Handle glare condition: both peers sent offers simultaneously.
+        // The "polite" peer (lexicographically greater peerId) rolls back
+        // its own offer and accepts the remote one.
+        if (pc && pc.signalingState === 'have-local-offer') {
+          const isPolite = this.localPeerId > fromPeerId;
+          if (isPolite) {
+            // Polite peer: rollback our offer and accept theirs
+            console.log(`[WebRTCTransport] Glare with ${fromPeerId}, rolling back (polite)`);
+            await pc.setLocalDescription({ type: 'rollback' });
+          } else {
+            // Impolite peer: ignore incoming offer, keep ours
+            console.log(`[WebRTCTransport] Glare with ${fromPeerId}, ignoring offer (impolite)`);
+            return;
+          }
+        }
+
         // Incoming connection request
         if (!pc) {
           pc = this._createPeerConnection(fromPeerId);

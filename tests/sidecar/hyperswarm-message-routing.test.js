@@ -160,15 +160,16 @@ describe('HyperswarmManager Message Routing', () => {
 
   describe('explicit message types route to named events', () => {
     test('sync messages emit sync-message event', (done) => {
+      const testTopic = 'ab'.repeat(32);
       const payload = {
         type: 'sync',
-        topic: 'abc123',
+        topic: testTopic,
         data: 'syncpayload',
       };
 
       manager.on('sync-message', (data) => {
         expect(data.peerId).toBe(testPeerId);
-        expect(data.topic).toBe('abc123');
+        expect(data.topic).toBe(testTopic);
         expect(data.data).toBe('syncpayload');
         done();
       });
@@ -179,7 +180,7 @@ describe('HyperswarmManager Message Routing', () => {
     test('awareness messages emit awareness-update event', (done) => {
       const payload = {
         type: 'awareness',
-        topic: 'abc123',
+        topic: 'ab'.repeat(32),
         state: { cursor: { x: 10, y: 20 } },
       };
 
@@ -193,14 +194,15 @@ describe('HyperswarmManager Message Routing', () => {
     });
 
     test('sync-request messages emit sync-state-request event', (done) => {
+      const testTopic = 'cd'.repeat(32);
       const payload = {
         type: 'sync-request',
-        topic: 'topic123',
+        topic: testTopic,
       };
 
       manager.on('sync-state-request', (data) => {
         expect(data.peerId).toBe(testPeerId);
-        expect(data.topic).toBe('topic123');
+        expect(data.topic).toBe(testTopic);
         done();
       });
 

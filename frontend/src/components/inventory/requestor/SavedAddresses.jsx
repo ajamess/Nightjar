@@ -37,6 +37,7 @@ export default function SavedAddresses({ currentWorkspace }) {
   const [newAddr, setNewAddr] = useState({ ...EMPTY });
   const [editingId, setEditingId] = useState(null);
   const [editAddr, setEditAddr] = useState(null);
+  const [settingDefaultId, setSettingDefaultId] = useState(null);
 
   const loadAddresses = useCallback(async () => {
     try {
@@ -161,7 +162,9 @@ export default function SavedAddresses({ currentWorkspace }) {
                   </div>
                   <div className="saved-address-card__actions">
                     {!addr.isDefault && (
-                      <button className="btn-sm" onClick={async () => {
+                      <button className="btn-sm" disabled={!!settingDefaultId} onClick={async () => {
+                        if (settingDefaultId) return; // Guard against double-click
+                        setSettingDefaultId(addr.id);
                         const snapshot = addresses.map(a => ({ ...a }));
                         try {
                           const km = await getWorkspaceKeyMaterial(currentWorkspace, workspaceId);
@@ -191,8 +194,10 @@ export default function SavedAddresses({ currentWorkspace }) {
                           } catch (_restoreErr) {
                             console.error('Failed to restore addresses after set-default error:', _restoreErr);
                           }
+                        } finally {
+                          setSettingDefaultId(null);
                         }
-                      }}>⭐ Set Default</button>
+                      }}>{settingDefaultId === addr.id ? '⏳…' : '⭐ Set Default'}</button>
                     )}
                     <button className="btn-sm" onClick={() => { setEditingId(addr.id); setEditAddr({ ...addr }); }}>✏️ Edit</button>
                     <button className="btn-sm btn-sm--danger" onClick={() => handleDelete(addr.id)}>🗑️ Delete</button>

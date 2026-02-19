@@ -19,6 +19,10 @@ const MAX_PEERS_PER_ROOM = parseInt(process.env.MAX_PEERS_PER_ROOM || '50');
 const RATE_LIMIT_WINDOW = 1000; // 1 second
 const RATE_LIMIT_MAX = 50; // max messages per window
 
+const MAX_ROOMS = parseInt(process.env.MAX_ROOMS || '10000');
+const MAX_ROOM_ID_LENGTH = 256;
+const MAX_BROADCAST_DATA_SIZE = 16 * 1024; // 16KB max broadcast payload
+
 // Room management
 const rooms = new Map(); // roomId -> Set<WebSocket>
 const peerInfo = new WeakMap(); // WebSocket -> { peerId, roomId, rateLimit }
@@ -103,6 +107,11 @@ function joinRoom(ws, roomId) {
 
   // Create room if doesn't exist
   if (!rooms.has(roomId)) {
+    // Prevent unbounded room creation (DoS)
+    if (rooms.size >= MAX_ROOMS) {
+      sendTo(ws, { type: 'error', error: 'server_room_limit' });
+      return;
+    }
     rooms.set(roomId, new Set());
   }
 
@@ -187,13 +196,20 @@ function handleMessage(ws, data) {
   switch (message.type) {
     case 'join':
       // Join a room (workspace)
-      if (!message.roomId || typeof message.roomId !== 'string') {
+      if (!message.roomId || typeof message.roomId !== 'string' || message.roomId.length > MAX_ROOM_ID_LENGTH) {
         sendTo(ws, { type: 'error', error: 'invalid_room_id' });
         return;
       }
-      // Store identity info for peer discovery
-      if (message.publicKey) info.publicKey = message.publicKey;
-      if (message.profile) info.profile = message.profile;
+      // Store identity info for peer discovery (validate to prevent memory abuse)
+      if (message.publicKey && typeof message.publicKey === 'string' && message.publicKey.length <= 1024) {
+        info.publicKey = message.publicKey;
+      }
+      if (message.profile && typeof message.profile === 'object' && message.profile !== null) {
+        const profileStr = JSON.stringify(message.profile);
+        if (profileStr.length <= 4096) {
+          info.profile = message.profile;
+        }
+      }
       joinRoom(ws, message.roomId);
       break;
 
@@ -228,6 +244,11 @@ function handleMessage(ws, data) {
     case 'broadcast':
       // Broadcast to all peers in room (for awareness updates)
       if (!info.roomId) return;
+      // Validate broadcast data size to prevent amplification attacks
+      if (message.data && JSON.stringify(message.data).length > MAX_BROADCAST_DATA_SIZE) {
+        sendTo(ws, { type: 'error', error: 'broadcast_too_large' });
+        return;
+      }
       broadcastToRoom(info.roomId, {
         type: 'broadcast',
         from: info.peerId,

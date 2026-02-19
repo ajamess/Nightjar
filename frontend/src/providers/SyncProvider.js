@@ -272,12 +272,29 @@ export class SyncProvider {
    * Disconnect and clean up
    */
   destroy() {
+    // Guard against double-destroy (React strict mode, rapid workspace switching)
+    if (this._status === 'destroyed') return;
+
+    // Emit destroyed status FIRST while listeners are still attached
+    this._setStatus('destroyed');
+    this._listeners.clear();
+
     if (this.provider) {
-      this.provider.destroy?.();
+      // provider.destroy() destroys awareness internally, so null it out
+      // to avoid a second destroy() call below
+      this.awareness = null;
+      try { this.provider.destroy?.(); } catch (e) {
+        console.warn('[SyncProvider] Error destroying provider:', e);
+      }
       this.provider = null;
     }
-    this._listeners.clear();
-    this._setStatus('destroyed');
+    // Only destroy awareness if provider didn't already do it
+    if (this.awareness) {
+      try { this.awareness.destroy(); } catch (e) {
+        console.warn('[SyncProvider] Error destroying awareness:', e);
+      }
+      this.awareness = null;
+    }
   }
 }
 

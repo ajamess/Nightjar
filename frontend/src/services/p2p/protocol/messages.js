@@ -82,7 +82,7 @@ export function createPeerRequestMessage() {
 export function createPeerListMessage(peers) {
   return {
     type: MessageTypes.PEER_LIST,
-    peers,
+    peers: Array.isArray(peers) ? peers : [],
     timestamp: Date.now(),
   };
 }
@@ -237,6 +237,10 @@ export function isValidPeerAddress(peer) {
   if (!peer || typeof peer !== 'object') return false;
   if (!peer.peerId || typeof peer.peerId !== 'string') return false;
   if (!peer.transports || typeof peer.transports !== 'object') return false;
+  
+  // Must have at least one usable transport
+  const t = peer.transports;
+  if (!t.websocket && !t.webrtc && !t.hyperswarm && !t.mdns) return false;
   
   return true;
 }

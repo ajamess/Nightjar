@@ -191,7 +191,8 @@ class Storage {
   createInvite(token, entityType, entityId, permission, options = {}) {
     const { requiresPassword = false, expiresIn = null, maxUses = null } = options;
     const now = Date.now();
-    const expiresAt = expiresIn ? now + expiresIn : null;
+    const parsedExpiresIn = expiresIn != null ? parseInt(expiresIn, 10) : null;
+    const expiresAt = parsedExpiresIn && Number.isFinite(parsedExpiresIn) ? now + parsedExpiresIn : null;
     this._stmts.createInvite.run(token, entityType, entityId, permission, requiresPassword ? 1 : 0, now, expiresAt, maxUses);
     console.log(`[Storage] Created invite: ${token.slice(0, 8)}... for ${entityType} ${entityId.slice(0, 8)}...`);
   }
@@ -339,6 +340,7 @@ class SignalingServer {
     this.storage = storage;
     this.rooms = new Map(); // roomId -> Set<WebSocket>
     this.peerInfo = new WeakMap(); // WebSocket -> PeerInfo
+    this.sessionTokens = new Map(); // sessionToken -> { peerId, ws }
   }
 
   /**
@@ -390,17 +392,22 @@ class SignalingServer {
    */
   handleConnection(ws, req) {
     const peerId = nanoid(21);
+    const sessionToken = nanoid(32);
     
     this.peerInfo.set(ws, {
       peerId,
       roomId: null,
       profile: null,
+      sessionToken,
       rateLimiter: new RateLimiter(RATE_LIMIT_WINDOW, RATE_LIMIT_MAX)
     });
+
+    this.sessionTokens.set(sessionToken, { peerId, ws });
 
     this.send(ws, {
       type: 'welcome',
       peerId,
+      sessionToken,
       serverTime: Date.now()
     });
 
@@ -515,6 +522,11 @@ class SignalingServer {
 
     // Create room if needed
     if (!this.rooms.has(roomId)) {
+      // Prevent unbounded room creation (DoS)
+      if (this.rooms.size >= MAX_PEERS_PER_ROOM * 100) {
+        this.send(ws, { type: 'error', error: 'server_room_limit' });
+        return;
+      }
       this.rooms.set(roomId, new Set());
     }
 
@@ -527,7 +539,11 @@ class SignalingServer {
 
     room.add(ws);
     info.roomId = roomId;
-    info.profile = profile;
+    // Validate profile to prevent memory abuse from untrusted clients
+    if (profile && typeof profile === 'object' && profile !== null) {
+      const profileStr = JSON.stringify(profile);
+      info.profile = profileStr.length <= 4096 ? profile : null;
+    }
 
     // Check if this workspace has server persistence (false if persistence disabled)
     const isPersisted = this.storage ? this.storage.isPersisted(roomId) : false;
@@ -606,22 +622,41 @@ class SignalingServer {
    */
   handleJoinTopic(ws, info, msg) {
     const { topic, peerId: clientPeerId } = msg;
-    if (!topic) return;
+    if (!topic || typeof topic !== 'string' || topic.length > 256) return;
 
     // Use topic as room ID for P2P purposes
     const roomId = `p2p:${topic}`;
     
     if (!this.rooms.has(roomId)) {
+      // Prevent unbounded room creation (DoS)
+      if (this.rooms.size >= MAX_PEERS_PER_ROOM * 100) {
+        this.send(ws, { type: 'error', error: 'server_room_limit' });
+        return;
+      }
       this.rooms.set(roomId, new Set());
     }
 
     const room = this.rooms.get(roomId);
-    room.add(ws);
     
-    // Track the topic in peer info
+    // Check room capacity (consistent with handleJoin)
+    if (room.size >= MAX_PEERS_PER_ROOM) {
+      this.send(ws, { type: 'error', error: 'topic_full' });
+      return;
+    }
+    
+    // Track the topic in peer info - limit max topics per peer to prevent resource exhaustion
+    // Check BEFORE adding to room to avoid ghost peer leak on early return
     if (!info.topics) info.topics = new Set();
+    if (info.topics.size >= 50) {
+      this.send(ws, { type: 'error', error: 'too_many_topics' });
+      return;
+    }
+
+    room.add(ws);
     info.topics.add(topic);
-    if (clientPeerId) info.peerId = clientPeerId;
+    // NOTE: Do NOT allow client to override server-assigned peerId.
+    // Accepting clientPeerId here would enable impersonation attacks
+    // where an attacker intercepts messages destined for another peer.
 
     // Send current peers in topic
     const peers = [];
@@ -733,8 +768,20 @@ class SignalingServer {
     const { targetPeerId, fromPeerId, signalData } = msg;
     if (!targetPeerId || !signalData) return;
 
-    // Find target peer in any room
-    for (const [roomId, room] of this.rooms) {
+    // Only search rooms/topics the sender participates in (prevents O(n*m) scan of all rooms)
+    const roomsToSearch = [];
+    if (info.roomId) {
+      const r = this.rooms.get(info.roomId);
+      if (r) roomsToSearch.push(r);
+    }
+    if (info.topics) {
+      for (const topic of info.topics) {
+        const r = this.rooms.get(`p2p:${topic}`);
+        if (r) roomsToSearch.push(r);
+      }
+    }
+
+    for (const room of roomsToSearch) {
       for (const peer of room) {
         const pInfo = this.peerInfo.get(peer);
         if (pInfo && pInfo.peerId === targetPeerId) {
@@ -762,6 +809,14 @@ class SignalingServer {
       return;
     }
 
+    // Guard against oversized relay payloads
+    const MAX_RELAY_MESSAGE_SIZE = 64 * 1024; // 64 KB
+    const serialized = JSON.stringify(payload);
+    if (serialized.length > MAX_RELAY_MESSAGE_SIZE) {
+      this.send(ws, { type: 'error', error: 'relay_payload_too_large', maxBytes: MAX_RELAY_MESSAGE_SIZE });
+      return;
+    }
+
     // Verify sender is in at least one topic (authenticated participation)
     if (!info.topics || info.topics.size === 0) {
       this.send(ws, { type: 'error', error: 'not_in_topic' });
@@ -778,8 +833,10 @@ class SignalingServer {
         const pInfo = this.peerInfo.get(peer);
         if (pInfo && pInfo.peerId === targetPeerId) {
           // Forward the payload with sender info
+          // Wrap in envelope instead of spreading untrusted payload (prevents prototype pollution)
           this.send(peer, {
-            ...payload,
+            type: 'relay-message',
+            payload: payload,
             _fromPeerId: info.peerId,
             _relayed: true,
           });
@@ -803,13 +860,23 @@ class SignalingServer {
       return;
     }
 
+    // Guard against amplification DoS — reject oversized payloads
+    const MAX_RELAY_BROADCAST_SIZE = 64 * 1024; // 64 KB
+    const serialized = JSON.stringify(payload);
+    if (serialized.length > MAX_RELAY_BROADCAST_SIZE) {
+      this.send(ws, { type: 'error', error: 'broadcast_payload_too_large', maxBytes: MAX_RELAY_BROADCAST_SIZE });
+      return;
+    }
+
     if (!info.topics || info.topics.size === 0) {
       this.send(ws, { type: 'error', error: 'not_in_topic' });
       return;
     }
 
+    // Wrap in envelope instead of spreading untrusted payload (prevents prototype pollution)
     const broadcastPayload = {
-      ...payload,
+      type: 'relay-broadcast',
+      payload: payload,
       _fromPeerId: info.peerId,
       _relayed: true,
     };
@@ -869,19 +936,30 @@ class SignalingServer {
 
     const { docId, encryptedState, encryptedUpdate } = msg;
     
-    if (!docId) {
+    if (!docId || typeof docId !== 'string' || docId.length > 256) {
       this.send(ws, { type: 'error', error: 'missing_doc_id' });
       return;
     }
 
+    // Limit blob sizes to prevent memory exhaustion (50MB max per blob)
+    const MAX_BLOB_SIZE = 50 * 1024 * 1024;
+
     // Store encrypted state and/or update
     // Server receives opaque blobs - it cannot read the content
     if (encryptedState) {
+      if (typeof encryptedState !== 'string' || encryptedState.length > MAX_BLOB_SIZE) {
+        this.send(ws, { type: 'error', error: 'state_too_large' });
+        return;
+      }
       const stateBuffer = Buffer.from(encryptedState, 'base64');
       this.storage.storeDocument(info.roomId, docId, stateBuffer);
     }
 
     if (encryptedUpdate) {
+      if (typeof encryptedUpdate !== 'string' || encryptedUpdate.length > MAX_BLOB_SIZE) {
+        this.send(ws, { type: 'error', error: 'update_too_large' });
+        return;
+      }
       const updateBuffer = Buffer.from(encryptedUpdate, 'base64');
       this.storage.storeUpdate(info.roomId, docId, updateBuffer);
     }
@@ -924,11 +1002,34 @@ class SignalingServer {
   }
 
   /**
+   * Validate a session token and return the session data.
+   * Used by HTTP API endpoints to verify the caller is an active WebSocket peer.
+   * @param {string} token - Session token from Authorization header
+   * @returns {object|null} Session data { peerId, ws } or null if invalid
+   */
+  validateSession(token) {
+    if (!token) return null;
+    const session = this.sessionTokens.get(token);
+    if (!session) return null;
+    // Verify the WebSocket is still open
+    if (session.ws.readyState !== WebSocket.OPEN) {
+      this.sessionTokens.delete(token);
+      return null;
+    }
+    return session;
+  }
+
+  /**
    * Handle connection close
    */
   handleClose(ws) {
     const info = this.peerInfo.get(ws);
     if (info) {
+      // Clean up session token
+      if (info.sessionToken) {
+        this.sessionTokens.delete(info.sessionToken);
+      }
+
       // Clean up signaling room
       this.handleLeave(ws, info);
       
@@ -978,6 +1079,11 @@ const signaling = new SignalingServer(storage);
 // Debounce timers for persistence (prevents rapid repeated writes)
 const persistenceTimers = new Map();
 const PERSISTENCE_DEBOUNCE_MS = 1000; // Wait 1 second after last update before persisting
+
+// Track last activity for y-websocket docs (safety-net for stale room cleanup)
+const docLastActivity = new Map(); // roomName -> timestamp
+const STALE_DOC_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DOC_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
 
 if (!DISABLE_PERSISTENCE) {
   setPersistence({
@@ -1046,13 +1152,19 @@ wssSignaling.on('connection', (ws, req) => signaling.handleConnection(ws, req));
 // WebSocket server for y-websocket (document sync) - 10MB max payload
 const wssYjs = new WebSocketServer({ noServer: true, maxPayload: 10 * 1024 * 1024 });
 
+// P2P awareness bridge: track which y-websocket docs already have an awareness
+// listener attached so we don't duplicate listeners when multiple clients join
+// the same room. Entries are cleaned up on doc destroy so that a fresh doc for
+// the same room name gets a new listener (see doc.on('destroy') below).
+const docAwarenessListeners = new Map(); // roomName -> awareness handler fn
+
 // Track WebSocket connections with heartbeat for awareness cleanup
 const wsHeartbeats = new Map();
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const HEARTBEAT_TIMEOUT = 60000; // 60 seconds - terminate if no pong
 
 // Heartbeat interval to detect dead connections
-setInterval(() => {
+const heartbeatInterval = setInterval(() => {
   const now = Date.now();
   wsHeartbeats.forEach((data, ws) => {
     if (now - data.lastPong > HEARTBEAT_TIMEOUT) {
@@ -1065,6 +1177,45 @@ setInterval(() => {
   });
 }, HEARTBEAT_INTERVAL);
 
+// Periodic cleanup of stale y-websocket docs (safety net)
+// Removes docs with 0 connections that haven't been active for >24 hours
+const docCleanupInterval = setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [roomName, doc] of docs) {
+    const connCount = doc.conns ? doc.conns.size : 0;
+    if (connCount === 0) {
+      const lastActivity = docLastActivity.get(roomName) || 0;
+      if (now - lastActivity > STALE_DOC_TIMEOUT_MS) {
+        try {
+          doc.destroy();
+        } catch (e) {
+          // doc.destroy() may throw if already destroyed
+        }
+        docs.delete(roomName);
+        docLastActivity.delete(roomName);
+
+        // Clean up related maps
+        if (persistenceTimers.has(roomName)) {
+          clearTimeout(persistenceTimers.get(roomName));
+          persistenceTimers.delete(roomName);
+        }
+        docAwarenessListeners.delete(roomName);
+
+        cleaned++;
+      }
+    } else {
+      // Update activity for docs with active connections
+      docLastActivity.set(roomName, now);
+    }
+  }
+
+  if (cleaned > 0) {
+    console.log(`[Cleanup] Removed ${cleaned} stale y-websocket docs (${docs.size} remaining)`);
+  }
+}, DOC_CLEANUP_INTERVAL_MS);
+
 wssYjs.on('connection', (ws, req) => {
   // Extract room name from URL
   const roomName = req.url.slice(1).split('?')[0] || 'default';
@@ -1072,6 +1223,9 @@ wssYjs.on('connection', (ws, req) => {
   
   // Track connection for heartbeat
   wsHeartbeats.set(ws, { lastPong: Date.now(), roomName });
+
+  // Track document activity for stale cleanup
+  docLastActivity.set(roomName, Date.now());
   
   ws.on('pong', () => {
     const data = wsHeartbeats.get(ws);
@@ -1088,6 +1242,47 @@ wssYjs.on('connection', (ws, req) => {
   });
   
   setupWSConnection(ws, req, { docName: roomName });
+
+  // ── P2P awareness bridge ─────────────────────────────────────────────
+  // After setupWSConnection the doc is guaranteed to exist in the y-ws
+  // `docs` map. Attach an awareness change listener ONCE per doc so we
+  // can bridge awareness state to signaling (P2P) peers.
+  const doc = docs.get(roomName);
+  if (doc && !docAwarenessListeners.has(roomName)) {
+    if (doc.awareness) {
+      const awarenessHandler = ({ added, updated, removed }) => {
+        const changed = [...added, ...updated, ...removed];
+        if (changed.length === 0) return;
+
+        // Build a lightweight state snapshot for the changed clients
+        const states = {};
+        for (const clientId of changed) {
+          const s = doc.awareness.getStates().get(clientId);
+          if (s) states[clientId] = s;
+        }
+
+        // Relay to any signaling peers in the same room
+        signaling.broadcast(roomName, {
+          type: 'awareness_update',
+          roomName,
+          states,
+        });
+      };
+
+      doc.awareness.on('update', awarenessHandler);
+      docAwarenessListeners.set(roomName, awarenessHandler);
+    }
+
+    // ── FIX: clean up the awareness map entry when the doc is destroyed ──
+    // y-websocket destroys a doc when all clients disconnect. Without this
+    // handler the stale Map entry would prevent attaching a fresh listener
+    // when a new client reconnects and y-ws creates a new doc for the
+    // same room name.
+    doc.on('destroy', () => {
+      docAwarenessListeners.delete(roomName);
+      console.log(`[Y-WS] Doc destroyed, cleared awareness listener for room: ${roomName.slice(0, 30)}...`);
+    });
+  }
 });
 
 // Handle HTTP upgrade - route to appropriate WebSocket server
@@ -1118,14 +1313,8 @@ app.use('/api', (req, res, next) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    rooms: signaling.rooms.size,
-    uptime: process.uptime(),
-    persistenceEnabled: !DISABLE_PERSISTENCE,
-    meshEnabled: MESH_ENABLED,
-    serverMode: SERVER_MODE
-  });
+  // Only return status - do not expose room count, uptime, or server config to unauthenticated callers
+  res.json({ status: 'ok' });
 });
 
 // API: Get mesh network status
@@ -1149,7 +1338,8 @@ app.get('/api/mesh/relays', (req, res) => {
     return res.json({ relays: [] });
   }
   
-  const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 5, 1), 20);
   res.json({
     relays: meshParticipant.getTopRelays(limit).map(r => ({
       url: r.endpoints[0],
@@ -1172,11 +1362,22 @@ app.get('/api/workspace/:id/persisted', (req, res) => {
 // Invite API (for unique share links)
 // =============================================================================
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
-// Create an invite
+// Create an invite (requires active WebSocket session)
 app.post('/api/invites', (req, res) => {
   try {
+    // Authenticate: require a valid session token from an active WebSocket peer
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const sessionToken = authHeader.slice(7);
+    const session = signaling.validateSession(sessionToken);
+    if (!session) {
+      return res.status(401).json({ error: 'Invalid or expired session' });
+    }
+
     if (!storage) {
       return res.status(503).json({ error: 'Persistence disabled on server' });
     }
@@ -1185,6 +1386,14 @@ app.post('/api/invites', (req, res) => {
     
     if (!token || !entityType || !entityId || !permission) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Validate field lengths to prevent DoS via huge tokens/IDs
+    if (typeof token !== 'string' || token.length > 512 ||
+        typeof entityType !== 'string' || entityType.length > 64 ||
+        typeof entityId !== 'string' || entityId.length > 256 ||
+        typeof permission !== 'string' || permission.length > 64) {
+      return res.status(400).json({ error: 'Invalid field format or length' });
     }
     
     storage.createInvite(token, entityType, entityId, permission, {
@@ -1323,6 +1532,12 @@ server.listen(PORT, async () => {
 const gracefulShutdown = async () => {
   console.log('\n[Server] Shutting down...');
   
+  // Stop heartbeat interval so it doesn't fire after cleanup
+  clearInterval(heartbeatInterval);
+
+  // Stop stale doc cleanup interval
+  clearInterval(docCleanupInterval);
+  
   // Stop mesh participation
   if (meshParticipant) {
     try {
@@ -1333,6 +1548,12 @@ const gracefulShutdown = async () => {
     }
   }
   
+  // Clear all pending persistence debounce timers before closing the database
+  for (const [docName, timer] of persistenceTimers) {
+    clearTimeout(timer);
+    persistenceTimers.delete(docName);
+  }
+
   wssSignaling.clients.forEach(ws => ws.close());
   wssYjs.clients.forEach(ws => ws.close());
   server.close(() => {

@@ -40,9 +40,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendYjsUpdate: (update) => ipcRenderer.send('yjs-update', update),
 
     // --- Backend to Frontend ---
-    onConnectionInfo: (callback) => ipcRenderer.on('connection-info', (_event, value) => callback(value)),
-    onBackendError: (callback) => ipcRenderer.on('backend-error', (_event, value) => callback(value)),
-    onYjsUpdate: (callback) => ipcRenderer.on('yjs-update', (_event, value) => callback(value)),
+    onConnectionInfo: (callback) => {
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('connection-info', handler);
+        return () => ipcRenderer.removeListener('connection-info', handler);
+    },
+    onBackendError: (callback) => {
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('backend-error', handler);
+        return () => ipcRenderer.removeListener('backend-error', handler);
+    },
+    onYjsUpdate: (callback) => {
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('yjs-update', handler);
+        return () => ipcRenderer.removeListener('yjs-update', handler);
+    },
 
     // --- Identity Management ---
     identity: {
@@ -52,7 +64,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         delete: () => ipcRenderer.invoke('identity:delete'),
         export: (password) => ipcRenderer.invoke('identity:export', password),
         import: (data, password) => ipcRenderer.invoke('identity:import', data, password),
-        hasIdentity: () => ipcRenderer.invoke('identity:has')
+        hasIdentity: () => ipcRenderer.invoke('identity:has'),
+        validate: (mnemonic) => ipcRenderer.invoke('identity:validate', mnemonic)
     },
 
     // --- Hyperswarm P2P ---
@@ -65,11 +78,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getPeers: (topicHex) => ipcRenderer.invoke('hyperswarm:peers', topicHex),
         getConnectionCount: () => ipcRenderer.invoke('hyperswarm:connectionCount'),
         destroy: () => ipcRenderer.invoke('hyperswarm:destroy'),
-        onPeerJoined: (callback) => ipcRenderer.on('hyperswarm:peer-joined', (_e, data) => callback(data)),
-        onPeerLeft: (callback) => ipcRenderer.on('hyperswarm:peer-left', (_e, data) => callback(data)),
-        onPeerIdentity: (callback) => ipcRenderer.on('hyperswarm:peer-identity', (_e, data) => callback(data)),
-        onSyncMessage: (callback) => ipcRenderer.on('hyperswarm:sync-message', (_e, data) => callback(data)),
-        onAwarenessUpdate: (callback) => ipcRenderer.on('hyperswarm:awareness-update', (_e, data) => callback(data))
+        onPeerJoined: (callback) => {
+            const handler = (_e, data) => callback(data);
+            ipcRenderer.on('hyperswarm:peer-joined', handler);
+            return () => ipcRenderer.removeListener('hyperswarm:peer-joined', handler);
+        },
+        onPeerLeft: (callback) => {
+            const handler = (_e, data) => callback(data);
+            ipcRenderer.on('hyperswarm:peer-left', handler);
+            return () => ipcRenderer.removeListener('hyperswarm:peer-left', handler);
+        },
+        onPeerIdentity: (callback) => {
+            const handler = (_e, data) => callback(data);
+            ipcRenderer.on('hyperswarm:peer-identity', handler);
+            return () => ipcRenderer.removeListener('hyperswarm:peer-identity', handler);
+        },
+        onSyncMessage: (callback) => {
+            const handler = (_e, data) => callback(data);
+            ipcRenderer.on('hyperswarm:sync-message', handler);
+            return () => ipcRenderer.removeListener('hyperswarm:sync-message', handler);
+        },
+        onAwarenessUpdate: (callback) => {
+            const handler = (_e, data) => callback(data);
+            ipcRenderer.on('hyperswarm:awareness-update', handler);
+            return () => ipcRenderer.removeListener('hyperswarm:awareness-update', handler);
+        }
     },
 
     // --- Tor Management ---
@@ -80,9 +113,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
         newIdentity: () => ipcRenderer.invoke('tor:newIdentity'),
         getSocksProxy: () => ipcRenderer.invoke('tor:socksProxy'),
         getOnionAddress: () => ipcRenderer.invoke('tor:onionAddress'),
-        onBootstrap: (callback) => ipcRenderer.on('tor:bootstrap', (_e, progress) => callback(progress)),
-        onReady: (callback) => ipcRenderer.on('tor:ready', () => callback()),
-        onError: (callback) => ipcRenderer.on('tor:error', (_e, err) => callback(err))
+        onBootstrap: (callback) => {
+            const handler = (_e, progress) => callback(progress);
+            ipcRenderer.on('tor:bootstrap', handler);
+            return () => ipcRenderer.removeListener('tor:bootstrap', handler);
+        },
+        onReady: (callback) => {
+            const handler = () => callback();
+            ipcRenderer.on('tor:ready', handler);
+            return () => ipcRenderer.removeListener('tor:ready', handler);
+        },
+        onError: (callback) => {
+            const handler = (_e, err) => callback(err);
+            ipcRenderer.on('tor:error', handler);
+            return () => ipcRenderer.removeListener('tor:error', handler);
+        }
     },
 
     // --- Inventory Address Storage ---
@@ -108,7 +153,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // --- Protocol Link Handling ---
-    onProtocolLink: (callback) => ipcRenderer.on('protocol-link', (_e, url) => callback(url)),
+    onProtocolLink: (callback) => {
+        const handler = (_e, url) => callback(url);
+        ipcRenderer.on('protocol-link', handler);
+        return () => ipcRenderer.removeListener('protocol-link', handler);
+    },
 
     // --- External URLs ---
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
@@ -124,20 +173,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
         showInFolder: (filePath) => ipcRenderer.invoke('file:showInFolder', filePath),
     },
 
-    // Function to remove all listeners, useful for component cleanup
-    removeAllListeners: () => {
-        ipcRenderer.removeAllListeners('connection-info');
-        ipcRenderer.removeAllListeners('backend-error');
-        ipcRenderer.removeAllListeners('yjs-update');
-        ipcRenderer.removeAllListeners('hyperswarm:peer-joined');
-        ipcRenderer.removeAllListeners('hyperswarm:peer-left');
-        ipcRenderer.removeAllListeners('hyperswarm:peer-identity');
-        ipcRenderer.removeAllListeners('hyperswarm:sync-message');
-        ipcRenderer.removeAllListeners('hyperswarm:awareness-update');
-        ipcRenderer.removeAllListeners('tor:bootstrap');
-        ipcRenderer.removeAllListeners('tor:ready');
-        ipcRenderer.removeAllListeners('tor:error');
-        ipcRenderer.removeAllListeners('protocol-link');
+    // Function to remove listeners for a specific channel, or all known channels if none specified
+    removeAllListeners: (channel) => {
+        const allChannels = [
+            'connection-info',
+            'backend-error',
+            'yjs-update',
+            'hyperswarm:peer-joined',
+            'hyperswarm:peer-left',
+            'hyperswarm:peer-identity',
+            'hyperswarm:sync-message',
+            'hyperswarm:awareness-update',
+            'tor:bootstrap',
+            'tor:ready',
+            'tor:error',
+            'protocol-link',
+        ];
+        if (channel) {
+            // Only allow removing listeners on known application channels
+            if (!allChannels.includes(channel)) {
+                console.warn(`[Preload] removeAllListeners blocked for unknown channel: ${channel}`);
+                return;
+            }
+            ipcRenderer.removeAllListeners(channel);
+        } else {
+            allChannels.forEach(ch => ipcRenderer.removeAllListeners(ch));
+        }
     }
 });
 

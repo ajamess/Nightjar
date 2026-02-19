@@ -128,6 +128,9 @@ export default function CreateDocumentDialog({
   }, [documentType, icon]);
   
   const handleCreate = async () => {
+    // Guard against double-submit (Enter key bypasses button disabled attribute)
+    if (isCreating) return;
+    
     if (!name.trim()) {
       setError('Document name is required');
       return;

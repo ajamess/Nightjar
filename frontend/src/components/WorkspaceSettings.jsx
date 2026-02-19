@@ -493,8 +493,8 @@ export default function WorkspaceSettings({
     }
     
     try {
-      // Then leave
-      await leaveWorkspace(workspace.id);
+      // Then leave (force=true because local state still says 'owner')
+      await leaveWorkspace(workspace.id, { force: true });
       onClose?.();
     } catch (err) {
       console.error('Failed to leave workspace after transferring ownership:', err);
@@ -1098,7 +1098,7 @@ export default function WorkspaceSettings({
             
             {/* Leave Workspace - shown for non-owners, or owners with other members */}
             {isOwner ? (
-              // Owner leave - requires transfer if there are other members
+              // Owner leave - requires transfer only if no other owners exist
               canOwnerLeave && (
                 !showOwnerLeaveConfirm ? (
                   <button 
@@ -1107,7 +1107,30 @@ export default function WorkspaceSettings({
                   >
                     Leave Workspace
                   </button>
+                ) : otherOwners.length > 0 ? (
+                  // Other owners exist — no transfer needed, just confirm leave
+                  <div className="workspace-settings__delete-confirm">
+                    <p>Are you sure you want to leave this workspace?</p>
+                    <p className="workspace-settings__delete-note">
+                      Other owners will continue managing the workspace.
+                    </p>
+                    <div className="workspace-settings__delete-actions">
+                      <button 
+                        className="workspace-settings__cancel-btn"
+                        onClick={() => setShowOwnerLeaveConfirm(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        className="workspace-settings__confirm-delete-btn workspace-settings__confirm-leave-btn"
+                        onClick={handleLeave}
+                      >
+                        Yes, Leave
+                      </button>
+                    </div>
+                  </div>
                 ) : (
+                  // Sole owner with non-owner members — must transfer first
                   <div className="workspace-settings__delete-confirm workspace-settings__transfer-confirm">
                     <p>Before leaving, you must transfer ownership to another member:</p>
                     <select

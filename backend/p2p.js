@@ -18,23 +18,30 @@ async function ensureModulesLoaded() {
     
     if (!modulesLoadPromise) {
         modulesLoadPromise = (async () => {
-            const libp2p = await import('libp2p');
-            createLibp2p = libp2p.createLibp2p;
-            
-            const tcpModule = await import('@libp2p/tcp');
-            tcp = tcpModule.tcp;
-            
-            const noiseModule = await import('@chainsafe/libp2p-noise');
-            noise = noiseModule.noise;
-            
-            const mplexModule = await import('@libp2p/mplex');
-            mplex = mplexModule.mplex;
-            
-            const gossipsubModule = await import('@libp2p/gossipsub');
-            gossipsub = gossipsubModule.gossipsub;
-            
-            modulesLoaded = true;
-            console.log('[p2p] ES modules loaded successfully');
+            try {
+                const libp2p = await import('libp2p');
+                createLibp2p = libp2p.createLibp2p;
+                
+                const tcpModule = await import('@libp2p/tcp');
+                tcp = tcpModule.tcp;
+                
+                const noiseModule = await import('@chainsafe/libp2p-noise');
+                noise = noiseModule.noise;
+                
+                const mplexModule = await import('@libp2p/mplex');
+                mplex = mplexModule.mplex;
+                
+                const gossipsubModule = await import('@libp2p/gossipsub');
+                gossipsub = gossipsubModule.gossipsub;
+                
+                modulesLoaded = true;
+                console.log('[p2p] ES modules loaded successfully');
+            } catch (err) {
+                // Reset promise so subsequent calls can retry the import
+                modulesLoadPromise = null;
+                console.error('[p2p] Failed to load ES modules:', err.message);
+                throw err;
+            }
         })();
     }
     
@@ -73,6 +80,11 @@ async function createLibp2pNode(onionAddress) {
             // A proper multiaddr would be like: /dns4/your-onion-address.onion/tcp/80
             announce: onionAddress ? [`/dns4/${onionAddress}/tcp/80`] : []
         },
+        connectionManager: {
+            maxConnections: 50,   // Prevent resource exhaustion from unbounded connections
+            minConnections: 0,
+            autoDialInterval: 10000
+        },
         transports: [
             // The tcp transport is configured to use the SOCKS proxy for dialing.
             (components) => {
@@ -104,8 +116,8 @@ async function createLibp2pNode(onionAddress) {
 
     console.log('[p2p] Libp2p node created.');
     console.log('[p2p] Peer ID:', node.peerId.toString());
-    console.log('[p2p] Listening on:', node.getMultiaddrs().map(ma => ma.toString()));
 
+    // Register event listeners BEFORE starting to avoid missing early events
     node.addEventListener('peer:connect', (evt) => {
         console.log('[p2p] Peer connected:', evt.detail.toString());
     });
@@ -116,6 +128,7 @@ async function createLibp2pNode(onionAddress) {
 
     await node.start();
     console.log('[p2p] Libp2p node started.');
+    console.log('[p2p] Listening on:', node.getMultiaddrs().map(ma => ma.toString()));
 
     return node;
 }

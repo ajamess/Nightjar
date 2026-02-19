@@ -59,24 +59,28 @@ export default function MyRequests() {
   }, [requests, userIdentity, statusFilter, itemFilter]);
 
   const handleCancel = useCallback((req) => {
-    const items = yInventoryRequests.toArray();
-    const idx = items.findIndex(r => r.id === req.id);
-    if (idx === -1) return;
-    yInventoryRequests.delete(idx, 1);
-    yInventoryRequests.insert(idx, [{ ...items[idx], status: 'cancelled', updatedAt: Date.now() }]);
-    // Terminal state: clean up address reveal
-    ctx.yAddressReveals?.delete(req.id);
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'request_cancelled',
-      targetId: req.id,
-      targetType: 'request',
-      summary: `Request cancelled by requestor: ${req.catalogItemName}`,
-      actorId: userIdentity?.publicKeyBase62 || '',
-      actorRole: 'viewer',
-      timestamp: Date.now(),
-    }]);
+    const doc = yInventoryRequests.doc;
+    const doCancel = () => {
+      const items = yInventoryRequests.toArray();
+      const idx = items.findIndex(r => r.id === req.id);
+      if (idx === -1) return;
+      yInventoryRequests.delete(idx, 1);
+      yInventoryRequests.insert(idx, [{ ...items[idx], status: 'cancelled', updatedAt: Date.now() }]);
+      // Terminal state: clean up address reveal
+      ctx.yAddressReveals?.delete(req.id);
+      yInventoryAuditLog.push([{
+        id: generateId('aud-'),
+        inventorySystemId,
+        action: 'request_cancelled',
+        targetId: req.id,
+        targetType: 'request',
+        summary: `Request cancelled by requestor: ${req.catalogItemName}`,
+        actorId: userIdentity?.publicKeyBase62 || '',
+        actorRole: 'viewer',
+        timestamp: Date.now(),
+      }]);
+    };
+    if (doc) doc.transact(doCancel); else doCancel();
     // Notify the assigned producer if any
     if (req.assignedTo) {
       pushNotification(ctx.yInventoryNotifications, {
@@ -91,24 +95,28 @@ export default function MyRequests() {
   }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity, ctx.yInventoryNotifications]);
 
   const handleConfirmDelivered = useCallback((req) => {
-    const items = yInventoryRequests.toArray();
-    const idx = items.findIndex(r => r.id === req.id);
-    if (idx === -1) return;
-    yInventoryRequests.delete(idx, 1);
-    yInventoryRequests.insert(idx, [{ ...items[idx], status: 'delivered', deliveredAt: Date.now(), updatedAt: Date.now() }]);
-    // Terminal state: clean up address reveal
-    ctx.yAddressReveals?.delete(req.id);
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'request_delivered',
-      targetId: req.id,
-      targetType: 'request',
-      summary: `Delivery confirmed by requestor: ${req.catalogItemName}`,
-      actorId: userIdentity?.publicKeyBase62 || '',
-      actorRole: 'viewer',
-      timestamp: Date.now(),
+    const doc = yInventoryRequests.doc;
+    const doConfirm = () => {
+      const items = yInventoryRequests.toArray();
+      const idx = items.findIndex(r => r.id === req.id);
+      if (idx === -1) return;
+      yInventoryRequests.delete(idx, 1);
+      yInventoryRequests.insert(idx, [{ ...items[idx], status: 'delivered', deliveredAt: Date.now(), updatedAt: Date.now() }]);
+      // Terminal state: clean up address reveal
+      ctx.yAddressReveals?.delete(req.id);
+      yInventoryAuditLog.push([{
+        id: generateId('aud-'),
+        inventorySystemId,
+        action: 'request_delivered',
+        targetId: req.id,
+        targetType: 'request',
+        summary: `Delivery confirmed by requestor: ${req.catalogItemName}`,
+        actorId: userIdentity?.publicKeyBase62 || '',
+        actorRole: 'viewer',
+        timestamp: Date.now(),
     }]);
+    };
+    if (doc) doc.transact(doConfirm); else doConfirm();
     // Notify the producer that delivery was confirmed
     if (req.assignedTo) {
       pushNotification(ctx.yInventoryNotifications, {
@@ -240,25 +248,29 @@ export default function MyRequests() {
     const items = yInventoryRequests.toArray();
     const idx = items.findIndex(r => r.id === req.id);
     if (idx === -1) return;
-    yInventoryRequests.delete(idx, 1);
-    yInventoryRequests.insert(idx, [{
-      ...items[idx],
-      quantity: qty,
-      urgent: editUrgent,
-      notes: editNotes.trim(),
-      updatedAt: Date.now(),
-    }]);
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'request_edited',
-      targetId: req.id,
-      targetType: 'request',
-      summary: `Request edited: qty=${qty}, urgent=${editUrgent}`,
-      actorId: userIdentity?.publicKeyBase62 || '',
-      actorRole: 'viewer',
-      timestamp: Date.now(),
-    }]);
+    const doc = yInventoryRequests.doc;
+    const doEdit = () => {
+      yInventoryRequests.delete(idx, 1);
+      yInventoryRequests.insert(idx, [{
+        ...items[idx],
+        quantity: qty,
+        urgent: editUrgent,
+        notes: editNotes.trim(),
+        updatedAt: Date.now(),
+      }]);
+      yInventoryAuditLog.push([{
+        id: generateId('aud-'),
+        inventorySystemId,
+        action: 'request_edited',
+        targetId: req.id,
+        targetType: 'request',
+        summary: `Request edited: qty=${qty}, urgent=${editUrgent}`,
+        actorId: userIdentity?.publicKeyBase62 || '',
+        actorRole: 'viewer',
+        timestamp: Date.now(),
+      }]);
+    };
+    if (doc) doc.transact(doEdit); else doEdit();
     setEditingId(null);
     showToast('Request updated', 'success');
   }, [editQty, editUrgent, editNotes, yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, userIdentity, catalogItems]);

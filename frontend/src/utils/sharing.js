@@ -269,6 +269,10 @@ export function generateShareLink(options) {
   // Support legacy documentId parameter
   const id = entityId || documentId;
   
+  if (!id || typeof id !== 'string') {
+    throw new Error('entityId (or documentId) is required and must be a hex string');
+  }
+  
   // Parse entity ID from hex
   const idBytes = hexToBytes(id);
   if (idBytes.length !== 16) {
@@ -488,15 +492,17 @@ export function parseShareLink(link) {
       bootstrapPeers = decodePeerList(param.slice(6));
     } else if (param.startsWith('hpeer:')) {
       // Hyperswarm peer public keys (comma-separated hex)
-      hyperswarmPeers = param.slice(6).split(',').filter(p => p.length === 64);
+      // Limit to MAX_HYPERSWARM_PEERS to prevent DoS via crafted links
+      hyperswarmPeers = param.slice(6).split(',').filter(p => p.length === 64 && /^[0-9a-fA-F]+$/.test(p)).slice(0, MAX_HYPERSWARM_PEERS);
     } else if (param.startsWith('nodes:')) {
       // Mesh relay WebSocket URLs (comma-separated, URL-encoded)
       // Validate scheme — only allow ws:// and wss:// (reject file://, javascript:, etc.)
+      // Limit to MAX_MESH_RELAYS to prevent DoS via crafted links
       meshRelays = param.slice(6).split(',').map(r => decodeURIComponent(r)).filter(r => {
         if (!r) return false;
         const lower = r.toLowerCase();
         return lower.startsWith('ws:') || lower.startsWith('wss:');
-      });
+      }).slice(0, MAX_MESH_RELAYS);
     } else if (param.startsWith('srv:')) {
       // Sync server URL (for cross-platform workspace joining)
       const rawServerUrl = decodeURIComponent(param.slice(4));
@@ -513,7 +519,11 @@ export function parseShareLink(link) {
     } else if (param.startsWith('topic:')) {
       // Hyperswarm topic for P2P discovery
       // This is used to find peers via DHT
-      topic = param.slice(6);
+      // Validate: must be hex string, max 64 chars (32-byte SHA-256 hash)
+      const rawTopic = param.slice(6);
+      if (/^[0-9a-fA-F]{1,64}$/.test(rawTopic)) {
+        topic = rawTopic;
+      }
     }
   }
   
@@ -739,6 +749,12 @@ export async function generateTopicHash(workspaceId, password = '') {
  * Helper: Convert hex string to bytes
  */
 function hexToBytes(hex) {
+  if (typeof hex !== 'string' || hex.length % 2 !== 0) {
+    throw new Error('Invalid hex string: must be even-length string');
+  }
+  if (!/^[0-9a-fA-F]*$/.test(hex)) {
+    throw new Error('Invalid hex string: contains non-hex characters');
+  }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
@@ -1334,6 +1350,7 @@ export async function getMeshRelaysForSharing(limit = 5) {
         
         ws.onerror = () => {
           clearTimeout(timeout);
+          ws.close();
           reject(new Error('WebSocket error'));
         };
       });

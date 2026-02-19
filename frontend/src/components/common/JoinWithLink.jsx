@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './JoinWithLink.css';
 
 // Regex patterns for different link types (case-insensitive for protocol)
@@ -57,6 +58,9 @@ export default function JoinWithLink({ isOpen, onClose, onJoin }) {
   const [joinError, setJoinError] = useState(null);
   const inputRef = useRef(null);
   const modalRef = useRef(null);
+  const contentRef = useRef(null);
+
+  useFocusTrap(contentRef, isOpen, { onEscape: onClose });
 
   // Reset state when opened
   useEffect(() => {
@@ -147,7 +151,7 @@ export default function JoinWithLink({ isOpen, onClose, onJoin }) {
       onClick={handleBackdropClick}
       onKeyDown={handleKeyDown}
     >
-      <div className="join-modal" role="dialog" aria-labelledby="join-modal-title">
+      <div className="join-modal" ref={contentRef} role="dialog" aria-modal="true" aria-labelledby="join-modal-title">
         {/* Header */}
         <div className="join-modal__header">
           <h2 id="join-modal-title" className="join-modal__title">

@@ -44,14 +44,27 @@ export default function AnalyticsDashboard() {
   const [filterState, setFilterState] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  const dateRange = useMemo(() => {
-    const p = PRESETS.find(p => p.key === preset);
-    if (!p || !p.offset) return [0, Date.now()];
-    return [Date.now() - p.offset, Date.now()];
-  }, [preset]);
-
   const allRequests = sync.requests || [];
   const catalogItems = sync.catalogItems || [];
+
+  // Memoize unique states for filter dropdown (avoids recomputing on every render)
+  const uniqueStates = useMemo(() => [
+    ...new Set(allRequests.map(r => r.state).filter(Boolean))
+  ].sort(), [allRequests]);
+
+  const dateRange = useMemo(() => {
+    const p = PRESETS.find(p => p.key === preset);
+    if (!p || !p.offset) {
+      // "All Time": use earliest requestedAt in the dataset instead of epoch 0
+      const earliest = allRequests.reduce((min, r) => {
+        const t = r.requestedAt ? new Date(r.requestedAt).getTime() : Infinity;
+        return t < min ? t : min;
+      }, Infinity);
+      const start = Number.isFinite(earliest) ? earliest : Date.now() - 30 * 86400000;
+      return [start, Date.now()];
+    }
+    return [Date.now() - p.offset, Date.now()];
+  }, [preset, allRequests]);
   const producerCapacities = sync.producerCapacities || {};
 
   // Apply analytics filters
@@ -117,7 +130,7 @@ export default function AnalyticsDashboard() {
           State:
           <select value={filterState} onChange={e => setFilterState(e.target.value)}>
             <option value="all">All States</option>
-            {[...new Set(allRequests.map(r => r.state).filter(Boolean))].sort().map(s => (
+            {uniqueStates.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -138,6 +151,7 @@ export default function AnalyticsDashboard() {
         requests={requests}
         producerCapacities={producerCapacities}
         dateRange={dateRange}
+        isAllTime={preset === 'all'}
       />
 
       {/* Charts grid */}
@@ -180,7 +194,7 @@ export default function AnalyticsDashboard() {
         <div className="ad-chart-panel ad-chart-wide">
           <ProducerLeaderboard
             requests={requests}
-            collaborators={ctx.collaborators}
+            collaborators={ctx.collaborators || []}
             dateRange={dateRange}
             catalogItems={catalogItems}
           />
@@ -189,8 +203,9 @@ export default function AnalyticsDashboard() {
         <div className="ad-chart-panel ad-chart-wide">
           <PivotTable
             requests={requests}
-            collaborators={ctx.collaborators}
+            collaborators={ctx.collaborators || []}
             dateRange={dateRange}
+            groupBy={groupBy}
           />
         </div>
 

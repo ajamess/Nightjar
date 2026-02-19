@@ -100,6 +100,10 @@ const saveChannelState = (workspaceId, state, identityPublicKey) => {
     }
 };
 
+// Maximum number of messages to keep in memory per workspace.
+// Older messages are trimmed from the beginning to prevent unbounded growth.
+const MAX_MESSAGES = 2000;
+
 // Generate short group name from members (max 3 names, truncated)
 const generateGroupName = (members) => {
     if (!members || members.length === 0) return 'Group';
@@ -165,7 +169,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     
     // Notification sounds hook
     const { playForMessageType, notifyForMessageType, requestNotificationPermission, settings: notificationSettings } = useNotificationSounds();
-    const lastMessageCountRef = useRef(0);
+    const lastNotifiedTimestampRef = useRef(-1);
     
     // Local messages when no ydoc (workspace-level chat)
     const [localMessages, setLocalMessages] = useState([]);
@@ -318,7 +322,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     
     // Filter users by search
     const filteredUsers = onlineUsers.filter(user => 
-        user.name.toLowerCase().includes(userSearchQuery.toLowerCase())
+        (user.name || '').toLowerCase().includes(userSearchQuery.toLowerCase())
     );
     
     // Start a DM with a user - uses publicKey for stable channel ID
@@ -393,20 +397,31 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             members
         }]);
         
-        // Store group metadata in ydoc if available
+        // Store group metadata in ydoc if available and send system message atomically
         if (ydoc) {
-            const ygroups = ydoc.getMap('chat-groups');
-            ygroups.set(groupId, {
-                id: groupId,
-                name: name,
-                members: members,
-                createdAt: Date.now(),
-                createdBy: userPublicKey
+            ydoc.transact(() => {
+                const ygroups = ydoc.getMap('chat-groups');
+                ygroups.set(groupId, {
+                    id: groupId,
+                    name: name,
+                    members: members,
+                    createdAt: Date.now(),
+                    createdBy: userPublicKey
+                });
+                
+                // Send system message
+                if (ymessagesRef.current) {
+                    ymessagesRef.current.push([{
+                        id: crypto.randomUUID(),
+                        text: `${username} created the group "${name}"`,
+                        username: 'System',
+                        timestamp: Date.now(),
+                        channel: groupId,
+                        type: 'system'
+                    }]);
+                }
             });
-        }
-        
-        // Send system message
-        if (ymessagesRef.current) {
+        } else if (ymessagesRef.current) {
             ymessagesRef.current.push([{
                 id: crypto.randomUUID(),
                 text: `${username} created the group "${name}"`,
@@ -491,15 +506,16 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             return updated;
         });
         // Remove from Yjs shared data so deletion syncs to all peers
+        // Wrap both operations in a single Yjs transaction for atomicity
         if (ydoc) {
             const ygroups = ydoc.getMap('chat-groups');
-            if (ygroups.has(channelId)) {
-                ygroups.delete(channelId);
-            }
-            // Remove messages belonging to the deleted channel
-            if (ymessagesRef.current) {
-                const ymessages = ymessagesRef.current;
-                ydoc.transact(() => {
+            const ymessages = ymessagesRef.current;
+            ydoc.transact(() => {
+                if (ygroups.has(channelId)) {
+                    ygroups.delete(channelId);
+                }
+                // Remove messages belonging to the deleted channel
+                if (ymessages) {
                     const arr = ymessages.toArray();
                     // Delete in reverse to avoid index shifting
                     for (let i = arr.length - 1; i >= 0; i--) {
@@ -507,8 +523,8 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                             ymessages.delete(i, 1);
                         }
                     }
-                });
-            }
+                }
+            });
         }
         // Clear unread counts for this channel
         setUnreadCounts(prev => {
@@ -682,7 +698,22 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         
         const updateFromYjs = () => {
             const msgs = ymessages.toArray();
-            setMessages(msgs);
+            // Deduplicate by message id (CRDT convergence can produce duplicates)
+            const seen = new Set();
+            const deduped = msgs.filter(m => {
+                if (!m.id || seen.has(m.id)) return false;
+                seen.add(m.id);
+                return true;
+            });
+            // Sort by timestamp to ensure chronological order across peers
+            // (Yjs array merge order is not guaranteed to be chronological)
+            // Tiebreak by message id for deterministic ordering when timestamps match
+            deduped.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || (a.id || '').localeCompare(b.id || ''));
+            // Cap messages to prevent unbounded memory growth in long sessions
+            const trimmed = deduped.length > MAX_MESSAGES
+                ? deduped.slice(deduped.length - MAX_MESSAGES)
+                : deduped;
+            setMessages(trimmed);
         };
 
         ymessages.observe(updateFromYjs);
@@ -698,35 +729,30 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     
     // Watch for new messages and send notifications
     useEffect(() => {
-        if (messages.length === 0) {
-            lastMessageCountRef.current = 0;
+        if (messages.length === 0) return;
+        
+        // First invocation: mark all current messages as already notified (initial load)
+        if (lastNotifiedTimestampRef.current === -1) {
+            lastNotifiedTimestampRef.current = messages[messages.length - 1]?.timestamp || Date.now();
             return;
         }
         
-        // Only notify for new messages (not initial load)
-        if (lastMessageCountRef.current === 0) {
-            lastMessageCountRef.current = messages.length;
-            return;
-        }
+        // Find messages newer than our last notified timestamp.
+        // This is robust against the MAX_MESSAGES cap trimming old messages,
+        // which kept array length constant and broke the old count-based approach.
+        const cutoff = lastNotifiedTimestampRef.current;
+        lastNotifiedTimestampRef.current = messages[messages.length - 1]?.timestamp || Date.now();
         
-        // Check for new messages since last count
-        const newMessages = messages.slice(lastMessageCountRef.current);
-        lastMessageCountRef.current = messages.length;
-        
-        // Grace period: skip notifications for first 5 seconds after session start
-        // This handles delayed P2P sync batches delivering historical messages
-        const SYNC_GRACE_PERIOD = 5000;
-        const sessionAge = Date.now() - sessionStartRef.current;
-        
-        // Process each new message
-        for (const msg of newMessages) {
+        // Process each new message (only those with timestamp > cutoff)
+        for (const msg of messages) {
+            if ((msg.timestamp || 0) <= cutoff) continue;
             // Skip our own messages
             if (msg.senderPublicKey === userPublicKey) continue;
             // Skip system messages
             if (msg.type === 'system') continue;
             // Skip historical messages from P2P sync - only notify for messages
             // that were sent after our session started (with grace period for clock skew)
-            if (msg.timestamp && (msg.timestamp < sessionStartRef.current - 2000 || sessionAge < SYNC_GRACE_PERIOD)) continue;
+            if (msg.timestamp && msg.timestamp < sessionStartRef.current - 2000) continue;
             
             // Skip notifications when the message's channel is active and window is focused
             const msgChannel = msg.channel || 'general';
@@ -764,10 +790,13 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     }, [messages, userPublicKey, playForMessageType, notifyForMessageType, activeTab]);
     
     // Ref to track chatTabs inside observer without causing re-subscribe
+    // Updated at render time (not in useEffect) to avoid one-frame stale reads
     const chatTabsRef = useRef(chatTabs);
-    useEffect(() => { chatTabsRef.current = chatTabs; }, [chatTabs]);
+    chatTabsRef.current = chatTabs;
     const channelStateRef = useRef(channelState);
-    useEffect(() => { channelStateRef.current = channelState; }, [channelState]);
+    channelStateRef.current = channelState;
+    const activeTabRef = useRef(activeTab);
+    activeTabRef.current = activeTab;
 
     // Sync group tabs from ydoc (load on mount and observe changes)
     useEffect(() => {
@@ -781,6 +810,17 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             ygroups.forEach((group, groupId) => {
                 ygroupEntries.push({ id: groupId, ...group });
             });
+            const ygroupIds = new Set(ygroupEntries.map(g => g.id));
+            
+            // Remove local group tabs that no longer exist in the Yjs map
+            const removedIds = existingGroupIds.filter(id => !ygroupIds.has(id));
+            if (removedIds.length > 0) {
+                setChatTabs(prev => prev.filter(t => t.type !== 'group' || !removedIds.includes(t.id)));
+                // If active tab was deleted, switch to general
+                if (removedIds.includes(activeTabRef?.current)) {
+                    setActiveTab('general');
+                }
+            }
             
             // Add any missing group tabs
             ygroupEntries.forEach(group => {
@@ -798,6 +838,14 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                             type: 'group',
                             members: group.members
                         }];
+                    });
+                    // Initialize lastRead for newly discovered groups so historical
+                    // messages aren't all counted as unread
+                    setUnreadCounts(prev => {
+                        if (prev[group.id]) return prev; // Already has an entry
+                        const updated = { ...prev, [group.id]: { lastRead: Date.now(), count: 0 } };
+                        saveUnreadCounts(workspaceId, updated, userPublicKey);
+                        return updated;
                     });
                 }
             });
@@ -832,8 +880,8 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             // Use the same deterministic channel ID that the sender uses
             const tabId = getDmChannelId(userPublicKey, otherPublicKey);
             
-            // Check if we already have a tab for this user (check both ID formats for safety)
-            if (!chatTabs.find(t => t.id === tabId)) {
+            // Check if we already have a tab for this user (use ref to avoid re-triggering effect on tab changes)
+            if (!chatTabsRef.current.find(t => t.id === tabId)) {
                 // Find the user in online users or workspace members, or create from message
                 const onlineUser = onlineUsers.find(u => u.publicKey === otherPublicKey);
                 const workspaceMember = workspaceMembers.find(m => m.publicKey === otherPublicKey);
@@ -858,14 +906,31 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                 // The count will be cleared when the user actually switches to this tab.
             }
         });
-    }, [messages, userPublicKey, chatTabs, onlineUsers, workspaceMembers, workspaceId]);
+    }, [messages, userPublicKey, onlineUsers, workspaceMembers, workspaceId, getDmChannelId]);
 
     // Scroll to bottom on new messages
     useEffect(() => {
         if (!chatState.isMinimized && messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+            const container = messagesEndRef.current.parentElement;
+            const isAtBottom = !container || 
+                (container.scrollHeight - container.scrollTop - container.clientHeight < 80);
+            if (isAtBottom) {
+                messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+            }
         }
     }, [messages, chatState.isMinimized]);
+
+    // Update last read timestamp for a channel
+    const updateLastRead = useCallback((channelId) => {
+        setUnreadCounts(prev => {
+            const updated = {
+                ...prev,
+                [channelId]: { lastRead: Date.now(), count: 0 }
+            };
+            saveUnreadCounts(workspaceId, updated, userPublicKey);
+            return updated;
+        });
+    }, [workspaceId, userPublicKey]);
 
     const sendMessage = useCallback(() => {
         if (!inputValue.trim()) return;
@@ -878,6 +943,10 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             const targetPublicKey = targetTab?.user?.publicKey;
             if (targetPublicKey && userPublicKey) {
                 channel = getDmChannelId(userPublicKey, targetPublicKey);
+            } else {
+                // Fallback: use the tab ID as channel for legacy clients without publicKeys
+                // This prevents DM messages from silently routing to 'general'
+                channel = activeTab;
             }
         } else if (activeTab.startsWith('group-')) {
             channel = activeTab;
@@ -889,7 +958,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         console.log('[Chat] sendMessage - input:', messageText, 'pendingMentions:', pendingMentions.length);
         if (pendingMentions.length > 0) {
             // Sort pending mentions by name length (longest first) to avoid partial replacements
-            const sortedMentions = [...pendingMentions].sort((a, b) => b.displayName.length - a.displayName.length);
+            const sortedMentions = [...pendingMentions].sort((a, b) => (b.displayName || '').length - (a.displayName || '').length);
             for (const mention of sortedMentions) {
                 // Replace ALL occurrences of @Name with @[Name](publicKey)
                 const displayPattern = `@${mention.displayName}`;
@@ -930,19 +999,17 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         
         // Update last read timestamp for this channel (we just sent a message)
         updateLastRead(channel);
-    }, [inputValue, username, userColor, activeTab, chatTabs, myClientId, getDmChannelId, userPublicKey, pendingMentions]);
+    }, [inputValue, username, userColor, activeTab, chatTabs, myClientId, getDmChannelId, userPublicKey, pendingMentions, updateLastRead]);
     
-    // Update last read timestamp for a channel
-    const updateLastRead = useCallback((channelId) => {
-        setUnreadCounts(prev => {
-            const updated = {
-                ...prev,
-                [channelId]: { lastRead: Date.now(), count: 0 }
-            };
-            saveUnreadCounts(workspaceId, updated, userPublicKey);
-            return updated;
-        });
-    }, [workspaceId, userPublicKey]);
+    // Mark channel as read when switching tabs if already at bottom
+    useEffect(() => {
+        const channelId = activeTab === 'general' ? 'general' : activeTab;
+        const container = chatContainerRef.current;
+        // Mark read if container isn't scrollable or user is already at the bottom
+        if (!container || container.scrollHeight - container.scrollTop - container.clientHeight < 50) {
+            updateLastRead(channelId);
+        }
+    }, [activeTab, updateLastRead]);
     
     // Handle scroll to detect when user scrolls to bottom
     const handleChatScroll = useCallback(() => {
@@ -1076,7 +1143,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         // Detect @mention trigger
         const cursorPos = e.target.selectionStart;
         const textBeforeCursor = value.substring(0, cursorPos);
-        const atMatch = textBeforeCursor.match(/@([\w\s\-.]*)$/);
+        const atMatch = textBeforeCursor.match(/@([\w\-.]*)$/);
         
         if (atMatch && atMatch[1].length >= 1) {
             // Show mention popup when @ followed by at least 1 character
@@ -1120,7 +1187,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
         });
         
         return allUsers;
-    }, [onlineUsers, workspaceMembers, mentionQuery]);
+    }, [onlineUsers, workspaceMembers, mentionQuery, userPublicKey]);
     
     // Insert a mention into the input
     // Display @Name in the input, store full mention data for conversion on send
@@ -1165,7 +1232,9 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     };
 
     const formatDate = (timestamp) => {
+        if (!timestamp || isNaN(timestamp)) return 'Unknown date';
         const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return 'Unknown date';
         const today = new Date();
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
@@ -1226,13 +1295,6 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
             bottom: 'auto'
         } : {})
     };
-
-    // Handle click on minimized chat (only expand if not dragging)
-    const handleMinimizedClick = useCallback((e) => {
-        // Don't expand if we just finished dragging
-        if (chatState.position.x !== null && isDragging) return;
-        setMinimized(false);
-    }, [isDragging, chatState.position.x]);
 
     if (chatState.isMinimized) {
         return (
@@ -1478,7 +1540,7 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
                             </div>
                         ) : (
                             filteredUsers.map((user, index) => {
-                                const isSelected = selectedUsersForGroup.some(u => u.clientId === user.clientId);
+                                const isSelected = selectedUsersForGroup.some(u => (u.publicKey || u.clientId) === (user.publicKey || user.clientId));
                                 return (
                                     <div 
                                         key={user.publicKey || user.clientId || index}

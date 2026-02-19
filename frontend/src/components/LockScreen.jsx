@@ -15,7 +15,7 @@ export default function LockScreen({ onUnlock, onSwitchIdentity }) {
     const [error, setError] = useState(null);
     const [unlocking, setUnlocking] = useState(false);
     const [identity, setIdentity] = useState(null);
-    const [remaining, setRemaining] = useState(10);
+    const [remaining, setRemaining] = useState(null);
     
     useEffect(() => {
         // Get the active identity metadata
@@ -119,9 +119,11 @@ export default function LockScreen({ onUnlock, onSwitchIdentity }) {
                         autoFocus
                     />
                     
-                    <div className="lock-screen__attempts">
-                        {remaining} attempts remaining
-                    </div>
+                    {remaining !== null && (
+                        <div className="lock-screen__attempts">
+                            {remaining} attempts remaining
+                        </div>
+                    )}
                     
                     {unlocking && (
                         <div className="lock-screen__unlocking">

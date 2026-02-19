@@ -122,7 +122,7 @@ export default function CreateIdentity({ hasExistingIdentity, onComplete, onBack
                 icon: selectedEmoji,
                 color: selectedColor
             };
-            localStorage.setItem('nahma-user-profile', JSON.stringify(profileData));
+            localStorage.setItem('nightjar-user-profile', JSON.stringify(profileData));
             
             onComplete(identity);
         } catch (e) {

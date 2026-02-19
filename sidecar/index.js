@@ -178,6 +178,28 @@ const MAX_CONTENT_SIZE = 50 * 1024 * 1024; // 50MB max content
 
 // --- Input Validation Utilities ---
 
+// Maximum number of Yjs documents that can be created to prevent memory exhaustion
+const MAX_YJS_DOCS = 500;
+
+/**
+ * Get or create a Yjs doc, preventing duplicate creation from concurrent async handlers.
+ * Always checks the docs map first; only calls getYDoc() if the doc doesn't exist yet.
+ * Enforces a maximum document count to prevent memory exhaustion from malicious peers.
+ * @param {string} roomName - The room/document name
+ * @returns {import('yjs').Doc|null} The Yjs document, or null if the limit is reached
+ */
+function getOrCreateYDoc(roomName) {
+    let doc = docs.get(roomName);
+    if (!doc) {
+        if (docs.size >= MAX_YJS_DOCS) {
+            console.error(`[Sidecar] Maximum Yjs document limit (${MAX_YJS_DOCS}) reached. Rejecting new doc: ${roomName}`);
+            return null;
+        }
+        doc = getYDoc(roomName);
+    }
+    return doc;
+}
+
 /**
  * Validate and sanitize an ID (document, workspace, folder, etc.)
  * @param {string} id - ID to validate
@@ -188,8 +210,8 @@ function sanitizeId(id) {
     id = id.trim();
     if (id.length === 0 || id.length > MAX_ID_LENGTH) return null;
     
-    // Only allow safe characters
-    const safePattern = /^[a-zA-Z0-9_\-\.:]+$/;
+    // Only allow safe characters (no colons/periods — they are LevelDB key delimiters)
+    const safePattern = /^[a-zA-Z0-9_\-]+$/;
     if (!safePattern.test(id)) return null;
     
     // Reject path traversal
@@ -357,7 +379,8 @@ class RateLimiter {
         
         for (const [clientId, client] of this.clients) {
             if (client.requests.length === 0 || 
-                (client.requests[client.requests.length - 1] < staleThreshold && !client.blocked)) {
+                (client.requests[client.requests.length - 1] < staleThreshold && 
+                 (!client.blocked || now >= client.blockedUntil))) {
                 this.clients.delete(clientId);
             }
         }
@@ -367,8 +390,14 @@ class RateLimiter {
 // Global rate limiter instance
 const rateLimiter = new RateLimiter();
 
+// Dedicated map for verify timeouts (avoids global namespace pollution)
+const verifyTimeouts = new Map();
+
+// Track interval IDs for graceful shutdown
+const activeIntervals = [];
+
 // Clean up rate limiter every minute
-setInterval(() => rateLimiter.cleanup(), 60000);
+activeIntervals.push(setInterval(() => rateLimiter.cleanup(), 60000));
 
 // --- Application State ---
 let onionAddress = null;
@@ -489,6 +518,7 @@ function parseP2PMessage(message) {
 
 // Helper to broadcast status to all connected metadata clients
 function broadcastStatus() {
+    if (!metaWss) return; // Server not started yet
     const meshStatus = meshParticipant ? meshParticipant.getStatus() : null;
     const statusMessage = JSON.stringify({
         type: 'status',
@@ -568,6 +598,8 @@ async function loadPersistedData(docName, doc, key) {
     };
     
     // Load document-specific updates using range query
+    // Wrap iterator in try/catch so a corrupt LevelDB entry doesn't crash the entire load
+    try {
     for await (const [dbKey, value] of db.iterator(rangeOptions)) {
         if (DEBUG_MODE) console.log(`[Sidecar] DB key: ${dbKey}`);
         const decrypted = decryptUpdate(value, key);
@@ -586,9 +618,14 @@ async function loadPersistedData(docName, doc, key) {
             orphanedKeys.push(dbKey);
         }
     }
+    } catch (iterErr) {
+        console.error(`[Sidecar] LevelDB iterator error during range query for ${docName}:`, iterErr.message);
+        errors++;
+    }
     
     // Also load legacy data (no colon prefix) and p2p data for backwards compatibility
     // These are less common, so a separate pass is acceptable
+    try {
     for await (const [dbKey, value] of db.iterator()) {
         const isLegacy = !dbKey.includes(':');
         const isP2P = dbKey.startsWith('p2p:');
@@ -597,7 +634,6 @@ async function loadPersistedData(docName, doc, key) {
         if (!isLegacy && !isP2P) continue;
         
         // Filter P2P entries: only apply updates belonging to this document
-        // P2P keys have format "p2p:<docName>:<id>" � skip entries for other documents
         if (isP2P) {
             const p2pDocName = dbKey.split(':')[1];
             if (p2pDocName && p2pDocName !== docName) continue;
@@ -619,6 +655,10 @@ async function loadPersistedData(docName, doc, key) {
             orphaned++;
             orphanedKeys.push(dbKey);
         }
+    }
+    } catch (iterErr) {
+        console.error(`[Sidecar] LevelDB iterator error during legacy/P2P scan for ${docName}:`, iterErr.message);
+        errors++;
     }
     
     console.log(`[Sidecar] Loaded ${count} persisted updates for document: ${docName} (${errors} errors, ${orphaned} orphaned)`);
@@ -1321,13 +1361,18 @@ async function deleteWorkspaceMetadata(workspaceId) {
         for (const docKey of docsToDelete) {
             const docId = docKey.slice(4); // Remove 'doc:' prefix
             try {
-                // Delete all updates for this document
-                for await (const [key] of db.iterator()) {
+                // Collect keys first to avoid mutation during iteration
+                const keysToDelete = [];
+                for await (const [key] of db.iterator({ keys: true, values: false })) {
                     if (key.startsWith(`${docId}:`)) {
-                        await db.del(key);
+                        keysToDelete.push(key);
                     }
                 }
-                console.log(`[Sidecar] Deleted Yjs data for document: ${docId}`);
+                // Delete collected keys in a separate pass
+                for (const key of keysToDelete) {
+                    await db.del(key);
+                }
+                console.log(`[Sidecar] Deleted ${keysToDelete.length} Yjs updates for document: ${docId}`);
             } catch (e) {
                 // Document might not have Yjs data
             }
@@ -1456,7 +1501,7 @@ async function purgeExpiredTrash() {
 }
 
 // Run trash purge check every hour
-setInterval(purgeExpiredTrash, 60 * 60 * 1000);
+activeIntervals.push(setInterval(purgeExpiredTrash, 60 * 60 * 1000));
 // Also run on startup after a delay
 setTimeout(purgeExpiredTrash, 5000);
 
@@ -1486,6 +1531,105 @@ async function validateRelayServer(serverUrl) {
         console.error('[Sidecar] Relay server validation failed:', err.message);
         return false;
     }
+}
+
+// --- Workspace State Cleanup ---
+// Clean up all in-memory state associated with a workspace when it's left or deleted.
+// This prevents memory leaks and stale P2P observers from accumulating.
+function cleanupWorkspaceState(wsId) {
+    console.log(`[Sidecar] Cleaning up workspace state for ${wsId.slice(0, 16)}...`);
+    
+    // 1. Remove topic-to-workspace mapping and leave P2P topic
+    for (const [topicHex, mappedWsId] of topicToWorkspace.entries()) {
+        if (mappedWsId === wsId) {
+            topicToWorkspace.delete(topicHex);
+            // Leave the P2P topic
+            if (p2pBridge && p2pBridge.isInitialized) {
+                p2pBridge.leaveTopic(topicHex).catch(err => {
+                    console.warn(`[Sidecar] Failed to leave P2P topic on cleanup:`, err.message);
+                });
+            }
+            console.log(`[Sidecar] Removed topic mapping: ${topicHex.slice(0, 16)}...`);
+        }
+    }
+    
+    // 2. Remove registered topic observer flag (note: actual listeners on the doc
+    //    are cleaned up when the doc is destroyed)
+    registeredTopicObservers.delete(wsId);
+    
+    // 3. Remove remote peer awareness for this workspace
+    remotePeerAwareness.delete(wsId);
+    
+    // 4. Clean up awareness throttle (clear pending timer)
+    const throttle = awarenessThrottles.get(wsId);
+    if (throttle) {
+        if (throttle.timer) clearTimeout(throttle.timer);
+        awarenessThrottles.delete(wsId);
+    }
+    
+    // 5. Destroy the workspace-meta Yjs doc
+    const roomName = `workspace-meta:${wsId}`;
+    const doc = docs.get(roomName);
+    if (doc) {
+        try { doc.destroy(); } catch (e) { /* ignore */ }
+        docs.delete(roomName);
+        console.log(`[Sidecar] Destroyed Yjs doc: ${roomName}`);
+    }
+    
+    // 6. Clean up pending updates for workspace-meta
+    pendingUpdates.delete(roomName);
+    
+    // 7. Clean up pending manifest verifications for this workspace
+    const pendingManifest = pendingManifestVerifications.get(wsId);
+    if (pendingManifest) {
+        if (pendingManifest.timeoutId) clearTimeout(pendingManifest.timeoutId);
+        pendingManifestVerifications.delete(wsId);
+    }
+    
+    // 8. Clean up document keys for this workspace
+    const metaKey = `workspace-meta:${wsId}`;
+    const foldersKey = `workspace-folders:${wsId}`;
+    documentKeys.delete(metaKey);
+    documentKeys.delete(foldersKey);
+    // Also clean up doc-level keys and Yjs docs that belong to this workspace
+    // Look up which documents belong to this workspace and remove their keys + in-memory docs
+    loadDocumentList().then(allDocs => {
+        const docsInWorkspace = allDocs.filter(d => d.workspaceId === wsId);
+        for (const docMeta of docsInWorkspace) {
+            const docKey = `doc-${docMeta.id}`;
+            if (documentKeys.has(docKey)) {
+                documentKeys.delete(docKey);
+                console.log(`[Sidecar] Removed encryption key for ${docKey}`);
+            }
+            // Destroy the in-memory Yjs doc for this document
+            const docYjs = docs.get(docKey);
+            if (docYjs) {
+                try { docYjs.destroy(); } catch (e) { /* ignore */ }
+                docs.delete(docKey);
+                console.log(`[Sidecar] Destroyed Yjs doc: ${docKey}`);
+            }
+            // Also clean up pending updates and awareness listeners for this doc
+            pendingUpdates.delete(docKey);
+            awarenessListeners.delete(docKey);
+        }
+    }).catch(err => {
+        console.warn(`[Sidecar] Failed to clean up doc keys for workspace ${wsId.slice(0, 16)}...:`, err.message);
+    });
+    
+    // 9. Clear verify timeouts for this workspace
+    const verifyTimeoutKey = `verify-timeout:${wsId}`;
+    if (verifyTimeouts.has(verifyTimeoutKey)) {
+        clearTimeout(verifyTimeouts.get(verifyTimeoutKey));
+        verifyTimeouts.delete(verifyTimeoutKey);
+    }
+    
+    // 10. Clean up awareness listeners for this workspace's rooms
+    const awarenessKey = `workspace-meta:${wsId}`;
+    if (awarenessListeners.has(awarenessKey)) {
+        awarenessListeners.delete(awarenessKey);
+    }
+    
+    console.log(`[Sidecar] Workspace state cleanup complete for ${wsId.slice(0, 16)}...`);
 }
 
 // --- Metadata Message Handler ---
@@ -1822,6 +1966,9 @@ async function handleMetadataMessage(ws, parsed) {
             const deleteWsId = workspaceId || parsed.payload?.workspaceId;
             if (deleteWsId) {
                 try {
+                    // Clean up P2P state for this workspace
+                    cleanupWorkspaceState(deleteWsId);
+                    
                     await deleteWorkspaceMetadata(deleteWsId);
                     ws.send(JSON.stringify({ type: 'workspace-deleted', workspaceId: deleteWsId }));
                 } catch (err) {
@@ -1921,12 +2068,12 @@ async function handleMetadataMessage(ws, parsed) {
                                     console.log(`[Sidecar] Attempting to connect to peer: ${peerKey.slice(0, 16)}...`);
                                     // Queue sync for after identity verification
                                     if (topicHash) {
-                                        let pendingTopics = pendingSyncRequests.get(peerKey);
-                                        if (!pendingTopics) {
-                                            pendingTopics = new Set();
-                                            pendingSyncRequests.set(peerKey, pendingTopics);
+                                        let pending = pendingSyncRequests.get(peerKey);
+                                        if (!pending || pending instanceof Set) {
+                                            pending = { topics: (pending instanceof Set) ? pending : new Set(), addedAt: Date.now() };
+                                            pendingSyncRequests.set(peerKey, pending);
                                         }
-                                        pendingTopics.add(topicHash);
+                                        pending.topics.add(topicHash);
                                         console.log(`[Sidecar] Queued sync-request for ${peerKey.slice(0, 16)}...`);
                                     }
                                     await p2pBridge.connectToPeer(peerKey);
@@ -1947,7 +2094,9 @@ async function handleMetadataMessage(ws, parsed) {
                                             p2pBridge.hyperswarm.sendSyncRequest(peerKey, topicHash);
                                             // Remove from pending since we just sent it
                                             const pending = pendingSyncRequests.get(peerKey);
-                                            if (pending) pending.delete(topicHash);
+                                            if (pending && pending.topics) {
+                                                pending.topics.delete(topicHash);
+                                            }
                                         }
                                     }
                                 }, 500); // Short delay for connection to register
@@ -1974,11 +2123,19 @@ async function handleMetadataMessage(ws, parsed) {
             if (leaveWsId) {
                 try {
                     console.log('[Sidecar] leave-workspace: Removing local workspace', leaveWsId);
+                    
+                    // Clean up P2P state for this workspace before removing metadata
+                    cleanupWorkspaceState(leaveWsId);
+                    
                     await deleteWorkspaceMetadata(leaveWsId);
-                    metaWss.clients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({ type: 'workspace-left', workspaceId: leaveWsId }));
-                        }
+                    // Defer workspace-left notification so leaveWorkspace teardown completes
+                    // before y-websocket reacts to the event (prevents reconnect during cleanup)
+                    setImmediate(() => {
+                        metaWss.clients.forEach(client => {
+                            if (client.readyState === WebSocket.OPEN) {
+                                client.send(JSON.stringify({ type: 'workspace-left', workspaceId: leaveWsId }));
+                            }
+                        });
                     });
                 } catch (err) {
                     console.error('[Sidecar] Failed to leave workspace:', err);
@@ -2541,7 +2698,7 @@ async function handleMetadataMessage(ws, parsed) {
         case 'switch-identity':
             try {
                 const { filename } = parsed.payload || {};
-                if (!filename) {
+                if (!filename || typeof filename !== 'string' || filename.length > 256) {
                     ws.send(JSON.stringify({
                         type: 'identity-switched',
                         success: false,
@@ -2549,8 +2706,32 @@ async function handleMetadataMessage(ws, parsed) {
                     }));
                     return;
                 }
+                // Reject path separators and traversal sequences before they reach the filesystem
+                if (/[/\\]/.test(filename) || filename.includes('..') || filename.includes('\x00')) {
+                    ws.send(JSON.stringify({
+                        type: 'identity-switched',
+                        success: false,
+                        error: 'Invalid filename: path separators not allowed'
+                    }));
+                    return;
+                }
                 
                 identity.switchIdentity(filename);
+                
+                // Destroy all existing Yjs docs from previous identity
+                for (const [roomName, doc] of docs.entries()) {
+                    try {
+                        const listener = awarenessListeners.get(roomName);
+                        if (listener && doc.awareness) {
+                            doc.awareness.off('update', listener);
+                        }
+                        doc.destroy();
+                    } catch (e) {
+                        console.warn(`[Sidecar] Error destroying doc ${roomName} during identity switch:`, e.message);
+                    }
+                }
+                docs.clear();
+                console.log('[Sidecar] Destroyed and cleared all Yjs docs for identity switch');
                 
                 // Clear stale mappings from previous identity before reinitializing
                 topicToWorkspace.clear();
@@ -2567,10 +2748,22 @@ async function handleMetadataMessage(ws, parsed) {
                 // Reinitialize P2P with new identity
                 await initializeP2P(true);
                 
+                const fullIdentity = identity.loadIdentity();
+                // Explicitly construct safe response — strip private key, mnemonic,
+                // and encode publicKey as hex for consistent frontend consumption
+                const safeIdentity = {
+                    publicKeyHex: Buffer.from(fullIdentity.publicKey).toString('hex'),
+                    publicKeyBase62: fullIdentity.publicKeyBase62,
+                    handle: fullIdentity.handle,
+                    color: fullIdentity.color,
+                    icon: fullIdentity.icon,
+                    createdAt: fullIdentity.createdAt,
+                    devices: fullIdentity.devices,
+                };
                 ws.send(JSON.stringify({
                     type: 'identity-switched',
                     success: true,
-                    identity: identity.loadIdentity()
+                    identity: safeIdentity
                 }));
             } catch (err) {
                 console.error('[Sidecar] Failed to switch identity:', err);
@@ -2699,12 +2892,12 @@ async function handleMetadataMessage(ws, parsed) {
                             try {
                                 await p2pBridge.connectToPeer(peer.publicKey);
                                 // Queue sync request for when identity is verified
-                                let pendingTopics = pendingSyncRequests.get(peer.publicKey);
-                                if (!pendingTopics) {
-                                    pendingTopics = new Set();
-                                    pendingSyncRequests.set(peer.publicKey, pendingTopics);
+                                let pending = pendingSyncRequests.get(peer.publicKey);
+                                if (!pending || pending instanceof Set) {
+                                    pending = { topics: (pending instanceof Set) ? pending : new Set(), addedAt: Date.now() };
+                                    pendingSyncRequests.set(peer.publicKey, pending);
                                 }
-                                pendingTopics.add(topicHash);
+                                pending.topics.add(topicHash);
                                 syncAttempts++;
                             } catch (e) {
                                 // Peer may be offline
@@ -2830,9 +3023,21 @@ async function handleMetadataMessage(ws, parsed) {
                     }
                 }
                 
-                // 3. Clear all Yjs docs in memory
+                // 3. Destroy all Yjs docs in memory before clearing
+                for (const [roomName, doc] of docs.entries()) {
+                    try {
+                        // Remove awareness listener first to avoid firing during destroy
+                        const listener = awarenessListeners.get(roomName);
+                        if (listener && doc.awareness) {
+                            doc.awareness.off('update', listener);
+                        }
+                        doc.destroy();
+                    } catch (e) {
+                        console.warn(`[Sidecar] Error destroying doc ${roomName}:`, e.message);
+                    }
+                }
                 docs.clear();
-                console.log('[Sidecar] In-memory Yjs docs cleared');
+                console.log('[Sidecar] In-memory Yjs docs destroyed and cleared');
                 
                 // 4. Clear the main document database
                 console.log('[Sidecar] Clearing main document database...');
@@ -2939,6 +3144,14 @@ async function handleMetadataMessage(ws, parsed) {
                     error: err.message
                 }));
             }
+            break;
+        
+        case 'shutdown':
+            // Graceful shutdown requested by main process
+            console.log('[Sidecar] Graceful shutdown requested via WebSocket');
+            ws.send(JSON.stringify({ type: 'shutdown-ack' }));
+            // Trigger graceful shutdown
+            shutdown();
             break;
         
         default:
@@ -3296,9 +3509,25 @@ const topicToWorkspace = new Map();
 // registerWorkspaceTopic() is called multiple times for the same workspace
 const registeredTopicObservers = new Set();
 
-// Map of peerId -> Set of topicHex that need sync after identity is verified
+// Map of peerId -> { topics: Set of topicHex, addedAt: timestamp } that need sync after identity is verified
 // This ensures we only send sync-request after the peer handshake is complete
 const pendingSyncRequests = new Map();
+const PENDING_SYNC_TTL_MS = 2 * 60 * 1000; // 2 minutes - if a peer doesn't verify in this time, drop the request
+
+// Clean up stale pending sync requests every 60 seconds
+activeIntervals.push(setInterval(() => {
+    const now = Date.now();
+    for (const [peerId, data] of pendingSyncRequests.entries()) {
+        // Normalize legacy bare-Set entries to proper object format
+        if (data instanceof Set) {
+            pendingSyncRequests.set(peerId, { topics: data, addedAt: now });
+            continue; // give it a fresh TTL after normalization
+        }
+        if (data.addedAt && (now - data.addedAt) > PENDING_SYNC_TTL_MS) {
+            pendingSyncRequests.delete(peerId);
+        }
+    }
+}, 60000));
 
 function setupYjsP2PBridge() {
     if (!p2pBridge || !p2pBridge.hyperswarm) {
@@ -3517,8 +3746,12 @@ async function handleSyncStateRequest(peerId, topicHex) {
             console.log(`[P2P-SYNC-STATE] Doc not in memory, loading from persistence...`);
             const key = getKeyForDocument(roomName);
             if (key) {
-                // Use getYDoc to create proper WSSharedDoc with awareness
-                doc = getYDoc(roomName);
+                // Use getOrCreateYDoc to prevent duplicate doc creation from concurrent handlers
+                doc = getOrCreateYDoc(roomName);
+                if (!doc) {
+                    console.error(`[P2P-SYNC-STATE] Cannot create Yjs doc for ${roomName} — MAX_YJS_DOCS limit reached`);
+                    return;
+                }
                 await loadPersistedData(roomName, doc, key);
                 console.log(`[P2P-SYNC-STATE] ? Loaded doc from persistence`);
             } else {
@@ -3614,7 +3847,11 @@ async function syncAllDocumentsForWorkspace(peerId, topicHex, workspaceId, metaD
                 }
                 
                 if (key) {
-                    contentDoc = getYDoc(docId);
+                    contentDoc = getOrCreateYDoc(docId);
+                    if (!contentDoc) {
+                        console.error(`[P2P-SYNC-STATE] Cannot create Yjs doc for ${docId} — MAX_YJS_DOCS limit reached`);
+                        continue;
+                    }
                     await loadPersistedData(docId, contentDoc, key);
                     console.log(`[P2P-SYNC-STATE] Loaded document ${docId} from persistence`);
                 } else {
@@ -3689,11 +3926,15 @@ async function handleSyncStateReceived(peerId, topicHex, data) {
             return;
         }
         
-        // Get or create the Yjs doc using getYDoc to ensure proper WSSharedDoc with awareness
-        // This is critical - using Y.Doc directly causes crashes when WebSocket clients connect
-        let doc = docs.get(roomName);
+        // Get or create the Yjs doc – use getOrCreateYDoc to prevent duplicate creation
+        // from concurrent P2P handlers. This also ensures proper WSSharedDoc with awareness.
+        let doc = getOrCreateYDoc(roomName);
         if (!doc) {
-            doc = getYDoc(roomName);
+            console.error(`[P2P-SYNC-STATE] Cannot create Yjs doc for ${roomName} — MAX_YJS_DOCS limit reached. Dropping sync data.`);
+            return;
+        }
+        if (!docs.has(roomName)) {
+            // Shouldn't happen since getOrCreateYDoc sets it, but log just in case
             console.log(`[P2P-SYNC-STATE] Created new WSSharedDoc for: ${roomName}`);
         }
         
@@ -3910,7 +4151,11 @@ async function handleDocumentsRequest(peerId, topicHex, documentIds) {
             try {
                 let contentDoc = docs.get(docId);
                 if (!contentDoc) {
-                    contentDoc = getYDoc(docId);
+                    contentDoc = getOrCreateYDoc(docId);
+                    if (!contentDoc) {
+                        console.error(`[P2P-DOCS-REQUEST] Cannot create Yjs doc for ${docId} — MAX_YJS_DOCS limit reached`);
+                        continue;
+                    }
                     const key = getKeyForDocument(docId);
                     if (key) {
                         await loadPersistedData(docId, contentDoc, key);
@@ -3997,9 +4242,9 @@ function requestManifestVerification(workspaceId, topicHex) {
         // Safety timeout: if we don't get a verification response within 30s,
         // transition to 'failed' so the UI doesn't show "Verifying..." forever
         const verifyTimeoutKey = `verify-timeout:${workspaceId}`;
-        if (global[verifyTimeoutKey]) clearTimeout(global[verifyTimeoutKey]);
-        global[verifyTimeoutKey] = setTimeout(() => {
-            delete global[verifyTimeoutKey];
+        if (verifyTimeouts.has(verifyTimeoutKey)) clearTimeout(verifyTimeouts.get(verifyTimeoutKey));
+        verifyTimeouts.set(verifyTimeoutKey, setTimeout(() => {
+            verifyTimeouts.delete(verifyTimeoutKey);
             // Only broadcast 'failed' if we're still in 'verifying' state
             // (a successful response would have already changed it)
             const pending = pendingManifestVerifications?.get(workspaceId);
@@ -4007,7 +4252,7 @@ function requestManifestVerification(workspaceId, topicHex) {
                 console.warn(`[P2P-MANIFEST] Verification timeout for ${workspaceId.slice(0, 8)}... — no peer responded in 30s`);
                 broadcastSyncStatus(workspaceId, 'failed', { reason: 'timeout' });
             }
-        }, 30000);
+        }, 30000));
     }
 }
 
@@ -4083,7 +4328,38 @@ async function handleP2PSyncMessage(peerId, topicHex, data) {
             console.log(`[P2P-SYNC] ⚠ Using fallback format - room: ${roomName}`);
         }
         
+        // Validate roomName from untrusted peer:
+        // 1. Must be a string of reasonable length
+        // 2. Must only contain safe characters (alphanumeric, dash, colon, dot)
+        // 3. Must be either 'workspace-meta:{workspaceId}' or 'doc-{id}' belonging to this workspace
+        if (typeof roomName !== 'string' || roomName.length === 0 || roomName.length > 512) {
+            console.warn(`[P2P-SYNC] Rejected invalid roomName (length: ${roomName?.length || 0})`);
+            return;
+        }
+        if (!/^[a-zA-Z0-9_\-\.:]+$/.test(roomName)) {
+            console.warn(`[P2P-SYNC] Rejected roomName with unsafe characters: ${roomName.slice(0, 32)}...`);
+            return;
+        }
+        // Ensure roomName is scoped to this workspace
+        if (roomName.startsWith('workspace-meta:')) {
+            const expectedRoomName = `workspace-meta:${workspaceId}`;
+            if (roomName !== expectedRoomName) {
+                console.warn(`[P2P-SYNC] Rejected cross-workspace roomName: ${roomName.slice(0, 32)} (expected ${expectedRoomName.slice(0, 32)})`);
+                return;
+            }
+        } else if (!roomName.startsWith('doc-')) {
+            console.warn(`[P2P-SYNC] Rejected unknown roomName prefix: ${roomName.slice(0, 32)}`);
+            return;
+        }
+        
         console.log(`[P2P-SYNC] Update size: ${updateData?.length} bytes`);
+        
+        // Enforce maximum update size to prevent memory exhaustion from malicious peers
+        const MAX_P2P_UPDATE_SIZE = 50 * 1024 * 1024; // 50MB (matches MAX_CONTENT_SIZE)
+        if (updateData && updateData.length > MAX_P2P_UPDATE_SIZE) {
+            console.warn(`[P2P-SYNC] Rejected oversized update: ${updateData.length} bytes (max ${MAX_P2P_UPDATE_SIZE})`);
+            return;
+        }
 
         // For document content (doc-xxx), get the encryption key from workspace-meta
         if (roomName.startsWith('doc-')) {
@@ -4103,10 +4379,15 @@ async function handleP2PSyncMessage(peerId, topicHex, data) {
             }
         }
         
-        // Get or create the Yjs doc for the specified room
-        let doc = docs.get(roomName);
+        // Get or create the Yjs doc – use getOrCreateYDoc to prevent duplicate creation
+        // from concurrent P2P handlers (handleSyncStateRequest and handleP2PSyncMessage)
+        const docExisted = docs.has(roomName);
+        let doc = getOrCreateYDoc(roomName);
         if (!doc) {
-            doc = getYDoc(roomName);
+            console.error(`[P2P-SYNC] ✗ Cannot create Yjs doc for ${roomName} — MAX_YJS_DOCS limit (${MAX_YJS_DOCS}) reached. Dropping P2P sync data.`);
+            return;
+        }
+        if (!docExisted) {
             console.log(`[P2P-SYNC] ✓ Created new Yjs doc for: ${roomName}`);
         } else {
             console.log(`[P2P-SYNC] ✓ Found existing Yjs doc for: ${roomName}`);
@@ -4154,6 +4435,22 @@ async function handleP2PSyncMessage(peerId, topicHex, data) {
 // Remote peer states are stored in a separate map since y-protocols awareness 
 // uses clientID-based states that don't work well for cross-process bridging
 const remotePeerAwareness = new Map(); // workspaceId -> Map<peerId, state>
+const REMOTE_AWARENESS_STALE_MS = 5 * 60 * 1000; // 5 minutes
+
+// Periodically clean up stale remote peer awareness entries
+activeIntervals.push(setInterval(() => {
+    const now = Date.now();
+    for (const [wsId, peers] of remotePeerAwareness.entries()) {
+        for (const [peerId, state] of peers.entries()) {
+            if (state.lastSeen && (now - state.lastSeen) > REMOTE_AWARENESS_STALE_MS) {
+                peers.delete(peerId);
+            }
+        }
+        if (peers.size === 0) {
+            remotePeerAwareness.delete(wsId);
+        }
+    }
+}, 60000)); // Run every minute
 
 async function handleP2PAwarenessUpdate(peerId, topicHex, state) {
     try {
@@ -4211,13 +4508,19 @@ async function handleP2PAwarenessUpdate(peerId, topicHex, state) {
             const roomName = documentId || `workspace-meta:${workspaceId}`;
             let doc = docs.get(roomName);
             
-            // Create doc on demand if not yet opened locally.
-            // This matches the pattern in handleP2PSyncMessage and prevents
-            // awareness updates (cursor positions, selections) from being
-            // silently dropped when the receiving client hasn't opened the doc yet.
-            if (!doc) {
-                doc = getYDoc(roomName);
+            // Only create doc on demand for workspace-meta rooms (safe, scoped to verified workspace).
+            // For document rooms (doc-*), only apply awareness to already-opened docs
+            // to prevent malicious peers from creating unlimited Yjs documents.
+            if (!doc && roomName === `workspace-meta:${workspaceId}`) {
+                doc = getOrCreateYDoc(roomName);
+                if (!doc) {
+                    console.error(`[P2P-AWARENESS] Cannot create Yjs doc for ${roomName} — MAX_YJS_DOCS limit reached`);
+                    return;
+                }
                 console.log(`[P2P-AWARENESS] Created new WSSharedDoc for awareness: ${roomName}`);
+            } else if (!doc) {
+                console.log(`[P2P-AWARENESS] Ignoring awareness for unopened doc: ${roomName}`);
+                return;
             }
             
             if (doc && doc.awareness) {
@@ -4403,7 +4706,8 @@ function setupPeerPersistence() {
     hyperswarm.on('peer-identity', async ({ peerId, identity }) => {
         try {
             // Check if we have pending sync requests for this peer
-            const pendingTopics = pendingSyncRequests.get(peerId);
+            const pending = pendingSyncRequests.get(peerId);
+            const pendingTopics = pending?.topics;
             if (pendingTopics && pendingTopics.size > 0) {
                 console.log(`[Sidecar] Peer ${peerId.slice(0, 16)}... verified, sending ${pendingTopics.size} pending sync-request(s)`);
                 for (const topicHex of pendingTopics) {
@@ -4484,51 +4788,63 @@ function setupPeerPersistence() {
     console.log('[Sidecar] Peer persistence handlers initialized');
 }
 
+// Per-workspace lock to prevent concurrent read-modify-write races in updateWorkspacePeers
+const workspacePeerLocks = new Map(); // workspaceId -> Promise
+
 // Helper to update a workspace's lastKnownPeers
 async function updateWorkspacePeers(workspaceId, peerPublicKey, isConnected) {
     await metadataDbReady;
     
-    try {
-        const existing = await metadataDb.get(`workspace:${workspaceId}`);
-        if (!existing) return;
-        
-        let peers = existing.lastKnownPeers || [];
-        
-        // Find existing peer entry
-        const existingIdx = peers.findIndex(p => p.publicKey === peerPublicKey);
-        
-        if (isConnected) {
-            const peerEntry = {
-                publicKey: peerPublicKey,
-                lastSeen: Date.now(),
-            };
+    // Serialize concurrent updates per workspace to prevent read-modify-write races.
+    // Without this lock, two peer-joined events for the same workspace can both
+    // read the same snapshot, each modify it, and the second write silently drops
+    // the first's changes.
+    const prev = workspacePeerLocks.get(workspaceId) || Promise.resolve();
+    const current = prev.then(async () => {
+        try {
+            const existing = await metadataDb.get(`workspace:${workspaceId}`);
+            if (!existing) return;
             
-            if (existingIdx >= 0) {
-                peers[existingIdx] = peerEntry;
+            let peers = existing.lastKnownPeers || [];
+            
+            // Find existing peer entry
+            const existingIdx = peers.findIndex(p => p.publicKey === peerPublicKey);
+            
+            if (isConnected) {
+                const peerEntry = {
+                    publicKey: peerPublicKey,
+                    lastSeen: Date.now(),
+                };
+                
+                if (existingIdx >= 0) {
+                    peers[existingIdx] = peerEntry;
+                } else {
+                    peers.push(peerEntry);
+                }
+                console.log(`[Sidecar] Persisted peer ${peerPublicKey.slice(0, 16)}... for workspace ${workspaceId.slice(0, 8)}...`);
             } else {
-                peers.push(peerEntry);
+                // Just update lastSeen, don't remove (they might come back)
+                if (existingIdx >= 0) {
+                    peers[existingIdx].lastSeen = Date.now();
+                    peers[existingIdx].disconnectedAt = Date.now();
+                }
             }
-            console.log(`[Sidecar] Persisted peer ${peerPublicKey.slice(0, 16)}... for workspace ${workspaceId.slice(0, 8)}...`);
-        } else {
-            // Just update lastSeen, don't remove (they might come back)
-            if (existingIdx >= 0) {
-                peers[existingIdx].lastSeen = Date.now();
-                peers[existingIdx].disconnectedAt = Date.now();
+            
+            // Keep only the most recent 20 peers
+            peers = peers
+                .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
+                .slice(0, 20);
+            
+            await saveWorkspaceMetadata(workspaceId, { ...existing, lastKnownPeers: peers });
+        } catch (err) {
+            // Workspace might not exist yet
+            if (err.code !== 'LEVEL_NOT_FOUND') {
+                console.error('[Sidecar] Failed to update workspace peers:', err.message);
             }
         }
-        
-        // Keep only the most recent 20 peers
-        peers = peers
-            .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
-            .slice(0, 20);
-        
-        await saveWorkspaceMetadata(workspaceId, { ...existing, lastKnownPeers: peers });
-    } catch (err) {
-        // Workspace might not exist yet
-        if (err.code !== 'LEVEL_NOT_FOUND') {
-            console.error('[Sidecar] Failed to update workspace peers:', err.message);
-        }
-    }
+    });
+    workspacePeerLocks.set(workspaceId, current);
+    return current;
 }
 
 // Auto-rejoin workspaces that have topic hashes saved
@@ -4567,12 +4883,12 @@ async function autoRejoinWorkspaces() {
                                 try {
                                     await p2pBridge.connectToPeer(peer.publicKey);
                                     // Queue sync request for when identity is verified
-                                    let pendingTopics = pendingSyncRequests.get(peer.publicKey);
-                                    if (!pendingTopics) {
-                                        pendingTopics = new Set();
-                                        pendingSyncRequests.set(peer.publicKey, pendingTopics);
+                                    let pending = pendingSyncRequests.get(peer.publicKey);
+                                    if (!pending) {
+                                        pending = { topics: new Set(), addedAt: Date.now() };
+                                        pendingSyncRequests.set(peer.publicKey, pending);
                                     }
-                                    pendingTopics.add(canonicalTopicHash);
+                                    pending.topics.add(canonicalTopicHash);
                                     console.log(`[Sidecar] Queued fresh sync request for peer ${peer.publicKey.slice(0, 16)}...`);
                                 } catch (e) {
                                     // Peer may be offline, continue
@@ -4915,7 +5231,7 @@ function cleanupPendingUpdates() {
 }
 
 // Clean up pending updates every minute
-setInterval(cleanupPendingUpdates, 60000);
+activeIntervals.push(setInterval(cleanupPendingUpdates, 60000));
 
 // When a new document is added, bind persistence to it
 docs.on('doc-added', async (doc, docName) => {
@@ -5166,12 +5482,26 @@ async function shutdown() {
         pendingUpdates.clear();
         console.log('[Sidecar] Pending updates cleared');
         
+        // Clear awareness throttle timers to prevent post-shutdown broadcasts
+        for (const [wsId, throttle] of awarenessThrottles.entries()) {
+            if (throttle.timer) clearTimeout(throttle.timer);
+        }
+        awarenessThrottles.clear();
+        console.log('[Sidecar] Awareness throttle timers cleared');
+        
         // Stop awareness bridging interval
         if (awarenessCleanupFn) {
             awarenessCleanupFn();
             awarenessCleanupFn = null;
             console.log('[Sidecar] Awareness bridging interval stopped');
         }
+        
+        // Clear all tracked intervals to unblock event loop
+        for (const id of activeIntervals) {
+            clearInterval(id);
+        }
+        activeIntervals.length = 0;
+        console.log('[Sidecar] All intervals cleared');
         
         // Close databases
         try {

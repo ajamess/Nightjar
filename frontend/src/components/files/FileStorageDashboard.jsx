@@ -99,6 +99,7 @@ function FileStorageContent({ onClose, workspaceProvider, onStartChatWith }) {
     restoreFolder,
     toggleFavorite,
     setChunkAvailability,
+    batchSetChunkAvailability,
     addAuditEntry,
     updateSettings,
     createFileRecord,
@@ -134,6 +135,7 @@ function FileStorageContent({ onClose, workspaceProvider, onStartChatWith }) {
     userPublicKey,
     createFileRecord,
     setChunkAvailability,
+    batchSetChunkAvailability,
     addAuditEntry,
   });
 
@@ -440,7 +442,7 @@ function FileStorageContent({ onClose, workspaceProvider, onStartChatWith }) {
             activeFolders={activeFolders || []}
             chunkAvailability={chunkAvailability}
             userPublicKey={userPublicKey}
-            onSelectFile={(f) => { /* detail panel opened from BrowseView */ }}
+            onSelectFile={(f) => { setActiveView(VIEWS.BROWSE); }}
             onDownloadFile={handleDownloadFile}
           />
         );

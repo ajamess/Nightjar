@@ -21,12 +21,22 @@ export function TorSettings({ isOpen, onClose }) {
   
   // Track component mount state for async operations
   const isMountedRef = useRef(true);
+  // Whether we've already registered the bootstrap listener (prevents stacking)
+  const bootstrapListenerRegistered = useRef(false);
+  // Store the unsubscribe function for the bootstrap IPC listener
+  const bootstrapUnsubscribeRef = useRef(null);
   
   // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      // Remove the bootstrap IPC listener to prevent listener stacking
+      if (bootstrapUnsubscribeRef.current) {
+        bootstrapUnsubscribeRef.current();
+        bootstrapUnsubscribeRef.current = null;
+      }
+      bootstrapListenerRegistered.current = false;
     };
   }, []);
   
@@ -73,7 +83,13 @@ export function TorSettings({ isOpen, onClose }) {
     
     if (window.electronAPI?.tor) {
       if (newMode === 'disabled') {
-        await window.electronAPI.tor.stop();
+        setIsStarting(false);
+        try {
+          await window.electronAPI.tor.stop();
+        } catch (err) {
+          console.error('Failed to stop Tor:', err);
+          setError(err.message || 'Failed to stop Tor');
+        }
         setTorStatus({ running: false, bootstrapped: false, onionAddress: null, circuitEstablished: false });
       }
     }
@@ -86,12 +102,18 @@ export function TorSettings({ isOpen, onClose }) {
     
     try {
       if (window.electronAPI?.tor) {
-        // Listen for bootstrap progress with mount check
-        window.electronAPI.tor.onBootstrap((progress) => {
-          if (isMountedRef.current) {
-            setBootstrapProgress(progress);
+        // Register bootstrap listener only once to prevent stacking on repeated clicks
+        if (!bootstrapListenerRegistered.current) {
+          bootstrapListenerRegistered.current = true;
+          const unsubscribe = window.electronAPI.tor.onBootstrap((progress) => {
+            if (isMountedRef.current) {
+              setBootstrapProgress(progress);
+            }
+          });
+          if (typeof unsubscribe === 'function') {
+            bootstrapUnsubscribeRef.current = unsubscribe;
           }
-        });
+        }
         
         await window.electronAPI.tor.start(torMode);
         if (isMountedRef.current) {

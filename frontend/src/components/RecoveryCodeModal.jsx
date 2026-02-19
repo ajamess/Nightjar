@@ -20,6 +20,8 @@ export default function RecoveryCodeModal({
   const [confirmed, setConfirmed] = useState(false);
   const wordsRef = useRef(null);
   const modalRef = useRef(null);
+  const copyTimerRef = useRef(null);
+  const clipboardClearTimerRef = useRef(null);
   
   // Focus trap for accessibility
   useFocusTrap(modalRef, true);
@@ -34,6 +36,14 @@ export default function RecoveryCodeModal({
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, isInitialSetup]);
+
+  // Clean up copy timer on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (clipboardClearTimerRef.current) clearTimeout(clipboardClearTimerRef.current);
+    };
+  }, []);
   
   if (!mnemonic) return null;
   
@@ -43,7 +53,10 @@ export default function RecoveryCodeModal({
     try {
       await navigator.clipboard.writeText(mnemonic);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+      if (clipboardClearTimerRef.current) clearTimeout(clipboardClearTimerRef.current);
+      clipboardClearTimerRef.current = setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), 60000);
     } catch (err) {
       // Fallback for older browsers
       try {
@@ -57,7 +70,10 @@ export default function RecoveryCodeModal({
         document.body.removeChild(textarea);
         if (success) {
           setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
+          if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+          copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+          if (clipboardClearTimerRef.current) clearTimeout(clipboardClearTimerRef.current);
+          clipboardClearTimerRef.current = setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), 60000);
         } else {
           console.error('Fallback copy failed');
         }
@@ -92,7 +108,7 @@ IMPORTANT:
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
   
   const handleConfirm = () => {

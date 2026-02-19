@@ -18,6 +18,7 @@ const cache = new Map();
 
 let _indexing = false;
 let _debounceTimer = null;
+let _indexVersion = 0;
 
 /**
  * Build or refresh the index.
@@ -35,8 +36,13 @@ export function buildIndex(opts) {
 
     if (_debounceTimer) clearTimeout(_debounceTimer);
 
+    // Increment version so prior pending promises resolve immediately
+    const myVersion = ++_indexVersion;
+
     return new Promise((resolve) => {
         _debounceTimer = setTimeout(async () => {
+            // If a newer buildIndex call was made, resolve immediately (superseded)
+            if (myVersion !== _indexVersion) { resolve(); return; }
             if (_indexing) { resolve(); return; }
             _indexing = true;
             try {
@@ -202,6 +208,11 @@ export function invalidate(docId) {
  */
 export function clearCache() {
     cache.clear();
+    // Also cancel any in-flight debounced builds
+    if (_debounceTimer) { clearTimeout(_debounceTimer); _debounceTimer = null; }
+    if (_safetyTimeout) { clearTimeout(_safetyTimeout); _safetyTimeout = null; }
+    if (_indexResolve) { _indexResolve(); _indexResolve = null; }
+    _indexing = false;
 }
 
 /**

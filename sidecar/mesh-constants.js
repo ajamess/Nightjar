@@ -39,6 +39,9 @@ function getMeshTopic() {
  * @returns {Buffer} 32-byte topic hash
  */
 function getWorkspaceTopic(workspaceId) {
+  if (!workspaceId || typeof workspaceId !== 'string') {
+    throw new Error('workspaceId is required and must be a string');
+  }
   return crypto.createHash('sha256')
     .update(WORKSPACE_TOPIC_PREFIX + workspaceId)
     .digest();
@@ -192,11 +195,15 @@ function generateNodeId() {
  * @returns {{ token: string, expiresAt: number }}
  */
 function generateAnnouncementToken(ip, secret) {
+  if (!ip || !secret) {
+    throw new Error('IP and secret are required for token generation');
+  }
   const timestamp = Date.now();
   const data = `${ip}:${secret}:${timestamp}`;
   const token = crypto.createHash('sha256').update(data).digest('hex');
   return {
     token,
+    issuedAt: timestamp,
     expiresAt: timestamp + TOKEN_VALIDITY_MS,
   };
 }

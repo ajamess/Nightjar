@@ -15,6 +15,7 @@ class RelayServer {
     this.swarmManager = new HyperswarmManager();
     this.topics = new Map(); // topicHex -> Set<clientId>
     this.clientCounter = 0;
+    this.heartbeatInterval = null;
   }
   
   async start() {
@@ -43,6 +44,23 @@ class RelayServer {
     });
     
     console.log(`[Relay] WebSocket relay server started on port ${this.port}`);
+
+    // Heartbeat interval to detect stale WebSocket connections
+    const RELAY_HEARTBEAT_INTERVAL = 30000; // 30 seconds
+    const RELAY_HEARTBEAT_TIMEOUT = 60000; // 60 seconds
+    this.heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [clientId, client] of this.clients) {
+        if (now - client.lastPong > RELAY_HEARTBEAT_TIMEOUT) {
+          console.log(`[Relay] Terminating stale client: ${clientId}`);
+          client.ws.terminate();
+          this.handleDisconnect(clientId);
+        } else if (client.ws.readyState === WebSocket.OPEN) {
+          client.ws.ping();
+        }
+      }
+    }, RELAY_HEARTBEAT_INTERVAL);
+
     return this;
   }
   
@@ -62,7 +80,13 @@ class RelayServer {
       ws,
       identity: null,
       topics: new Set(),
-      authTimeout
+      authTimeout,
+      lastPong: Date.now()
+    });
+
+    ws.on('pong', () => {
+      const client = this.clients.get(clientId);
+      if (client) client.lastPong = Date.now();
     });
     
     ws.on('message', (data) => {
@@ -130,6 +154,24 @@ class RelayServer {
   async handleJoinTopic(clientId, topicHex) {
     const client = this.clients.get(clientId);
     if (!client) return;
+    
+    // Require identity before joining topics (authentication check)
+    if (!client.identity) {
+      this.sendToClient(clientId, { type: 'error', error: 'identity_required' });
+      return;
+    }
+    
+    // Validate topic format (should be hex string)
+    if (!topicHex || typeof topicHex !== 'string' || topicHex.length > 128) {
+      this.sendToClient(clientId, { type: 'error', error: 'invalid_topic' });
+      return;
+    }
+    
+    // Limit max topics per client to prevent resource exhaustion
+    if (client.topics.size >= 50) {
+      this.sendToClient(clientId, { type: 'error', error: 'too_many_topics' });
+      return;
+    }
     
     // Add client to topic
     client.topics.add(topicHex);
@@ -206,6 +248,17 @@ class RelayServer {
   handleClientSync(clientId, message) {
     const { topic, data } = message;
     
+    // Validate topic membership and data size
+    const client = this.clients.get(clientId);
+    if (!client || !client.topics.has(topic)) return;
+    
+    // Limit sync data size to prevent unbounded relay (10MB max)
+    const MAX_SYNC_SIZE = 10 * 1024 * 1024;
+    if (data && JSON.stringify(data).length > MAX_SYNC_SIZE) {
+      this.sendToClient(clientId, { type: 'error', error: 'sync_too_large' });
+      return;
+    }
+    
     // Broadcast to other WebSocket clients
     this.broadcastToTopic(topic, {
       type: 'sync',
@@ -220,6 +273,17 @@ class RelayServer {
   
   handleClientAwareness(clientId, message) {
     const { topic, state } = message;
+    
+    // Validate topic membership and state size
+    const client = this.clients.get(clientId);
+    if (!client || !client.topics.has(topic)) return;
+    
+    // Limit awareness state size (1MB max)
+    const MAX_AWARENESS_SIZE = 1 * 1024 * 1024;
+    if (state && JSON.stringify(state).length > MAX_AWARENESS_SIZE) {
+      this.sendToClient(clientId, { type: 'error', error: 'awareness_too_large' });
+      return;
+    }
     
     // Broadcast to other WebSocket clients
     this.broadcastToTopic(topic, {
@@ -295,6 +359,11 @@ class RelayServer {
   }
   
   async stop() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
     await this.swarmManager.destroy();
     
     for (const client of this.clients.values()) {

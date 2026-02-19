@@ -60,7 +60,7 @@ const STATUS_CONFIG = {
  * @param {string} [props.className] - Additional CSS class
  * @param {boolean} [props.compact] - If true, renders as a small dot instead of pill
  */
-export default function StatusBadge({ status, className = '', compact = false }) {
+export default React.memo(function StatusBadge({ status, className = '', compact = false }) {
   const config = STATUS_CONFIG[status] || { label: status || 'Unknown', className: '' };
 
   if (compact) {
@@ -78,4 +78,4 @@ export default function StatusBadge({ status, className = '', compact = false })
       {config.label}
     </span>
   );
-}
+})

@@ -43,7 +43,7 @@ export default function ImportPreview({ rows, mapping, catalogItems, onConfirm, 
   const validated = useMemo(() => {
     return rows.map((row, i) => {
       const result = validateRow(row, mapping, catalogLookup, collaborators);
-      return { index: i, row, ...result };
+      return { index: i, row, warnings: [], errors: [], ...result };
     });
   }, [rows, mapping, catalogLookup, collaborators]);
 
@@ -145,7 +145,7 @@ export default function ImportPreview({ rows, mapping, catalogItems, onConfirm, 
                   <td key={f}>{v.mapped?.[f] ?? v.row?.[f] ?? ''}</td>
                 ))}
                 <td className="ip-issues">
-                  {[...v.errors, ...v.warnings].join('; ') || '—'}
+                  {[...(v.errors || []), ...(v.warnings || [])].join('; ') || '—'}
                 </td>
               </tr>
             ))}

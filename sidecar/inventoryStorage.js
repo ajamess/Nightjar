@@ -29,8 +29,8 @@ function setBasePath(bp) {
  */
 function sanitizeForFilename(input) {
   if (!input || typeof input !== 'string') return 'unknown';
-  // Replace null bytes, path separators, and traversal patterns with '_' to preserve distinctness
-  return input.replace(/[\x00/\\:]/g, '_').replace(/\.\./g, '_').trim() || 'unknown';
+  // Replace null bytes, path separators, Windows-invalid chars, and traversal patterns with '_'
+  return input.replace(/[\x00/\\:*?"<>|]/g, '_').replace(/\.\./g, '_').trim() || 'unknown';
 }
 
 /**

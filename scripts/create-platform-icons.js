@@ -12,11 +12,17 @@ async function createPlatformIcons() {
   
   // Create .icns for Mac
   const icns = png2icons.createICNS(input, png2icons.BICUBIC, 0);
+  if (!icns) {
+    throw new Error('Failed to create ICNS data — png2icons returned null. Check that icon.png is a valid PNG.');
+  }
   fs.writeFileSync(path.join(buildDir, 'icon.icns'), icns);
   console.log('✓ Created icon.icns (Mac)');
   
   // Create .ico for Windows
   const ico = png2icons.createICO(input, png2icons.BICUBIC, 0, false);
+  if (!ico) {
+    throw new Error('Failed to create ICO data — png2icons returned null. Check that icon.png is a valid PNG.');
+  }
   fs.writeFileSync(path.join(buildDir, 'icon.ico'), ico);
   console.log('✓ Created icon.ico (Windows)');
   

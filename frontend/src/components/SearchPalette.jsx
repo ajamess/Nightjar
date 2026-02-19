@@ -96,6 +96,7 @@ export default function SearchPalette({
     // ── Build content index when opening ────────────────────────────
     useEffect(() => {
         if (!show) return;
+        let cancelled = false;
         setIndexing(true);
         SearchIndex.buildIndex({
             isElectronMode,
@@ -103,7 +104,8 @@ export default function SearchPalette({
             documents,
             ydocsRef,
             debounceMs: 100,
-        }).finally(() => setIndexing(false));
+        }).finally(() => { if (!cancelled) setIndexing(false); });
+        return () => { cancelled = true; };
     }, [show, documents, isElectronMode, metaSocketRef, ydocsRef]);
 
     // ── Grab raw data from Yjs shared types ─────────────────────────
@@ -220,7 +222,7 @@ export default function SearchPalette({
         });
 
         return results;
-    }, [query, people, documents, folders, catalogItems, storageFiles, storageFolders, chatMessages]);
+    }, [query, people, documents, folders, catalogItems, storageFiles, storageFolders, chatMessages, indexing]);
 
     // ── Reset active index when results change ──────────────────────
     useEffect(() => { setActiveIdx(0); }, [allResults]);

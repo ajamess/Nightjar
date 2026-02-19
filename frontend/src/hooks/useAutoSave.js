@@ -7,6 +7,8 @@ export function useAutoSave(content, onSave, delay = 1000) {
     const [isSaving, setIsSaving] = useState(false);
     const isSavingRef = useRef(false);
     const isMountedRef = useRef(true);
+    const retryCountRef = useRef(0);
+    const MAX_RETRIES = 5;
     const saveRef = useRef(null);
     const onSaveRef = useRef(onSave);
     const contentRef = useRef(content);
@@ -25,18 +27,27 @@ export function useAutoSave(content, onSave, delay = 1000) {
 
     const save = useCallback(async () => {
         if (isSavingRef.current) {
-            // Retry after a short delay so we don't drop the save
-            setTimeout(() => { if (isMountedRef.current) saveRef.current?.(); }, 200);
+            if (retryCountRef.current >= MAX_RETRIES) {
+                console.warn('Auto-save: max retries reached, dropping retry');
+                retryCountRef.current = 0;
+                return;
+            }
+            // Retry with exponential backoff so we don't drop the save
+            const backoff = 200 * Math.pow(2, retryCountRef.current);
+            retryCountRef.current += 1;
+            setTimeout(() => { if (isMountedRef.current) saveRef.current?.(); }, backoff);
             return;
         }
-        if (content === lastSavedRef.current) return;
+        const currentContent = contentRef.current;
+        if (currentContent === lastSavedRef.current) return;
         
         isSavingRef.current = true;
         setIsSaving(true);
         try {
-            await onSaveRef.current(content);
+            await onSaveRef.current(currentContent);
+            retryCountRef.current = 0;
             if (isMountedRef.current) {
-                lastSavedRef.current = content;
+                lastSavedRef.current = currentContent;
             }
         } catch (error) {
             console.error('Auto-save failed:', error);
@@ -46,7 +57,7 @@ export function useAutoSave(content, onSave, delay = 1000) {
                 setIsSaving(false);
             }
         }
-    }, [content]);
+    }, []);
 
     saveRef.current = save;
 

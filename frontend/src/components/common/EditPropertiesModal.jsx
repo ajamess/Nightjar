@@ -4,9 +4,10 @@
  * Modal for editing folder/document icon and color
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import IconColorPicker from './IconColorPicker';
 import { ensureContrastWithWhite, createColorGradient } from '../../utils/colorUtils';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './EditPropertiesModal.css';
 
 export default function EditPropertiesModal({
@@ -19,6 +20,10 @@ export default function EditPropertiesModal({
     const [icon, setIcon] = useState(item?.icon || (item?.type === 'folder' ? '📁' : '📄'));
     const [color, setColor] = useState(item?.color || null);
     const [isSaving, setIsSaving] = useState(false);
+    const modalRef = useRef(null);
+    
+    // Focus trap for modal accessibility
+    useFocusTrap(modalRef, isOpen, { onEscape: onClose });
     
     // Sync local state when item changes (e.g., when modal opens with a new item)
     useEffect(() => {
@@ -43,19 +48,24 @@ export default function EditPropertiesModal({
     };
     
     const handleKeyDown = (e) => {
-        if (e.key === 'Escape') {
-            onClose();
-        }
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             handleSave();
         }
     };
     
     return (
-        <div className="edit-properties-modal__overlay" onClick={onClose} onKeyDown={handleKeyDown}>
-            <div className="edit-properties-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="edit-properties-modal__overlay" onClick={onClose} role="presentation">
+            <div
+                ref={modalRef}
+                className="edit-properties-modal"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={handleKeyDown}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="edit-properties-title"
+            >
                 <div className="edit-properties-modal__header">
-                    <h3 className="edit-properties-modal__title">
+                    <h3 id="edit-properties-title" className="edit-properties-modal__title">
                         Edit {item.type === 'folder' ? 'Folder' : 'Document'} Properties
                     </h3>
                     <button 

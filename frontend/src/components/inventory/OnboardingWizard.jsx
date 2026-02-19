@@ -52,32 +52,36 @@ export default function OnboardingWizard({ onComplete }) {
     }
 
     // Update system in Yjs
-    const existing = yInventorySystems.get(inventorySystemId);
-    if (existing) {
-      yInventorySystems.set(inventorySystemId, {
-        ...existing,
-        name,
-        icon: systemIcon,
-        settings: {
-          ...(existing.settings || {}),
-          requireApproval,
-          autoAssignEnabled: autoAssign,
-        },
-        updatedAt: Date.now(),
-      });
-    }
+    const doc = yInventorySystems.doc;
+    const doConfigure = () => {
+      const existing = yInventorySystems.get(inventorySystemId);
+      if (existing) {
+        yInventorySystems.set(inventorySystemId, {
+          ...existing,
+          name,
+          icon: systemIcon,
+          settings: {
+            ...(existing.settings || {}),
+            requireApproval,
+            autoAssignEnabled: autoAssign,
+          },
+          updatedAt: Date.now(),
+        });
+      }
 
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'system_configured',
-      targetId: inventorySystemId,
-      targetType: 'system',
-      summary: `System configured: "${name}" (approval=${requireApproval}, autoAssign=${autoAssign})`,
-      actorId: userIdentity?.publicKeyBase62 || 'unknown',
-      actorRole: 'owner',
-      timestamp: Date.now(),
-    }]);
+      yInventoryAuditLog.push([{
+        id: generateId('aud-'),
+        inventorySystemId,
+        action: 'system_configured',
+        targetId: inventorySystemId,
+        targetType: 'system',
+        summary: `System configured: "${name}" (approval=${requireApproval}, autoAssign=${autoAssign})`,
+        actorId: userIdentity?.publicKeyBase62 || 'unknown',
+        actorRole: 'owner',
+        timestamp: Date.now(),
+      }]);
+    };
+    if (doc) doc.transact(doConfigure); else doConfigure();
 
     setStep(2);
   }, [systemName, requireApproval, autoAssign, yInventorySystems, yInventoryAuditLog, inventorySystemId, showToast, userIdentity, systemIcon]);
@@ -103,19 +107,23 @@ export default function OnboardingWizard({ onComplete }) {
       createdAt: Date.now(),
     };
 
-    yCatalogItems.push([item]);
+    const catDoc = yCatalogItems.doc;
+    const doAddItem = () => {
+      yCatalogItems.push([item]);
 
-    yInventoryAuditLog.push([{
-      id: generateId('aud-'),
-      inventorySystemId,
-      action: 'catalog_item_added',
-      targetId: item.id,
-      targetType: 'catalog_item',
-      summary: `Catalog item added: "${item.name}"`,
-      actorId: userIdentity?.publicKeyBase62 || 'unknown',
-      actorRole: 'owner',
-      timestamp: Date.now(),
-    }]);
+      yInventoryAuditLog.push([{
+        id: generateId('aud-'),
+        inventorySystemId,
+        action: 'catalog_item_added',
+        targetId: item.id,
+        targetType: 'catalog_item',
+        summary: `Catalog item added: "${item.name}"`,
+        actorId: userIdentity?.publicKeyBase62 || 'unknown',
+        actorRole: 'owner',
+        timestamp: Date.now(),
+      }]);
+    };
+    if (catDoc) catDoc.transact(doAddItem); else doAddItem();
 
     showToast(`Added "${item.name}" to catalog`, 'success');
     setStep(3);

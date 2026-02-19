@@ -16,7 +16,9 @@ class MobileP2PService {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 1000;
+    this.reconnectTimer = null;
     this.isConnected = false;
+    this.destroyed = false;
     
     // Default relay server (users can self-host)
     this.relayUrl = 'wss://localhost:8082'; // Will be configurable
@@ -46,6 +48,7 @@ class MobileP2PService {
    * Connect to relay server
    */
   async connect() {
+    if (this.destroyed) return Promise.reject(new Error('Service destroyed'));
     return new Promise((resolve, reject) => {
       try {
         this.socket = new WebSocket(this.relayUrl);
@@ -99,6 +102,7 @@ class MobileP2PService {
    * Attempt to reconnect
    */
   attemptReconnect() {
+    if (this.destroyed) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.log('[MobileP2P] Max reconnect attempts reached');
       return;
@@ -109,7 +113,8 @@ class MobileP2PService {
     
     console.log(`[MobileP2P] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.connect().catch(() => {
         // Will trigger attemptReconnect again on failure
       });
@@ -157,7 +162,7 @@ class MobileP2PService {
           break;
           
         case 'peers-list':
-          for (const peer of message.peers) {
+          for (const peer of (message.peers || [])) {
             this.peers.set(peer.peerId, peer);
           }
           this.emit('peers-list', message);
@@ -240,7 +245,7 @@ class MobileP2PService {
   getPeers(topicHex) {
     const peers = [];
     for (const [peerId, peer] of this.peers) {
-      if (peer.topics?.includes(topicHex) || true) { // Simplified for now
+      if (peer.topics?.includes(topicHex)) {
         peers.push({ peerId, ...peer });
       }
     }
@@ -291,13 +296,23 @@ class MobileP2PService {
    * Destroy the service
    */
   async destroy() {
+    this.destroyed = true;
+    
+    // Cancel any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
     // Leave all topics
     for (const topic of this.topics) {
       await this.leaveTopic(topic);
     }
     
-    // Close socket
+    // Close socket — null onclose first to prevent triggering attemptReconnect
     if (this.socket) {
+      this.socket.onclose = null;
+      this.socket.onerror = null;
       this.socket.close();
       this.socket = null;
     }

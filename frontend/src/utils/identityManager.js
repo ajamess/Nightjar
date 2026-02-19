@@ -344,9 +344,15 @@ function createSession(identityId, encryptionKey) {
 
 /**
  * Clear the current session (lock the app)
+ * Also wipes the in-memory fallback to ensure key material doesn't linger.
  */
 export function clearSession() {
     safeSessionStorage.removeItem(SESSION_KEY);
+    // Explicitly wipe the in-memory fallback in case it was used
+    if (memorySessionStorage[SESSION_KEY]) {
+        memorySessionStorage[SESSION_KEY] = '';
+        delete memorySessionStorage[SESSION_KEY];
+    }
 }
 
 /**
@@ -369,21 +375,29 @@ export function refreshSession() {
  * Get lock timeout setting (in minutes)
  */
 export function getLockTimeout() {
-    const stored = localStorage.getItem(LOCK_TIMEOUT_KEY);
-    if (stored) {
-        const val = parseInt(stored, 10);
-        if (!isNaN(val) && val > 0) return val;
+    try {
+        const stored = localStorage.getItem(LOCK_TIMEOUT_KEY);
+        if (stored) {
+            const val = parseInt(stored, 10);
+            if (!isNaN(val) && val > 0) return val;
+        }
+    } catch {
+        // Ignore storage access errors (opaque origin, private browsing)
     }
     return DEFAULT_LOCK_TIMEOUT_MINUTES;
 }
 
 /**
  * Set lock timeout (in minutes)
+ * Clamped to a maximum of 480 minutes (8 hours) for security.
  */
+const MAX_LOCK_TIMEOUT_MINUTES = 480;
+
 export function setLockTimeout(minutes) {
     if (typeof minutes === 'number' && minutes > 0) {
+        const clamped = Math.min(Math.floor(minutes), MAX_LOCK_TIMEOUT_MINUTES);
         try {
-            localStorage.setItem(LOCK_TIMEOUT_KEY, String(minutes));
+            localStorage.setItem(LOCK_TIMEOUT_KEY, String(clamped));
         } catch (err) {
             console.warn('[IdentityManager] Failed to store lock timeout (storage quota exceeded?):', err);
         }
@@ -693,6 +707,58 @@ export async function deleteIdentity(id, force = false) {
 }
 
 /**
+ * Verify a PIN for an identity without creating a session.
+ * Handles attempt tracking, timing-safe comparison, and auto-deletion.
+ * @returns {Promise<boolean>} true if PIN is correct
+ */
+export async function verifyPin(id, pin) {
+    const identities = listIdentities();
+    const metadata = identities.find(i => i.id === id);
+
+    if (!metadata) {
+        throw new Error('Identity not found');
+    }
+
+    // Check attempt limiting
+    const now = Date.now();
+    if (metadata.attemptResetTime && now > metadata.attemptResetTime) {
+        metadata.pinAttempts = 0;
+        metadata.attemptResetTime = null;
+        saveIdentities(identities);
+    }
+
+    if (metadata.pinAttempts >= MAX_PIN_ATTEMPTS) {
+        await deleteIdentity(id, true);
+        throw new Error('Too many failed attempts. Identity has been deleted for security.');
+    }
+
+    const pinHash = await hashPin(pin, metadata.salt);
+    const pinHashBytes = new Uint8Array(Buffer.from(pinHash, 'base64'));
+    const storedHashBytes = new Uint8Array(Buffer.from(metadata.pinHash, 'base64'));
+
+    if (!timingSafeEqual(pinHashBytes, storedHashBytes)) {
+        metadata.pinAttempts = (metadata.pinAttempts || 0) + 1;
+        if (!metadata.attemptResetTime) {
+            metadata.attemptResetTime = now + (ATTEMPT_RESET_HOURS * 60 * 60 * 1000);
+        }
+        saveIdentities(identities);
+
+        const remaining = MAX_PIN_ATTEMPTS - metadata.pinAttempts;
+        if (remaining <= 0) {
+            await deleteIdentity(id, true);
+            throw new Error('Too many failed attempts. Identity has been deleted for security.');
+        }
+        return false;
+    }
+
+    // PIN correct - reset attempts
+    metadata.pinAttempts = 0;
+    metadata.attemptResetTime = null;
+    saveIdentities(identities);
+    return true;
+}
+
+/**
  * Get remaining PIN attempts for an identity
  */
 export function getRemainingAttempts(id) {
@@ -768,7 +834,7 @@ export async function migrateExistingIdentity(existingIdentity, pin) {
     const dataKeysToMigrate = [
         'nahma-workspaces',
         'nahma-current-workspace',
-        'nahma-user-profile',
+        'nightjar-user-profile',
         'nahma-session-key',
         'nahma_preferences',
         'Nightjar-app-settings',
@@ -850,6 +916,24 @@ export function getLegacyIdentity() {
     return null;
 }
 
+/**
+ * Update metadata fields for an identity in the identities list.
+ * Use this instead of writing directly to localStorage.
+ *
+ * @param {string} id - The identity ID to update
+ * @param {Object} updates - Key/value pairs to merge into the identity metadata
+ * @returns {boolean} True if the identity was found and updated
+ */
+export function updateIdentityMetadata(id, updates) {
+    const identities = listIdentities();
+    const idx = identities.findIndex(i => i.id === id);
+    if (idx < 0) return false;
+
+    Object.assign(identities[idx], updates);
+    saveIdentities(identities);
+    return true;
+}
+
 export default {
     listIdentities,
     getActiveIdentityId,
@@ -867,7 +951,9 @@ export default {
     updateIdentity,
     updateDocCount,
     deleteIdentity,
+    verifyPin,
     getRemainingAttempts,
+    updateIdentityMetadata,
     getScopedKey,
     scopedSet,
     scopedGet,

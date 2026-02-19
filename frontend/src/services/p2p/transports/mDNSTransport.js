@@ -67,6 +67,10 @@ export class mDNSTransport extends BaseTransport {
         this.socket = new WebSocket(this.sidecarUrl);
 
         const timeout = setTimeout(() => {
+          if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+          }
           reject(new Error('Connection timeout'));
         }, 5000);
 

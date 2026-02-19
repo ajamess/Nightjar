@@ -16,6 +16,7 @@ import {
   deriveWorkspaceKey, 
   deriveFolderKey, 
   deriveDocumentKey,
+  deriveKeyWithCache,
   storeKeyChain,
   getStoredKeyChain 
 } from './keyDerivation';
@@ -138,16 +139,16 @@ export async function handleShareLink(link, options) {
           folderKeys: {},
         };
       } else if (entityType === 'folder') {
-        // For folder links, use embedded key or derive from password
-        const folderKey = encryptionKey || await deriveWorkspaceKey(password, entityId);
+        // For folder links, use embedded key or derive from password with folder purpose
+        const folderKey = encryptionKey || await deriveKeyWithCache(password, entityId, 'folder');
         keyChain = {
           folderKey,
           folderId: entityId,
           password: password || null,
         };
       } else if (entityType === 'document') {
-        // For document links, use embedded key or derive from password
-        const documentKey = encryptionKey || await deriveWorkspaceKey(password, entityId);
+        // For document links, use embedded key or derive from password with document purpose
+        const documentKey = encryptionKey || await deriveKeyWithCache(password, entityId, 'document');
         keyChain = {
           documentKey,
           documentId: entityId,
@@ -294,9 +295,9 @@ export function registerLinkHandler(handler) {
     }
   };
 
-  // Handle custom protocol from Electron
-  if (window.electronAPI?.onShareLink) {
-    const cleanup = window.electronAPI.onShareLink((link) => {
+  // Handle custom protocol from Electron (nightjar:// deep links)
+  if (window.electronAPI?.onProtocolLink) {
+    const cleanup = window.electronAPI.onProtocolLink((link) => {
       if (isNightjarShareLink(link)) {
         handler(link);
       }

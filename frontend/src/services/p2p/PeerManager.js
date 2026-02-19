@@ -286,13 +286,45 @@ export class PeerManager extends EventEmitter {
 
     console.log('[PeerManager] Leaving workspace:', this.currentWorkspaceId.slice(0, 8));
 
-    // Leave topics on all transports
-    if (this.currentTopic) {
-      await Promise.all([
-        this.transports.websocket.leaveTopic(this.currentTopic),
-        this.transports.hyperswarm.leaveTopic(this.currentTopic),
-      ]);
+    // Capture and clear workspace state upfront to prevent race condition:
+    // If joinWorkspace() is called while our awaits below are pending, we must
+    // not null out the NEW workspace's ID and topic when we resume.
+    const leavingWorkspaceId = this.currentWorkspaceId;
+    const leavingTopic = this.currentTopic;
+    this.currentWorkspaceId = null;
+    this.currentTopic = null;
+
+    // Close all WebRTC data channels and peer connections
+    const webrtcPeers = this.transports.webrtc.getConnectedPeers();
+    for (const peerId of webrtcPeers) {
+      try {
+        await this.transports.webrtc.disconnect(peerId);
+      } catch (e) {
+        console.warn('[PeerManager] Error disconnecting WebRTC peer:', peerId, e.message);
+      }
     }
+
+    // Leave topics on all transports
+    if (leavingTopic) {
+      const leavePromises = [
+        this.transports.websocket.leaveTopic(leavingTopic),
+        this.transports.hyperswarm.leaveTopic(leavingTopic),
+      ];
+      // mDNS is discovery-only and may not have leaveTopic
+      if (this.transports.mdns?.leaveTopic) {
+        leavePromises.push(this.transports.mdns.leaveTopic(leavingTopic));
+      }
+      await Promise.all(leavePromises);
+    }
+
+    // Stop BootstrapManager periodic discovery and clear its state
+    this.bootstrapManager._stopPeriodicDiscovery();
+    this.bootstrapManager.knownPeers.clear();
+    this.bootstrapManager.connectedPeers.clear();
+    this.bootstrapManager.queriedPeers.clear();
+    this.bootstrapManager.pendingConnections.clear();
+    this.bootstrapManager.isBootstrapping = false;
+    this.bootstrapManager.currentTopic = null;
 
     // Clear awareness managers
     for (const manager of this.awarenessManagers.values()) {
@@ -300,11 +332,7 @@ export class PeerManager extends EventEmitter {
     }
     this.awarenessManagers.clear();
 
-    const workspaceId = this.currentWorkspaceId;
-    this.currentWorkspaceId = null;
-    this.currentTopic = null;
-
-    this.emit('workspace-left', { workspaceId });
+    this.emit('workspace-left', { workspaceId: leavingWorkspaceId });
   }
 
   /**
@@ -362,24 +390,57 @@ export class PeerManager extends EventEmitter {
 
   /**
    * Broadcast message to all connected peers
+   * Uses transport priority: WebRTC > Hyperswarm > WebSocket
+   * Each peer only receives the message through one transport.
    */
   async broadcast(message) {
+    const sentPeers = new Set();
     const promises = [];
 
-    // Broadcast through all active transports
-    if (this.transports.websocket.isServerConnected()) {
-      promises.push(this.transports.websocket.broadcast(message));
+    // Priority 1: WebRTC (direct, lowest latency)
+    const webrtcPeers = this.transports.webrtc.getConnectedPeers();
+    for (const peerId of webrtcPeers) {
+      if (!sentPeers.has(peerId)) {
+        sentPeers.add(peerId);
+        promises.push(this.transports.webrtc.send(peerId, message).catch(() => {}));
+      }
     }
 
-    if (this.transports.webrtc.getConnectedPeers().length > 0) {
-      promises.push(this.transports.webrtc.broadcast(message));
-    }
-
+    // Priority 2: Hyperswarm (direct, P2P)
     if (this.transports.hyperswarm.connected) {
-      promises.push(this.transports.hyperswarm.broadcast(message));
+      const hyperswarmPeers = this.transports.hyperswarm.getConnectedPeers?.() || [];
+      for (const peerId of hyperswarmPeers) {
+        if (!sentPeers.has(peerId)) {
+          sentPeers.add(peerId);
+          promises.push(this.transports.hyperswarm.send(peerId, message).catch(() => {}));
+        }
+      }
     }
 
-    await Promise.all(promises.map(p => p.catch(() => {})));
+    // Priority 3: WebSocket relay (fallback for peers not reachable directly)
+    // Use broadcast only if there are no individually-addressed WS peers,
+    // otherwise send individually to un-sent peers to avoid duplicate delivery.
+    if (this.transports.websocket.isServerConnected()) {
+      const wsPeers = this.transports.websocket.getConnectedPeers?.() || [];
+      let hasUnsentRelayPeers = false;
+      for (const peerId of wsPeers) {
+        if (!sentPeers.has(peerId)) {
+          sentPeers.add(peerId);
+          hasUnsentRelayPeers = true;
+          promises.push(this.transports.websocket.send(peerId, message).catch(() => {}));
+        }
+      }
+      // Only use relay-broadcast when we have no individual peer list from the
+      // server (wsPeers is empty), meaning there could be peers we don't know about.
+      // When we DO have a peer list, individual sends above cover everyone.
+      if (wsPeers.length === 0 || hasUnsentRelayPeers === false) {
+        // No known relay peers, or all were already sent via direct transports —
+        // broadcast for any relay-only peers we may not know about.
+        promises.push(this.transports.websocket.broadcast(message).catch(() => {}));
+      }
+    }
+
+    await Promise.all(promises);
   }
 
   /**

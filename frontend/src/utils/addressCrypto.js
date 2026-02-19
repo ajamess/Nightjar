@@ -5,6 +5,7 @@
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64 } from '../services/p2p/protocol/serialization';
 import { base62ToUint8, uint8ToBase62 } from './identity';
+import { secureWipe } from './cryptoUtils';
 
 // Lazy-loaded ed2curve — not bundled in web builds if unavailable
 let ed2curve = null;
@@ -294,9 +295,4 @@ function uint8ToHex(bytes) {
     .join('');
 }
 
-/**
- * Overwrite a Uint8Array with zeros — best-effort memory wipe.
- */
-export function secureWipe(arr) {
-  if (arr && arr.fill) arr.fill(0);
-}
+// secureWipe imported from ./cryptoUtils (4-pass wipe: random, zeros, 0xFF, zeros)

@@ -2,13 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useWorkspaces } from './WorkspaceContext';
 import { useWorkspaceSyncContext } from './WorkspaceSyncContext';
 import { deriveFolderKey, storeKeyChain, getStoredKeyChain } from '../utils/keyDerivation';
-import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
 import { isElectron } from '../hooks/useEnvironment';
-import { getYjsWebSocketUrl } from '../utils/websocket';
-
-// Alias for backwards compatibility
-const getWsUrl = getYjsWebSocketUrl;
 
 /**
  * Folder structure (updated for workspace support):
@@ -81,12 +75,16 @@ export function FolderProvider({ children }) {
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   
-  // Yjs refs for web mode sync (now only used for fallback/legacy)
-  const ydocRef = useRef(null);
-  const providerRef = useRef(null);
-  const yFoldersRef = useRef(null);
-  const yDocFoldersRef = useRef(null);
-  const yTrashedDocsRef = useRef(null);
+  // Refs to avoid stale closures in mutation callbacks
+  // Updated at render time (not in useEffect) to avoid one-frame stale reads
+  const allFoldersRef = useRef(allFolders);
+  const documentFoldersRef = useRef(documentFolders);
+  const trashedDocumentsRef = useRef(trashedDocuments);
+  const selectedFolderIdRef = useRef(selectedFolderId);
+  allFoldersRef.current = allFolders;
+  documentFoldersRef.current = documentFolders;
+  trashedDocumentsRef.current = trashedDocuments;
+  selectedFolderIdRef.current = selectedFolderId;
   
   // Yjs sync for folders - works in web mode AND Electron with remote workspaces
   const serverUrl = currentWorkspace?.serverUrl || null;
@@ -99,7 +97,7 @@ export function FolderProvider({ children }) {
   // Use synced folders from WorkspaceSyncContext when not in local mode
   // This ensures P2P-synced folders show up correctly
   useEffect(() => {
-    if (!useLocalMode && currentWorkspaceId && syncedFolders) {
+    if (!useLocalMode && currentWorkspaceId && syncedFolders && syncedFolders.length > 0) {
       console.log(`[FolderContext] Using synced folders from WorkspaceSyncContext: ${syncedFolders.length} folders`, syncedFolders.map(f => ({ id: f.id, name: f.name, color: f.color })));
       setAllFolders(prev => {
         // Keep folders from other workspaces, replace folders for this workspace
@@ -123,187 +121,9 @@ export function FolderProvider({ children }) {
     }
   }, [useLocalMode, syncedTrashedDocuments]);
   
-  // Track whether observers have been set up (for StrictMode cleanup safety)
-  const observersSetUpRef = useRef(false);
-  
-  // LEGACY: This Yjs effect is no longer needed for P2P sync
-  // Folders now come from WorkspaceSyncContext which uses workspace-meta room
-  // This effect is kept only for backward compatibility with workspace-folders room
-  // which may have data in older workspaces
-  useEffect(() => {
-    // Skip entirely - we now use WorkspaceSyncContext for all folder sync
-    // The workspace-meta room is synced via P2P and contains all folder data
-    if (!useLocalMode) {
-      console.log(`[FolderContext] Using WorkspaceSyncContext for folder sync (skipping legacy workspace-folders room)`);
-      return;
-    }
-    
-    // Only local mode (Electron owned workspaces) uses sidecar, not Yjs
-    if (useLocalMode || !currentWorkspaceId) {
-      return;
-    }
-    
-    // Reset observer tracking for new effect run
-    observersSetUpRef.current = false;
-    
-    const mode = isElectronMode ? 'Electron (remote workspace)' : 'Web';
-    console.log(`[FolderContext] ${mode} - setting up Yjs folder sync for workspace:`, currentWorkspaceId);
-    
-    // Create Yjs doc for folder metadata
-    const roomName = `workspace-folders:${currentWorkspaceId}`;
-    const ydoc = new Y.Doc();
-    
-    // For remote workspaces (serverUrl provided), limit reconnection attempts
-    const isRemote = !!serverUrl;
-    const providerOptions = isRemote ? {
-      connect: true,
-      maxBackoffTime: 10000,  // Max 10 seconds between retries
-    } : {};
-    
-    // Pass serverUrl for cross-platform sync
-    const provider = new WebsocketProvider(getWsUrl(serverUrl), roomName, ydoc, providerOptions);
-    
-    // Track connection failures for remote workspaces
-    let connectionFailures = 0;
-    const maxFailures = isRemote ? 5 : 30;
-    
-    provider.on('connection-error', () => {
-      connectionFailures++;
-      if (connectionFailures >= maxFailures && isRemote) {
-        console.warn(`[FolderContext] Remote server unreachable after ${maxFailures} attempts, stopping`);
-        provider.disconnect();
-      }
-    });
-    
-    provider.on('status', ({ status }) => {
-      if (status === 'connected') {
-        connectionFailures = 0;
-      }
-    });
-    
-    // Shared types for folders, doc-folder mapping, and trash
-    const yFolders = ydoc.getMap('folders');
-    const yDocFolders = ydoc.getMap('documentFolders');
-    const yTrashedDocs = ydoc.getArray('trashedDocuments');
-    
-    ydocRef.current = ydoc;
-    providerRef.current = provider;
-    yFoldersRef.current = yFolders;
-    yDocFoldersRef.current = yDocFolders;
-    yTrashedDocsRef.current = yTrashedDocs;
-    
-    // Sync folders from Yjs to React state
-    const syncFolders = () => {
-      const folders = [];
-      yFolders.forEach((folder, folderId) => {
-        folders.push({ ...folder, id: folder.id || folderId });
-      });
-      console.log('[FolderContext] Yjs folder sync - received', folders.length, 'folders');
-      setAllFolders(prev => {
-        // Keep folders from other workspaces, merge folders for this workspace
-        const otherFolders = prev.filter(f => f.workspaceId !== currentWorkspaceId);
-        // If Yjs has folders, use them; otherwise keep existing local folders
-        if (folders.length > 0) {
-          return [...otherFolders, ...folders];
-        }
-        // Keep local folders if Yjs is empty (might not be synced yet)
-        const localFolders = prev.filter(f => f.workspaceId === currentWorkspaceId);
-        return [...otherFolders, ...localFolders];
-      });
-    };
-    
-    // Sync document-folder mapping
-    const syncDocFolders = () => {
-      const mapping = {};
-      yDocFolders.forEach((value, key) => {
-        mapping[key] = value;
-      });
-      setDocumentFolders(prev => ({ ...prev, ...mapping }));
-    };
-    
-    // Sync trashed documents
-    const syncTrashedDocs = () => {
-      const trashed = yTrashedDocs.toArray();
-      setTrashedDocuments(trashed);
-    };
-    
-    // Subscribe to changes first (before initial sync attempt)
-    yFolders.observe(syncFolders);
-    yDocFolders.observe(syncDocFolders);
-    yTrashedDocs.observe(syncTrashedDocs);
-    
-    // Mark observers as successfully set up
-    observersSetUpRef.current = true;
-    
-    // Handle initial sync - wait for provider to sync with server
-    let hasSynced = false;
-    provider.on('synced', (isSynced) => {
-      console.log('[FolderContext] Provider synced:', isSynced);
-      if (isSynced && !hasSynced) {
-        hasSynced = true;
-        // Now we have the real data from server
-        const remoteFolders = [];
-        yFolders.forEach((folder, folderId) => {
-          remoteFolders.push({ ...folder, id: folder.id || folderId });
-        });
-        console.log('[FolderContext] Remote folders:', remoteFolders.length);
-        
-        // If Yjs is empty but we have local folders, push them to Yjs
-        // This handles migration of folders created before the sync fix
-        if (remoteFolders.length === 0) {
-          // Use a function form to get current allFolders state
-          setAllFolders(currentFolders => {
-            const localFolders = currentFolders.filter(f => 
-              f.workspaceId === currentWorkspaceId && !f.isSystem
-            );
-            if (localFolders.length > 0) {
-              console.log('[FolderContext] Pushing', localFolders.length, 'local folders to Yjs');
-              localFolders.forEach(folder => {
-                yFolders.set(folder.id, folder);
-              });
-            }
-            return currentFolders;
-          });
-        }
-        
-        syncFolders();
-        syncDocFolders();
-        syncTrashedDocs();
-      }
-    });
-    
-    // If already synced (reconnection), sync immediately
-    if (provider.synced && !hasSynced) {
-      hasSynced = true;
-      console.log('[FolderContext] Provider already synced, doing initial sync');
-      syncFolders();
-      syncDocFolders();
-      syncTrashedDocs();
-    }
-    
-    provider.on('status', ({ status }) => {
-      console.log('[FolderContext] Yjs provider status:', status);
-    });
-    
-    // Cleanup
-    return () => {
-      console.log('[FolderContext] Cleaning up Yjs folder sync');
-      // Only unobserve if observers were actually set up (StrictMode safety)
-      if (observersSetUpRef.current) {
-        yFolders.unobserve(syncFolders);
-        yDocFolders.unobserve(syncDocFolders);
-        yTrashedDocs.unobserve(syncTrashedDocs);
-        observersSetUpRef.current = false;
-      }
-      provider.destroy();
-      ydoc.destroy();
-      ydocRef.current = null;
-      providerRef.current = null;
-      yFoldersRef.current = null;
-      yDocFoldersRef.current = null;
-      yTrashedDocsRef.current = null;
-    };
-  }, [currentWorkspaceId, isRemoteWorkspace, serverUrl]);
+  // REMOVED: Legacy Yjs workspace-folders room effect was dead code
+  // (two sequential guards made all code unreachable)
+  // Folders now come from WorkspaceSyncContext via P2P sync
   
   // Folders filtered by current workspace
   const folders = useMemo(() => {
@@ -459,14 +279,15 @@ export function FolderProvider({ children }) {
     // Sync via appropriate mechanism
     const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
     if (shouldUseLocalMode) {
-      // Optimistically add locally
-      setAllFolders(prev => [...prev, folder]);
       // Electron local mode: use sidecar metaSocket
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
+        // Optimistically add locally only when we can actually send
+        setAllFolders(prev => [...prev, folder]);
         console.log('[FolderContext] Sending create-folder to sidecar:', folder.id, folder.name);
         metaSocket.send(JSON.stringify({ type: 'create-folder', folder }));
       } else {
         console.error('[FolderContext] Cannot send create-folder - socket not open. Socket:', !!metaSocket, 'State:', metaSocket?.readyState);
+        return null;
       }
     } else {
       // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
@@ -475,6 +296,7 @@ export function FolderProvider({ children }) {
         syncAddFolder(folder);
       } else {
         console.error('[FolderContext] Cannot create folder - syncAddFolder not available');
+        return null;
       }
     }
 
@@ -483,23 +305,20 @@ export function FolderProvider({ children }) {
 
   // Update a folder
   const updateFolder = useCallback((folderId, updates) => {
-    const folder = allFolders.find(f => f.id === folderId);
+    const folder = allFoldersRef.current.find(f => f.id === folderId);
     if (!folder || folder.isSystem) return;
-    
-    const updatedFolder = {
-      ...folder,
-      ...updates,
-      updatedAt: Date.now(),
-    };
 
     // Sync via appropriate mechanism
     const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
     if (shouldUseLocalMode) {
-      // Optimistically update locally
-      setAllFolders(prev => prev.map(f => f.id === folderId ? updatedFolder : f));
-      // Sync to sidecar
+      // Optimistically update locally using functional updater to avoid stale state
+      setAllFolders(prev => prev.map(f =>
+        f.id === folderId ? { ...f, ...updates, updatedAt: Date.now() } : f
+      ));
+      // Sync to sidecar (build from ref for the message)
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
-        metaSocket.send(JSON.stringify({ type: 'update-folder', folder: updatedFolder }));
+        const folderForMsg = { ...folder, ...updates, updatedAt: Date.now() };
+        metaSocket.send(JSON.stringify({ type: 'update-folder', folder: folderForMsg }));
       }
     } else {
       // Web mode, remote workspace, or P2P joined: use WorkspaceSyncContext
@@ -507,7 +326,7 @@ export function FolderProvider({ children }) {
         syncUpdateFolder(folderId, updates);
       }
     }
-  }, [metaSocket, allFolders, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
+  }, [metaSocket, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
 
   // Rename a folder (convenience wrapper around updateFolder)
   const renameFolder = useCallback((folderId, newName) => {
@@ -517,21 +336,16 @@ export function FolderProvider({ children }) {
 
   // Soft delete a folder (move to trash)
   const deleteFolder = useCallback((folderId, deletedBy = null) => {
-    const folder = allFolders.find(f => f.id === folderId);
+    const folder = allFoldersRef.current.find(f => f.id === folderId);
     if (!folder || folder.isSystem) return;
-
-    // Soft delete - set deletedAt timestamp
-    const deletedFolder = {
-      ...folder,
-      deletedAt: Date.now(),
-      deletedBy,
-    };
 
     // Sync via appropriate mechanism
     const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
     if (shouldUseLocalMode) {
-      // Optimistically update locally
-      setAllFolders(prev => prev.map(f => f.id === folderId ? deletedFolder : f));
+      // Optimistically update locally using functional updater to avoid stale state
+      setAllFolders(prev => prev.map(f =>
+        f.id === folderId ? { ...f, deletedAt: Date.now(), deletedBy } : f
+      ));
       // Sync to sidecar (include workspaceId for Yjs P2P sync)
       if (metaSocket && metaSocket.readyState === WebSocket.OPEN) {
         metaSocket.send(JSON.stringify({ 
@@ -550,14 +364,15 @@ export function FolderProvider({ children }) {
     }
 
     // Select 'all' if current folder was deleted
-    if (selectedFolderId === folderId) {
+    if (selectedFolderIdRef.current === folderId) {
       setSelectedFolderId(currentWorkspaceId ? `${currentWorkspaceId}:all` : null);
     }
-  }, [metaSocket, allFolders, selectedFolderId, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
+  }, [metaSocket, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
   
   // Restore a folder from trash
   const restoreFolder = useCallback((folderId) => {
-    const folder = allFolders.find(f => f.id === folderId);
+    const currentFolders = allFoldersRef.current;
+    const folder = currentFolders.find(f => f.id === folderId);
     if (!folder || !folder.deletedAt) return;
     
     // Also restore parent folders if they're deleted
@@ -565,7 +380,7 @@ export function FolderProvider({ children }) {
     const foldersToRestore = [folderId];
     
     while (parentId) {
-      const parent = allFolders.find(f => f.id === parentId);
+      const parent = currentFolders.find(f => f.id === parentId);
       if (parent?.deletedAt) {
         foldersToRestore.unshift(parentId);
         parentId = parent.parentId;
@@ -597,11 +412,11 @@ export function FolderProvider({ children }) {
         });
       }
     }
-  }, [metaSocket, allFolders, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
+  }, [metaSocket, isRemoteWorkspace, isWorkspaceOwner, syncUpdateFolder]);
   
   // Permanently delete a folder (only from trash)
   const purgeFolder = useCallback((folderId) => {
-    const folder = allFolders.find(f => f.id === folderId);
+    const folder = allFoldersRef.current.find(f => f.id === folderId);
     if (!folder?.deletedAt) return; // Can only purge trashed folders
     
     // Update document folders mapping
@@ -634,14 +449,14 @@ export function FolderProvider({ children }) {
       }
       // Also remove document folder mappings for documents in this folder
       if (syncSetDocumentFolder) {
-        Object.entries(documentFolders).forEach(([docId, docFolderId]) => {
+        Object.entries(documentFoldersRef.current).forEach(([docId, docFolderId]) => {
           if (docFolderId === folderId) {
             syncSetDocumentFolder(docId, null);
           }
         });
       }
     }
-  }, [metaSocket, allFolders, isRemoteWorkspace, isWorkspaceOwner, syncRemoveFolder, syncSetDocumentFolder, documentFolders]);
+  }, [metaSocket, isRemoteWorkspace, isWorkspaceOwner, syncRemoveFolder, syncSetDocumentFolder]);
 
   // Move a document to a folder
   const moveDocumentToFolder = useCallback((documentId, folderId) => {
@@ -711,13 +526,13 @@ export function FolderProvider({ children }) {
   
   // Restore a document from trash
   const restoreDocument = useCallback((documentId) => {
-    const doc = trashedDocuments.find(d => d.id === documentId);
+    const doc = trashedDocumentsRef.current.find(d => d.id === documentId);
     if (!doc) return null;
     
     // Also restore parent folder if trashed
-    const folderId = documentFolders[documentId];
+    const folderId = documentFoldersRef.current[documentId];
     if (folderId) {
-      const folder = allFolders.find(f => f.id === folderId);
+      const folder = allFoldersRef.current.find(f => f.id === folderId);
       if (folder?.deletedAt) {
         restoreFolder(folderId);
       }
@@ -745,7 +560,7 @@ export function FolderProvider({ children }) {
     // Return restored document without trash fields
     const { deletedAt, deletedBy, ...restoredDoc } = doc;
     return restoredDoc;
-  }, [metaSocket, trashedDocuments, documentFolders, allFolders, restoreFolder, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncRestoreDocument]);
+  }, [metaSocket, restoreFolder, currentWorkspaceId, isRemoteWorkspace, isWorkspaceOwner, syncRestoreDocument]);
   
   // Permanently delete a document from trash
   const purgeDocument = useCallback((documentId) => {
@@ -905,7 +720,7 @@ export function FolderProvider({ children }) {
       }
       return next;
     });
-  }, []);
+  }, [setExpandedFolders]);
 
   // Get breadcrumb path for a folder (with cycle detection)
   const getFolderPath = useCallback((folderId) => {

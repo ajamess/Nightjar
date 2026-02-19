@@ -116,7 +116,7 @@ async function getPublicIPViaSTUN() {
       try {
         // Parse STUN response for XOR-MAPPED-ADDRESS
         let offset = 20; // Skip header
-        while (offset < msg.length) {
+        while (offset + 4 <= msg.length) {
           const attrType = msg.readUInt16BE(offset);
           const attrLen = msg.readUInt16BE(offset + 2);
           
@@ -154,6 +154,7 @@ async function getPublicIPViaSTUN() {
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
+        try { socket.close(); } catch (_) { /* ignore */ }
         console.warn('[Hyperswarm] STUN socket error:', err.message);
         resolve(null);
       }
@@ -325,6 +326,18 @@ function verifyMessage(signedMessage, publicKeyHex) {
 
 // Constants for P2P networking
 const MAX_PEER_LIST_SIZE = 50; // Limit peer list processing to prevent DoS
+const VALID_TOPIC_HEX_RE = /^[0-9a-f]{64}$/i; // 32-byte hex topic (SHA-256)
+
+/**
+ * Validate and sanitize an incoming topic hex string from the wire.
+ * Returns the lower-cased topic if valid, or null if malformed.
+ */
+function sanitizeTopicHex(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!VALID_TOPIC_HEX_RE.test(trimmed)) return null;
+  return trimmed.toLowerCase();
+}
 const MESSAGE_DEDUP_TTL = 60000; // 60 seconds TTL for message deduplication
 const MESSAGE_DEDUP_CLEANUP_INTERVAL = 30000; // Clean up old message IDs every 30s
 const HEARTBEAT_INTERVAL = 30000; // Send ping every 30 seconds
@@ -667,7 +680,14 @@ class HyperswarmManager extends EventEmitter {
           }
           break;
 
-        case 'join-topic':
+        case 'join-topic': {
+          // Validate incoming topic from wire
+          const joinTopicSafe = sanitizeTopicHex(message.topic);
+          if (!joinTopicSafe) {
+            console.warn(`[Hyperswarm] Rejecting join-topic with invalid topic from ${peerId.slice(0, 16)}`);
+            return;
+          }
+          message.topic = joinTopicSafe;
           // Only add if not already in topics (prevents duplicates from reciprocal messages)
           const alreadyTracked = conn.topics.has(message.topic);
           conn.topics.add(message.topic);
@@ -707,8 +727,15 @@ class HyperswarmManager extends EventEmitter {
             }
           }
           break;
+        }
 
-        case 'leave-topic':
+        case 'leave-topic': {
+          const leaveTopicSafe = sanitizeTopicHex(message.topic);
+          if (!leaveTopicSafe) {
+            console.warn(`[Hyperswarm] Rejecting leave-topic with invalid topic from ${peerId.slice(0, 16)}`);
+            return;
+          }
+          message.topic = leaveTopicSafe;
           conn.topics.delete(message.topic);
           // Remove peer from topic's peer set
           const leftTopicData = this.topics.get(message.topic);
@@ -717,48 +744,80 @@ class HyperswarmManager extends EventEmitter {
           }
           this.emit('peer-left', { peerId, topic: message.topic, identity: conn.identity });
           break;
+        }
 
-        case 'sync':
+        case 'sync': {
+          const syncTopicSafe = sanitizeTopicHex(message.topic);
+          if (!syncTopicSafe) { console.warn(`[Hyperswarm] Rejecting sync with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = syncTopicSafe;
           this.emit('sync-message', { peerId, topic: message.topic, data: message.data });
           break;
+        }
         
-        case 'sync-request':
+        case 'sync-request': {
           // Peer is requesting our full state for a topic
+          const srTopicSafe = sanitizeTopicHex(message.topic);
+          if (!srTopicSafe) { console.warn(`[Hyperswarm] Rejecting sync-request with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = srTopicSafe;
           console.log(`[Hyperswarm] Received sync-request from ${peerId.slice(0, 16)}... for topic ${message.topic?.slice(0, 16)}...`);
           this.emit('sync-state-request', { peerId, topic: message.topic });
           break;
+        }
         
-        case 'sync-state':
+        case 'sync-state': {
           // Peer is sending us their full state (initial sync)
+          const ssTopicSafe = sanitizeTopicHex(message.topic);
+          if (!ssTopicSafe) { console.warn(`[Hyperswarm] Rejecting sync-state with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = ssTopicSafe;
           console.log(`[Hyperswarm] Received sync-state from ${peerId.slice(0, 16)}... for topic ${message.topic?.slice(0, 16)}...`);
           this.emit('sync-state-received', { peerId, topic: message.topic, data: message.data });
           break;
+        }
 
-        case 'sync-manifest-request':
+        case 'sync-manifest-request': {
           // Peer is requesting our sync manifest (doc/folder counts) for verification
+          const smrTopicSafe = sanitizeTopicHex(message.topic);
+          if (!smrTopicSafe) { console.warn(`[Hyperswarm] Rejecting sync-manifest-request with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = smrTopicSafe;
           console.log(`[Hyperswarm] Received sync-manifest-request from ${peerId.slice(0, 16)}... for topic ${message.topic?.slice(0, 16)}...`);
           this.emit('sync-manifest-request', { peerId, topic: message.topic });
           break;
+        }
         
-        case 'sync-manifest':
+        case 'sync-manifest': {
           // Peer is sending their sync manifest for comparison
+          const smTopicSafe = sanitizeTopicHex(message.topic);
+          if (!smTopicSafe) { console.warn(`[Hyperswarm] Rejecting sync-manifest with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = smTopicSafe;
           console.log(`[Hyperswarm] Received sync-manifest from ${peerId.slice(0, 16)}... for topic ${message.topic?.slice(0, 16)}...`);
           this.emit('sync-manifest-received', { peerId, topic: message.topic, manifest: message.manifest });
           break;
+        }
         
-        case 'sync-documents-request':
+        case 'sync-documents-request': {
           // Peer is requesting specific documents by ID
+          const sdrTopicSafe = sanitizeTopicHex(message.topic);
+          if (!sdrTopicSafe) { console.warn(`[Hyperswarm] Rejecting sync-documents-request with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = sdrTopicSafe;
           console.log(`[Hyperswarm] Received sync-documents-request from ${peerId.slice(0, 16)}... for ${message.documentIds?.length || 0} document(s)`);
           this.emit('sync-documents-request', { peerId, topic: message.topic, documentIds: message.documentIds });
           break;
+        }
 
-        case 'awareness':
+        case 'awareness': {
+          const awTopicSafe = sanitizeTopicHex(message.topic);
+          if (!awTopicSafe) { console.warn(`[Hyperswarm] Rejecting awareness with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = awTopicSafe;
           this.emit('awareness-update', { peerId, topic: message.topic, state: message.state });
           break;
+        }
 
-        case 'peer-list':
+        case 'peer-list': {
           // Mesh peer discovery: connect to peers we don't already know
-          // SECURITY: Limit peer list size to prevent DoS from malicious peers
+          // SECURITY: Validate topic and limit peer list size to prevent DoS
+          const plTopicSafe = sanitizeTopicHex(message.topic);
+          if (!plTopicSafe) { console.warn(`[Hyperswarm] Rejecting peer-list with invalid topic from ${peerId.slice(0, 16)}`); return; }
+          message.topic = plTopicSafe;
           let peers = message.peers;
           if (Array.isArray(peers) && peers.length > MAX_PEER_LIST_SIZE) {
             console.warn(`[Hyperswarm] Truncating peer list from ${peers.length} to ${MAX_PEER_LIST_SIZE}`);
@@ -776,6 +835,7 @@ class HyperswarmManager extends EventEmitter {
             }
           }
           break;
+        }
 
         default:
           // Forward ALL unhandled message types (chunk-request, chunk-response,
@@ -903,12 +963,15 @@ class HyperswarmManager extends EventEmitter {
     const topicData = this.topics.get(topicHex);
     if (!topicData) return;
 
-    // Notify peers
+    // Notify peers and clean up topic from connection tracking
     for (const [peerId, conn] of this.connections) {
       this._sendMessage(conn.socket, {
         type: 'leave-topic',
         topic: topicHex
       });
+      // Remove topic from this connection's tracked topics to prevent
+      // stale references in getPeers() and broadcastSync()
+      conn.topics.delete(topicHex);
     }
 
     await topicData.discovery.destroy();

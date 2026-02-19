@@ -43,17 +43,38 @@ export function ShareDialog({
   const [copyFormat, setCopyFormat] = useState('message-qr'); // Default format
   const [joinPassword, setJoinPassword] = useState('');
   const [isDerivingKey, setIsDerivingKey] = useState(false);
+  const [shareError, setShareError] = useState('');
 
-  // Generate initial password when dialog opens
+  // Reset all transient state when dialog opens
   useEffect(() => {
-    if (isOpen && !password) {
+    if (isOpen) {
       setPassword(generatePassword());
+      setShareLink('');
+      setQrCodeDataUrl('');
+      setJoinLink('');
+      setJoinError('');
+      setJoinPassword('');
+      setShareError('');
+      setShowScanner(false);
+      setIsGenerating(false);
+      setIsDerivingKey(false);
+      setActiveTab('share');
     }
-  }, [isOpen]);
+  }, [isOpen, documentId]);
 
   // Generate share link when options change
   const generateLink = useCallback(async () => {
     if (!documentId) return;
+    
+    setShareError('');
+    
+    if (usePassword) {
+      const validation = validatePassword(password);
+      if (!validation.valid) {
+        setShareError(validation.message);
+        return;
+      }
+    }
     
     setIsGenerating(true);
     try {
@@ -135,6 +156,14 @@ export function ShareDialog({
   }, [copyFormat, getShareMessage, shareLink, password]);
 
   const handleCopy = async () => {
+    if (usePassword) {
+      const validation = validatePassword(password);
+      if (!validation.valid) {
+        setShareError(validation.message);
+        return;
+      }
+    }
+    setShareError('');
     const content = getCopyContent();
     await copyToClipboard(content);
   };
@@ -225,6 +254,8 @@ export function ShareDialog({
   };
 
   const handleCreateNew = async () => {
+    // Guard against double-click (setIsDerivingKey was previously inside try, allowing race)
+    if (isDerivingKey) return;
     try {
       setIsDerivingKey(true);
       const { documentId: newDocId, shareLink: newLink } = await createNewDocument({
@@ -385,11 +416,16 @@ export function ShareDialog({
                     </div>
                   )}
 
+                  {/* Validation Error */}
+                  {shareError && (
+                    <p className="join-error">{shareError}</p>
+                  )}
+
                   {/* Copy Button */}
                   <button
                     className={`copy-button-large ${copied ? 'copied' : ''}`}
                     onClick={handleCopy}
-                    disabled={isGenerating}
+                    disabled={isGenerating || !!shareError}
                   >
                     {copied ? '✓ Copied!' : `Copy ${COPY_FORMATS.find(f => f.id === copyFormat)?.label}`}
                   </button>
@@ -531,6 +567,8 @@ export function ShareDialog({
 function QRScanner({ onResult, onClose }) {
   const [error, setError] = useState('');
   const scannerRef = useRef(null);
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
 
   useEffect(() => {
     let scanner = null;
@@ -549,7 +587,7 @@ function QRScanner({ onResult, onClose }) {
           },
           (decodedText) => {
             scanner.stop();
-            onResult(decodedText);
+            onResultRef.current(decodedText);
           },
           () => {} // Ignore errors during scanning
         );
@@ -566,7 +604,7 @@ function QRScanner({ onResult, onClose }) {
         scannerRef.current.stop().catch(() => {});
       }
     };
-  }, [onResult]);
+  }, []);
 
   return (
     <div className="qr-scanner">

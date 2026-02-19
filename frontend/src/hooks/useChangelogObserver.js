@@ -146,43 +146,47 @@ export function useChangelogObserver(ydoc, docId, currentUser, documentType = 't
 
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = setTimeout(async () => {
-                const newContent = getContent();
-                const stateUpdate = Y.encodeStateAsUpdate(ydoc);
-                const newStateSize = stateUpdate.length;
+                try {
+                    const newContent = getContent();
+                    const stateUpdate = Y.encodeStateAsUpdate(ydoc);
+                    const newStateSize = stateUpdate.length;
 
-                const contentChanged = newContent !== lastContentRef.current;
-                const sizeChanged = newStateSize !== lastStateSizeRef.current;
+                    const contentChanged = newContent !== lastContentRef.current;
+                    const sizeChanged = newStateSize !== lastStateSizeRef.current;
 
-                if (contentChanged || sizeChanged) {
-                    const stateSnapshot = uint8ToBase64(stateUpdate);
-                    const currentDocType = documentTypeRef.current;
+                    if (contentChanged || sizeChanged) {
+                        const stateSnapshot = uint8ToBase64(stateUpdate);
+                        const currentDocType = documentTypeRef.current;
 
-                    const entry = {
-                        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-                        timestamp: Date.now(),
-                        author: currentUserRef.current || { name: 'Anonymous', color: '#888888', publicKey: '' },
-                        documentType: currentDocType,
-                        type: newContent.length > lastContentRef.current.length ? 'add' :
-                              newContent.length < lastContentRef.current.length ? 'delete' : 'edit',
-                        summary: generateDiffSummary(currentDocType, lastContentRef.current, newContent),
-                        contentSnapshot: newContent,
-                        previousContentSnapshot: lastContentRef.current,
-                        stateSnapshot: stateSnapshot
-                    };
+                        const entry = {
+                            id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+                            timestamp: Date.now(),
+                            author: currentUserRef.current || { name: 'Anonymous', color: '#888888', publicKey: '' },
+                            documentType: currentDocType,
+                            type: newContent.length > lastContentRef.current.length ? 'add' :
+                                  newContent.length < lastContentRef.current.length ? 'delete' : 'edit',
+                            summary: generateDiffSummary(currentDocType, lastContentRef.current, newContent),
+                            contentSnapshot: newContent,
+                            previousContentSnapshot: lastContentRef.current,
+                            stateSnapshot: stateSnapshot
+                        };
 
-                    console.log('[ChangelogObserver] Recording entry:', entry.summary);
-                    
-                    // Try IndexedDB first, fall back to localStorage
-                    try {
-                        await addChangelogEntry(docId, entry);
-                    } catch (e) {
-                        // Fallback to sync localStorage
-                        const existing = loadChangelogSync(docId);
-                        saveChangelogSync(docId, [...existing, entry]);
+                        console.log('[ChangelogObserver] Recording entry:', entry.summary);
+                        
+                        // Try IndexedDB first, fall back to localStorage
+                        try {
+                            await addChangelogEntry(docId, entry);
+                        } catch (e) {
+                            // Fallback to sync localStorage
+                            const existing = loadChangelogSync(docId);
+                            saveChangelogSync(docId, [...existing, entry]);
+                        }
+                        
+                        lastContentRef.current = newContent;
+                        lastStateSizeRef.current = newStateSize;
                     }
-                    
-                    lastContentRef.current = newContent;
-                    lastStateSizeRef.current = newStateSize;
+                } catch (err) {
+                    console.warn('[ChangelogObserver] Error recording changelog entry:', err);
                 }
             }, 2000);
         };

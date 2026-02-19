@@ -236,10 +236,14 @@ export class WebIdentityStore {
       const data = await dbGet('identity');
       return data?.encrypted === true;
     } catch (e) {
-      const stored = localStorage.getItem('Nightjar-identity');
-      if (stored) {
-        const data = JSON.parse(stored);
-        return data?.encrypted === true;
+      try {
+        const stored = localStorage.getItem('Nightjar-identity');
+        if (stored) {
+          const data = JSON.parse(stored);
+          return data?.encrypted === true;
+        }
+      } catch (parseErr) {
+        console.warn('[WebIdentityStore] Failed to parse localStorage fallback in isEncrypted:', parseErr);
       }
       return false;
     }

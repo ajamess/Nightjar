@@ -188,8 +188,8 @@ export default function Breadcrumbs({
       folders,
       documents: folders.flatMap(f => f.documents || []),
       documentFolders,
-      folderHierarchy: new Map(folders.map(f => [f.id, f.parentId || null])),
-      canView: (type, id) => canView(id),
+      folderHierarchy: new Map(folders.map(f => [f.id, { parentId: f.parentId || null, name: f.name, workspaceId: f.workspaceId || null }])),
+      canView,
     });
   }, [entityType, entityId, workspaces, folders, documentFolders, canView]);
 

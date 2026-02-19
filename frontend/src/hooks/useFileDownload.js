@@ -8,7 +8,7 @@
  * See docs/FILE_STORAGE_SPEC.md §7
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { decryptChunk, reassembleFile, toBlob, downloadBlob, sha256 } from '../utils/fileChunking';
 import { getChunk, openChunkStore } from '../utils/chunkStore';
 
@@ -45,13 +45,33 @@ export default function useFileDownload({
 }) {
   const [downloads, setDownloads] = useState(new Map()); // downloadId -> state
   const dbRef = useRef(null);
+  const dbOpeningRef = useRef(null);
   const downloadIdCounter = useRef(0);
 
   const getDb = useCallback(async () => {
-    if (!dbRef.current && workspaceId) {
-      dbRef.current = await openChunkStore(workspaceId);
-    }
-    return dbRef.current;
+    if (dbRef.current) return dbRef.current;
+    if (!workspaceId) return null;
+    if (dbOpeningRef.current) return dbOpeningRef.current;
+    dbOpeningRef.current = openChunkStore(workspaceId).then(db => {
+      dbRef.current = db;
+      dbOpeningRef.current = null;
+      return db;
+    }).catch(err => {
+      dbOpeningRef.current = null;
+      throw err;
+    });
+    return dbOpeningRef.current;
+  }, [workspaceId]);
+
+  // Close stale IndexedDB connection when workspaceId changes or on unmount
+  useEffect(() => {
+    return () => {
+      if (dbRef.current) {
+        try { dbRef.current.close(); } catch (_) { /* already closed or mock */ }
+        dbRef.current = null;
+      }
+      dbOpeningRef.current = null;
+    };
   }, [workspaceId]);
 
   /**
@@ -63,9 +83,11 @@ export default function useFileDownload({
    */
   const downloadFile = useCallback(async (fileRecord, options = {}) => {
     const downloadId = `download-${++downloadIdCounter.current}`;
-    const { id: fileId, name, chunkCount, chunkHashes, sizeBytes, mimeType } = fileRecord;
+    const { id: fileId, name, chunkCount, chunkHashes, sizeBytes, mimeType, extension } = fileRecord;
 
     const startedAt = Date.now();
+    // Derive extension from fileRecord or fall back to extracting from name
+    const fileExtension = extension || (name && name.includes('.') ? name.split('.').pop().toLowerCase() : '');
     const updateStatus = (status, progress = {}) => {
       setDownloads(prev => {
         const next = new Map(prev);
@@ -74,6 +96,7 @@ export default function useFileDownload({
           fileId,
           fileName: name,
           fileSize: sizeBytes,
+          extension: fileExtension,
           status,
           chunksDownloaded: 0,
           totalChunks: chunkCount,
@@ -114,8 +137,12 @@ export default function useFileDownload({
             // Store locally for future seeding
             if (chunkData) {
               console.log(`[FileDownload] Chunk ${i} received from peer`);
-              const tx = db.transaction('chunks', 'readwrite');
-              tx.objectStore('chunks').put(chunkData, `${fileId}:${i}`);
+              await new Promise((resolve, reject) => {
+                const tx = db.transaction('chunks', 'readwrite');
+                tx.objectStore('chunks').put(chunkData, `${fileId}:${i}`);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+              });
             } else {
               console.warn(`[FileDownload] Chunk ${i} peer request returned null`);
             }
@@ -178,6 +205,8 @@ export default function useFileDownload({
       // Trigger browser download unless suppressed
       if (!options.skipBrowserDownload) {
         let savedFilePath = null;
+        // Sanitize peer-provided filename to prevent path traversal and strip Windows-invalid chars
+        const safeName = name.replace(/[\/\\]/g, '_').replace(/\.\./g, '_').replace(/[<>:"|?*]/g, '_');
         // In Electron, save to disk via IPC
         if (typeof window !== 'undefined' && window.electronAPI?.fileSystem) {
           let downloadLocation = localStorage.getItem('nightjar_download_location') || '';
@@ -191,34 +220,29 @@ export default function useFileDownload({
             }
           }
           if (downloadLocation) {
-            // Sanitize peer-provided filename to prevent path traversal
-            const safeName = name.replace(/[\/\\]/g, '_').replace(/\.\./g, '_');
             const filePath = downloadLocation.replace(/[\\/]$/, '') + '/' + safeName;
             // Convert Uint8Array to base64 for IPC transfer
-            let base64 = '';
-            const chunkSize = 32768;
-            for (let offset = 0; offset < data.length; offset += chunkSize) {
-              const slice = data.subarray(offset, Math.min(offset + chunkSize, data.length));
-              base64 += String.fromCharCode.apply(null, slice);
-            }
-            base64 = btoa(base64);
+            // Use loop instead of .apply() to avoid call stack overflow on large files
+            let binary = '';
+            for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+            const base64 = btoa(binary);
             const result = await window.electronAPI.fileSystem.saveDownload(filePath, base64);
             if (result?.success) {
               savedFilePath = filePath;
             } else {
               // Fallback to browser download if save fails
               const blob = toBlob(data, mimeType || 'application/octet-stream');
-              downloadBlob(blob, name);
+              downloadBlob(blob, safeName);
             }
           } else {
             // User cancelled folder selection — fallback to browser download
             const blob = toBlob(data, mimeType || 'application/octet-stream');
-            downloadBlob(blob, name);
+            downloadBlob(blob, safeName);
           }
         } else {
           // Non-Electron environment — use browser download
           const blob = toBlob(data, mimeType || 'application/octet-stream');
-          downloadBlob(blob, name);
+          downloadBlob(blob, safeName);
         }
 
         updateStatus(DOWNLOAD_STATUS.COMPLETE, {

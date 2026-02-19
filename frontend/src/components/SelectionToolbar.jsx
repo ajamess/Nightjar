@@ -25,7 +25,20 @@ const SelectionToolbar = ({ editor, onAddComment }) => {
 
     const handleSetLink = () => {
         if (linkUrl) {
-            editor.chain().focus().setLink({ href: linkUrl }).run();
+            // Validate URL scheme to prevent XSS (e.g., javascript: protocol)
+            const trimmed = linkUrl.trim();
+            if (!/^(https?:\/\/|mailto:|\/|#)/i.test(trimmed)) {
+                // If no scheme, assume https
+                const safeUrl = trimmed.includes('.') ? `https://${trimmed}` : trimmed;
+                if (!/^(https?:\/\/|mailto:|\/|#)/i.test(safeUrl)) {
+                    setShowLinkInput(false);
+                    setLinkUrl('');
+                    return;
+                }
+                editor.chain().focus().setLink({ href: safeUrl }).run();
+            } else {
+                editor.chain().focus().setLink({ href: trimmed }).run();
+            }
         }
         setShowLinkInput(false);
         setLinkUrl('');

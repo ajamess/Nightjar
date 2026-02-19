@@ -29,6 +29,9 @@ module.exports = {
       config: {},
     },
   ],
+  // SECURITY NOTE: --no-sandbox disables the Chromium sandbox. This is required for
+  // some CI/containerized environments and GPU-less systems. In production, the app
+  // should rely on Electron's own process sandboxing (BrowserWindow sandbox: true).
   electronLaunchArgs: [
     '--disable-gpu',
     '--disable-software-rasterizer',

@@ -18,7 +18,7 @@ import { isElectron } from '../hooks/useEnvironment';
 
 const IDB_NAME = 'nightjar-inventory';
 const IDB_STORE = 'addresses';
-const IDB_VERSION = 1;
+const IDB_VERSION = 2;
 
 function openIDB() {
   return new Promise((resolve, reject) => {
@@ -27,6 +27,9 @@ function openIDB() {
       const db = req.result;
       if (!db.objectStoreNames.contains(IDB_STORE)) {
         db.createObjectStore(IDB_STORE);
+      }
+      if (!db.objectStoreNames.contains('saved-addresses')) {
+        db.createObjectStore('saved-addresses');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -39,8 +42,9 @@ async function idbPut(key, value) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite');
     tx.objectStore(IDB_STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error || new Error('IndexedDB transaction aborted (possibly quota exceeded)')); };
   });
 }
 
@@ -49,8 +53,8 @@ async function idbGet(key) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readonly');
     const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { db.close(); resolve(req.result || null); };
+    req.onerror = () => { db.close(); reject(req.error); };
   });
 }
 
@@ -59,8 +63,8 @@ async function idbDelete(key) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite');
     tx.objectStore(IDB_STORE).delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }
 
@@ -79,10 +83,11 @@ async function idbList(prefix) {
         }
         cursor.continue();
       } else {
+        db.close();
         resolve(keys);
       }
     };
-    req.onerror = () => reject(req.error);
+    req.onerror = () => { db.close(); reject(req.error); };
   });
 }
 

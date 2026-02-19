@@ -294,16 +294,42 @@ export function FileStorageProvider({
     else doToggle();
   }, [yStorageFiles]);
 
-  /** Update chunk availability */
+  /** Update chunk availability (merge new holders with existing) */
   const setChunkAvailability = useCallback((fileId, chunkIndex, holders) => {
     if (!yChunkAvailability) return;
     const key = `${fileId}:${chunkIndex}`;
+    const existing = yChunkAvailability.get(key);
+    const existingHolders = (existing && Array.isArray(existing.holders)) ? existing.holders : [];
+    const mergedHolders = [...new Set([...existingHolders, ...holders])];
     yChunkAvailability.set(key, {
       fileId,
       chunkIndex,
-      holders,
+      holders: mergedHolders,
       lastUpdated: Date.now(),
     });
+  }, [yChunkAvailability]);
+
+  /** Batch-set chunk availability for all chunks of a file (single Yjs transaction) */
+  const batchSetChunkAvailability = useCallback((fileId, chunkCount, holders) => {
+    if (!yChunkAvailability) return;
+    const doc = yChunkAvailability.doc;
+    const doSet = () => {
+      const now = Date.now();
+      for (let i = 0; i < chunkCount; i++) {
+        const key = `${fileId}:${i}`;
+        const existing = yChunkAvailability.get(key);
+        const existingHolders = (existing && Array.isArray(existing.holders)) ? existing.holders : [];
+        const mergedHolders = [...new Set([...existingHolders, ...holders])];
+        yChunkAvailability.set(key, {
+          fileId,
+          chunkIndex: i,
+          holders: mergedHolders,
+          lastUpdated: now,
+        });
+      }
+    };
+    if (doc) doc.transact(doSet);
+    else doSet();
   }, [yChunkAvailability]);
 
   /** Add audit log entry */
@@ -443,6 +469,7 @@ export function FileStorageProvider({
     restoreFolder,
     toggleFavorite,
     setChunkAvailability,
+    batchSetChunkAvailability,
     addAuditEntry,
     updateSettings,
     createFileRecord,
@@ -454,7 +481,7 @@ export function FileStorageProvider({
     userIdentity, collaborators, sync,
     addFile, updateFile, deleteFile, restoreFile, permanentlyDeleteFile, permanentlyDeleteFolder,
     addFolder, updateFolder, deleteFolder, restoreFolder,
-    toggleFavorite, setChunkAvailability, addAuditEntry, updateSettings,
+    toggleFavorite, setChunkAvailability, batchSetChunkAvailability, addAuditEntry, updateSettings,
     createFileRecord, createFolderRecord,
   ]);
 

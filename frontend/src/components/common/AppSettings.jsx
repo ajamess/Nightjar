@@ -173,6 +173,8 @@ export default function AppSettings({ isOpen, onClose }) {
 
   // Load settings on open
   useEffect(() => {
+    let cancelled = false;
+    
     if (isOpen) {
       setSettings(loadSettings());
       setHasChanges(false);
@@ -181,17 +183,20 @@ export default function AppSettings({ isOpen, onClose }) {
       
       // Load desktop-only settings from Electron
       if (isElectron && isFeatureAvailable('tor')) {
-        loadDesktopSettings();
+        loadDesktopSettings(() => cancelled);
       }
     }
+    
+    return () => { cancelled = true; };
   }, [isOpen, isElectron]);
   
   // Load desktop-only settings (Tor, Relay)
-  const loadDesktopSettings = async () => {
+  const loadDesktopSettings = async (isCancelled) => {
     try {
       // Load Tor status
       if (window.electronAPI?.tor) {
         const status = await window.electronAPI.tor.getStatus();
+        if (isCancelled()) return;
         setTorStatus(status);
         const savedMode = localStorage.getItem('Nightjar_tor_mode') || 'disabled';
         setTorMode(savedMode);
@@ -200,6 +205,7 @@ export default function AppSettings({ isOpen, onClose }) {
       // Load Relay settings
       if (window.electronAPI?.invoke) {
         const result = await window.electronAPI.invoke('relay:getSettings');
+        if (isCancelled()) return;
         if (result?.settings) {
           setRelaySettings(result.settings);
           setRelayEnabled(result.settings.enabled || false);
@@ -401,8 +407,13 @@ export default function AppSettings({ isOpen, onClose }) {
     
     if (window.electronAPI?.tor) {
       if (newMode === 'disabled') {
-        await window.electronAPI.tor.stop();
-        setTorStatus({ running: false, bootstrapped: false, onionAddress: null });
+        try {
+          await window.electronAPI.tor.stop();
+          setTorStatus({ running: false, bootstrapped: false, onionAddress: null });
+        } catch (err) {
+          console.error('Failed to stop Tor:', err);
+          setTorStatus({ running: false, bootstrapped: false, onionAddress: null });
+        }
       }
     }
   };

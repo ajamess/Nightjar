@@ -64,6 +64,18 @@ function run(cmd) {
     }
 }
 
+/**
+ * Validate a git ref to prevent command injection.
+ * Only allows alphanumeric, dots, dashes, underscores, slashes, and tildes.
+ */
+function sanitizeGitRef(ref) {
+    if (!ref) return ref;
+    if (!/^[a-zA-Z0-9_.\-\/~^]+$/.test(ref)) {
+        throw new Error(`Invalid git ref: "${ref}". Contains disallowed characters.`);
+    }
+    return ref;
+}
+
 function getTags() {
     const output = run('git tag --sort=-v:refname');
     return output ? output.split('\n').filter(t => t.match(/^v?\d+\.\d+/)) : [];
@@ -216,7 +228,8 @@ function main() {
     // Get tag range
     const tags = getTags();
     let fromTag = getArg('--from');
-    const toRef = getArg('--to') || 'HEAD';
+    const toRef = sanitizeGitRef(getArg('--to') || 'HEAD');
+    if (fromTag) fromTag = sanitizeGitRef(fromTag);
     
     if (!fromTag && tags.length > 0) {
         // Find the previous tag (not the current version)

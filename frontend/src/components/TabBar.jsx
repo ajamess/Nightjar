@@ -22,6 +22,8 @@ const saveDoNotDisturb = (dnd) => {
         const settings = saved ? JSON.parse(saved) : {};
         settings.doNotDisturb = dnd;
         localStorage.setItem('Nightjar-notification-settings', JSON.stringify(settings));
+        // Notify same-window listeners without polling
+        window.dispatchEvent(new CustomEvent('nightjar-dnd-change'));
     } catch (e) {}
 };
 
@@ -233,19 +235,19 @@ const TabBar = ({
 const DoNotDisturbToggle = () => {
     const [doNotDisturb, setDoNotDisturb] = useState(loadDoNotDisturb);
     
-    // Listen for storage changes from settings panel
+    // Listen for storage changes from settings panel or other windows
     useEffect(() => {
         const handleStorageChange = () => {
             setDoNotDisturb(loadDoNotDisturb());
         };
+        // Cross-window changes (storage event)
         window.addEventListener('storage', handleStorageChange);
-        
-        // Also check periodically for same-window changes
-        const interval = setInterval(handleStorageChange, 1000);
+        // Same-window changes (custom event dispatched by saveDoNotDisturb)
+        window.addEventListener('nightjar-dnd-change', handleStorageChange);
         
         return () => {
             window.removeEventListener('storage', handleStorageChange);
-            clearInterval(interval);
+            window.removeEventListener('nightjar-dnd-change', handleStorageChange);
         };
     }, []);
     

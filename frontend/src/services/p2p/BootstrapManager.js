@@ -33,6 +33,8 @@ export class BootstrapManager extends EventEmitter {
     this.discoveryTimer = null;
     this.isBootstrapping = false;
     this.currentTopic = null;
+    this._mdnsHandler = null;
+    this._discovering = false;
   }
 
   /**
@@ -62,6 +64,12 @@ export class BootstrapManager extends EventEmitter {
   async bootstrap(connectionParams) {
     if (this.isBootstrapping) {
       console.log('[Bootstrap] Already bootstrapping');
+      return;
+    }
+
+    if (!this.peerManager) {
+      console.error('[Bootstrap] Cannot bootstrap before initialize() is called');
+      this.emit('bootstrap-failed', { error: new Error('Not initialized') });
       return;
     }
 
@@ -157,11 +165,15 @@ export class BootstrapManager extends EventEmitter {
       );
     }
 
-    // Setup mDNS discovery events
+    // Setup mDNS discovery events (remove previous listener to prevent accumulation)
     if (transports.mdns?.connected) {
-      transports.mdns.on('peer-discovered', (peer) => {
+      if (this._mdnsHandler) {
+        transports.mdns.off('peer-discovered', this._mdnsHandler);
+      }
+      this._mdnsHandler = (peer) => {
         this._handleDiscoveredPeer(peer);
-      });
+      };
+      transports.mdns.on('peer-discovered', this._mdnsHandler);
       transports.mdns.startAdvertising().catch(() => {});
     }
 
@@ -180,9 +192,13 @@ export class BootstrapManager extends EventEmitter {
   async _tryBootstrapPeer(peerAddress) {
     console.log('[Bootstrap] Trying bootstrap peer:', peerAddress);
     
+    if (!this.peerManager?.transports?.websocket) {
+      throw new Error('WebSocket transport not available');
+    }
+    
     // Parse peer address
     let url = peerAddress;
-    if (!peerAddress.includes('://')) {
+    if (typeof peerAddress === 'string' && !peerAddress.includes('://')) {
       url = `ws://${peerAddress}`;
     }
     
@@ -197,44 +213,50 @@ export class BootstrapManager extends EventEmitter {
    * Recursive peer discovery
    */
   async _recursiveDiscover() {
-    let newPeersFound = true;
-    let rounds = 0;
-    const maxRounds = 10;
+    if (this._discovering) return;
+    this._discovering = true;
+    try {
+      let newPeersFound = true;
+      let rounds = 0;
+      const maxRounds = 10;
 
-    while (newPeersFound && rounds < maxRounds && this.connectedPeers.size < this.maxConnections) {
-      newPeersFound = false;
-      rounds++;
+      while (newPeersFound && rounds < maxRounds && this.connectedPeers.size < this.maxConnections) {
+        newPeersFound = false;
+        rounds++;
 
-      // Get current connected peers
-      const currentPeers = Array.from(this.connectedPeers);
-      
-      for (const peerId of currentPeers) {
-        if (this.queriedPeers.has(peerId)) continue;
-        this.queriedPeers.add(peerId);
+        // Get current connected peers
+        const currentPeers = Array.from(this.connectedPeers);
+        
+        for (const peerId of currentPeers) {
+          if (this.queriedPeers.has(peerId)) continue;
+          this.queriedPeers.add(peerId);
 
-        try {
-          const peers = await this._requestPeersFrom(peerId);
-          
-          for (const peer of peers) {
-            if (!isValidPeerAddress(peer)) continue;
-            if (peer.peerId === this.localPeerId) continue;
-            if (this.connectedPeers.has(peer.peerId)) continue;
-            if (this.pendingConnections.has(peer.peerId)) continue;
+          try {
+            const peers = await this._requestPeersFrom(peerId);
+            
+            for (const peer of peers) {
+              if (!isValidPeerAddress(peer)) continue;
+              if (peer.peerId === this.localPeerId) continue;
+              if (this.connectedPeers.has(peer.peerId)) continue;
+              if (this.pendingConnections.has(peer.peerId)) continue;
 
-            this.knownPeers.set(peer.peerId, peer);
-            newPeersFound = true;
+              this.knownPeers.set(peer.peerId, peer);
+              newPeersFound = true;
 
-            if (this.connectedPeers.size < this.maxConnections) {
-              await this._connectToPeer(peer);
+              if (this.connectedPeers.size < this.maxConnections) {
+                await this._connectToPeer(peer);
+              }
             }
+          } catch (error) {
+            // Peer didn't respond - that's okay
           }
-        } catch (error) {
-          // Peer didn't respond - that's okay
         }
       }
-    }
 
-    console.log(`[Bootstrap] Discovery complete after ${rounds} rounds, ${this.connectedPeers.size} peers`);
+      console.log(`[Bootstrap] Discovery complete after ${rounds} rounds, ${this.connectedPeers.size} peers`);
+    } finally {
+      this._discovering = false;
+    }
   }
 
   /**
@@ -242,13 +264,19 @@ export class BootstrapManager extends EventEmitter {
    */
   _requestPeersFrom(peerId) {
     return new Promise((resolve, reject) => {
+      const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
       const timeout = setTimeout(() => {
         cleanup();
         resolve([]); // Return empty list on timeout
       }, 5000);
 
       const handler = (event) => {
+        // Only accept responses from the peer we actually asked
+        if (event.from !== peerId && event.peerId !== peerId) return;
         if (event.message?.type === MessageTypes.PEER_LIST) {
+          // If the response echoes our requestId, verify it matches
+          if (event.message.requestId && event.message.requestId !== requestId) return;
           cleanup();
           resolve(event.message.peers || []);
         }
@@ -260,8 +288,10 @@ export class BootstrapManager extends EventEmitter {
       };
 
       this.peerManager.on('message', handler);
-      
-      this.peerManager.send(peerId, createPeerRequestMessage())
+
+      const msg = createPeerRequestMessage();
+      msg.requestId = requestId;
+      this.peerManager.send(peerId, msg)
         .catch(() => {
           cleanup();
           resolve([]);
@@ -287,13 +317,22 @@ export class BootstrapManager extends EventEmitter {
         return;
       }
 
-      // Fall back to other transports via PeerManager
-      // The transport layer handles routing
-      this.connectedPeers.add(peer.peerId);
-      this.emit('peer-connected', { peer });
+      // Fall back: verify the peer is actually reachable before marking connected
+      const isReachable = await this.peerManager.send(peer.peerId, createPeerRequestMessage())
+        .then(() => true)
+        .catch(() => false);
+
+      if (isReachable) {
+        this.connectedPeers.add(peer.peerId);
+        this.emit('peer-connected', { peer });
+      } else {
+        console.warn(`[Bootstrap] Peer ${peer.peerId} not reachable via any transport`);
+      }
 
     } catch (error) {
       console.warn(`[Bootstrap] Failed to connect to ${peer.peerId}:`, error.message);
+      // Ensure phantom peer is not left in connected set
+      this.connectedPeers.delete(peer.peerId);
     } finally {
       this.pendingConnections.delete(peer.peerId);
     }
@@ -338,6 +377,10 @@ export class BootstrapManager extends EventEmitter {
    * Handle peer discovery from transports
    */
   _handleDiscoveredPeer(peerInfo) {
+    if (!peerInfo || !peerInfo.peerId || !peerInfo.host || !peerInfo.port) {
+      console.warn('[Bootstrap] Ignoring invalid discovered peer info:', peerInfo?.peerId);
+      return;
+    }
     const { peerId, host, port } = peerInfo;
     
     if (peerId === this.localPeerId) return;
@@ -394,6 +437,14 @@ export class BootstrapManager extends EventEmitter {
     this._stopPeriodicDiscovery();
 
     this.discoveryTimer = setInterval(() => {
+      // Prune stale known peers (not seen in 5 minutes and not connected)
+      const staleThreshold = Date.now() - 300000;
+      for (const [peerId, peer] of this.knownPeers) {
+        if (!this.connectedPeers.has(peerId) && (peer.lastSeen || 0) < staleThreshold) {
+          this.knownPeers.delete(peerId);
+        }
+      }
+
       if (this.connectedPeers.size < this.maxConnections) {
         this._recursiveDiscover().catch(() => {});
         this._announceSelf().catch(() => {});
@@ -441,6 +492,10 @@ export class BootstrapManager extends EventEmitter {
    */
   destroy() {
     this._stopPeriodicDiscovery();
+    if (this._mdnsHandler && this.peerManager?.transports?.mdns) {
+      this.peerManager.transports.mdns.off('peer-discovered', this._mdnsHandler);
+      this._mdnsHandler = null;
+    }
     this.knownPeers.clear();
     this.connectedPeers.clear();
     this.queriedPeers.clear();

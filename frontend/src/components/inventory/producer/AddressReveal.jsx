@@ -82,38 +82,42 @@ export default function AddressReveal({ requestId, reveal, identity, request, on
     if (!confirmed) return;
     setShipping(true);
     try {
-      // Update request status
+      // Update request status + audit log in a single transaction
       const yArr = ctx.yInventoryRequests;
       if (yArr) {
-        const arr = yArr.toArray();
-        const idx = arr.findIndex(r => r.id === requestId);
-        if (idx !== -1) {
-          const updated = {
-            ...arr[idx],
-            status: 'shipped',
-            shippedAt: Date.now(),
-            trackingNumber: trackingNumber || undefined,
-            printerNotes: shippingNotes || undefined,
-          };
-          yArr.delete(idx, 1);
-          yArr.insert(idx, [updated]);
-        }
+        const doc = yArr.doc;
+        const doShip = () => {
+          const arr = yArr.toArray();
+          const idx = arr.findIndex(r => r.id === requestId);
+          if (idx !== -1) {
+            const updated = {
+              ...arr[idx],
+              status: 'shipped',
+              shippedAt: Date.now(),
+              trackingNumber: trackingNumber || undefined,
+              printerNotes: shippingNotes || undefined,
+            };
+            yArr.delete(idx, 1);
+            yArr.insert(idx, [updated]);
+          }
+
+          // Address reveal is kept until delivered/cancelled so backward transitions work
+
+          // Audit log
+          ctx.yInventoryAuditLog?.push([{
+            id: generateId(),
+            inventorySystemId: ctx.inventorySystemId,
+            timestamp: Date.now(),
+            actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
+            actorRole: 'editor',
+            action: 'request_shipped',
+            targetType: 'request',
+            targetId: requestId,
+            summary: `Request ${requestId.slice(0, 8)} marked as shipped${trackingNumber ? ` (tracking: ${trackingNumber})` : ''}`,
+          }]);
+        };
+        if (doc) doc.transact(doShip); else doShip();
       }
-
-      // Address reveal is kept until delivered/cancelled so backward transitions work
-
-      // Audit log
-      ctx.yInventoryAuditLog?.push([{
-        id: generateId(),
-        inventorySystemId: ctx.inventorySystemId,
-        timestamp: Date.now(),
-        actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
-        actorRole: 'editor',
-        action: 'request_shipped',
-        targetType: 'request',
-        targetId: requestId,
-        summary: `Request ${requestId.slice(0, 8)} marked as shipped${trackingNumber ? ` (tracking: ${trackingNumber})` : ''}`,
-      }]);
 
       // Notify the requestor
       const req = yArr ? yArr.toArray().find(r => r.id === requestId) : null;
@@ -334,47 +338,58 @@ export default function AddressReveal({ requestId, reveal, identity, request, on
           )}
         </div>
 
+        {/* Only allow unclaim for safe statuses — never for in_progress, shipped, or delivered */}
+        {(['claimed', 'pending_approval', 'approved'].includes(request?.status)) && (
         <button
           className="ar-unclaim-btn"
           data-testid="ar-unclaim-btn"
           onClick={() => {
+            // Guard: prevent unclaim if the request has progressed past approval
+            const UNCLAIM_ALLOWED = ['claimed', 'pending_approval', 'approved'];
+            if (!UNCLAIM_ALLOWED.includes(request?.status)) return;
+
             const yArr = ctx.yInventoryRequests;
             if (yArr) {
-              const arr = yArr.toArray();
-              const idx = arr.findIndex(r => r.id === requestId);
-              if (idx !== -1) {
-                const req = arr[idx];
-                yArr.delete(idx, 1);
-                yArr.insert(idx, [{ ...req, status: 'open', assignedTo: null, claimedBy: null, assignedAt: null, claimedAt: null, approvedAt: null, approvedBy: null, updatedAt: Date.now() }]);
-                // Notify the requestor that the producer unclaimed
-                if (req.requestedBy) {
-                  pushNotification(ctx.yInventoryNotifications, {
-                    inventorySystemId: ctx.inventorySystemId,
-                    recipientId: req.requestedBy,
-                    type: 'request_unclaimed',
-                    message: `A producer unclaimed your request for ${req.catalogItemName}`,
-                    relatedId: requestId,
-                  });
+              const doc = yArr.doc;
+              const doUnclaim = () => {
+                const arr = yArr.toArray();
+                const idx = arr.findIndex(r => r.id === requestId);
+                if (idx !== -1) {
+                  const req = arr[idx];
+                  yArr.delete(idx, 1);
+                  yArr.insert(idx, [{ ...req, status: 'open', assignedTo: null, claimedBy: null, assignedAt: null, claimedAt: null, approvedAt: null, approvedBy: null, updatedAt: Date.now() }]);
+                  // Notify the requestor that the producer unclaimed
+                  if (req.requestedBy) {
+                    pushNotification(ctx.yInventoryNotifications, {
+                      inventorySystemId: ctx.inventorySystemId,
+                      recipientId: req.requestedBy,
+                      type: 'request_unclaimed',
+                      message: `A producer unclaimed your request for ${req.catalogItemName}`,
+                      relatedId: requestId,
+                    });
+                  }
                 }
-              }
+                ctx.yAddressReveals?.delete(requestId);
+                ctx.yInventoryAuditLog?.push([{
+                  id: generateId(),
+                  inventorySystemId: ctx.inventorySystemId,
+                  timestamp: Date.now(),
+                  actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
+                  actorRole: 'editor',
+                  action: 'request_unclaimed',
+                  targetType: 'request',
+                  targetId: requestId,
+                  summary: `Request ${requestId.slice(0, 8)} unclaimed by producer`,
+                }]);
+              };
+              if (doc) doc.transact(doUnclaim); else doUnclaim();
             }
-            ctx.yAddressReveals?.delete(requestId);
-            ctx.yInventoryAuditLog?.push([{
-              id: generateId(),
-              inventorySystemId: ctx.inventorySystemId,
-              timestamp: Date.now(),
-              actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
-              actorRole: 'editor',
-              action: 'request_unclaimed',
-              targetType: 'request',
-              targetId: requestId,
-              summary: `Request ${requestId.slice(0, 8)} unclaimed by producer`,
-            }]);
             onClose?.();
           }}
         >
           ↩️ Unclaim this request
         </button>
+        )}
 
         <p className="ar-privacy-note">
           The encrypted address is automatically deleted when the request is delivered or cancelled.

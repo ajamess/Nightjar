@@ -216,14 +216,22 @@ export function generateSecureNonce() {
  * Returns a if condition is true, b otherwise
  * Prevents timing attacks on conditional operations
  * 
+ * WARNING: JS bitwise operations work on 32-bit signed integers.
+ * Values outside the range [-2^31, 2^31-1] will be silently truncated.
+ * Only use for byte-level values (0-255) in crypto contexts.
+ * 
  * @param {number} condition - 1 for true, 0 for false
- * @param {number} a - Value if true
- * @param {number} b - Value if false
+ * @param {number} a - Value if true (must be 32-bit integer)
+ * @param {number} b - Value if false (must be 32-bit integer)
  * @returns {number} Selected value
  */
 export function constantTimeSelect(condition, a, b) {
   // Ensure condition is 0 or 1
   condition = condition ? 1 : 0;
+  
+  // Coerce to 32-bit integers to prevent unexpected behavior
+  a = a | 0;
+  b = b | 0;
   
   // Use bitwise operations for constant-time selection
   // mask is all 1s if condition is 1, all 0s if condition is 0

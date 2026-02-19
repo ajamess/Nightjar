@@ -6,6 +6,7 @@ const nacl = require('tweetnacl');
 
 const PADDING_BLOCK_SIZE = 4096; // As specified in the design document
 const MIN_PACKED_LENGTH = nacl.secretbox.nonceLength + nacl.secretbox.overheadLength + 4;
+const MAX_UPDATE_SIZE = 100 * 1024 * 1024; // 100MB max
 
 /**
  * Timing-safe comparison of two byte arrays
@@ -17,15 +18,13 @@ function timingSafeEqual(a, b) {
     if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array)) {
         return false;
     }
-    if (a.length !== b.length) {
-        // Still do comparison to maintain constant time
-        b = new Uint8Array(a.length);
-    }
+    const lengthsMatch = a.length === b.length;
+    const compareTo = lengthsMatch ? b : new Uint8Array(a.length);
     let result = 0;
     for (let i = 0; i < a.length; i++) {
-        result |= a[i] ^ b[i];
+        result |= a[i] ^ compareTo[i];
     }
-    return result === 0 && a.length === b.length;
+    return result === 0 && lengthsMatch;
 }
 
 /**
@@ -73,6 +72,10 @@ function encryptUpdate(update, key) {
         console.error('[Crypto] Invalid encryption key');
         return null;
     }
+    if (update.length > MAX_UPDATE_SIZE) {
+        console.error('[Crypto] Update too large:', update.length);
+        return null;
+    }
     
     const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
 
@@ -116,7 +119,8 @@ function decryptUpdate(packed, key) {
         }
         
         // Ensure packed is a proper Uint8Array (convert from Buffer if needed)
-        if (!(packed instanceof Uint8Array) || packed.constructor.name === 'Buffer') {
+        // Use Buffer.isBuffer() instead of constructor.name check for robustness
+        if (Buffer.isBuffer(packed) || !(packed instanceof Uint8Array)) {
             packed = new Uint8Array(packed);
         }
         
@@ -142,7 +146,7 @@ function decryptUpdate(packed, key) {
         const originalLength = view.getUint32(0, false); // Big-endian
         
         // Sanity check the length with additional bounds checking
-        if (originalLength > padded.byteLength - 4 || originalLength < 0 || originalLength > 100 * 1024 * 1024) {
+        if (originalLength > padded.byteLength - 4 || originalLength < 0 || originalLength > MAX_UPDATE_SIZE) {
             console.log(`[Crypto] Invalid originalLength: ${originalLength}, padded size: ${padded.byteLength}`);
             return null;
         }

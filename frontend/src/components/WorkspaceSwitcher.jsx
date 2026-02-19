@@ -24,6 +24,7 @@ export default function WorkspaceSwitcher({ onOpenSettings, onCreateWorkspace, o
   const { workspaces, currentWorkspace, switchWorkspace, hasWorkspaces, deleteWorkspace } = useWorkspaces();
   const [isOpen, setIsOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const dropdownRef = useRef(null);
   
   // Close dropdown when clicking outside
@@ -146,7 +147,7 @@ export default function WorkspaceSwitcher({ onOpenSettings, onCreateWorkspace, o
                 }}
                 role="option"
                 aria-selected={workspace.id === currentWorkspace?.id}
-                data-testid={`workspace-option-${workspace.name.replace(/\s+/g, '-')}`}
+                data-testid={`workspace-option-${(workspace.name || '').replace(/\s+/g, '-')}`}
                 style={{
                   background: workspace.color 
                     ? ensureContrastWithWhite(workspace.color, 0.2)
@@ -234,15 +235,21 @@ export default function WorkspaceSwitcher({ onOpenSettings, onCreateWorkspace, o
               </button>
               <button 
                 className="workspace-switcher__confirm-btn workspace-switcher__confirm-btn--delete"
+                disabled={isDeleting}
                 onClick={async () => {
-                  if (showDeleteConfirm) {
-                    await deleteWorkspace(showDeleteConfirm);
-                    setShowDeleteConfirm(false);
-                    setIsOpen(false);
+                  if (showDeleteConfirm && !isDeleting) {
+                    setIsDeleting(true);
+                    try {
+                      await deleteWorkspace(showDeleteConfirm);
+                      setShowDeleteConfirm(false);
+                      setIsOpen(false);
+                    } finally {
+                      setIsDeleting(false);
+                    }
                   }
                 }}
               >
-                Delete Permanently
+                {isDeleting ? 'Deleting…' : 'Delete Permanently'}
               </button>
             </div>
           </div>

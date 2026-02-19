@@ -187,6 +187,24 @@ const getDoc = (roomName) => {
     return doc;
 };
 
+// Clean up stale Yjs documents that are no longer needed
+// Called periodically to prevent unbounded memory growth
+function cleanupStaleYDocs() {
+    // Keep only the most recently accessed docs (max 50)
+    if (ydocs.size <= 50) return;
+    const entries = Array.from(ydocs.entries());
+    // Remove the oldest entries (first added = first in iteration order)
+    const toRemove = entries.slice(0, entries.length - 50);
+    for (const [key, doc] of toRemove) {
+        try { doc.destroy(); } catch (e) { /* ignore */ }
+        ydocs.delete(key);
+    }
+    console.log(`[Main] Cleaned up ${toRemove.length} stale Yjs docs, ${ydocs.size} remaining`);
+}
+
+// Clean up stale docs every 5 minutes
+const cleanupStaleYDocsInterval = setInterval(cleanupStaleYDocs, 5 * 60 * 1000);
+
 // --- Main Application Lifecycle ---
 function createWindow() {
     // Prevent duplicate window creation
@@ -212,6 +230,11 @@ function createWindow() {
         },
     });
 
+    // Null out mainWindow reference when the window is closed
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
+
     // Show window when ready to prevent white flash
     mainWindow.once('ready-to-show', () => {
         console.log('[Main] Window ready-to-show event fired');
@@ -235,9 +258,11 @@ function createWindow() {
     
     // Retry loading URL if it fails (race condition with Vite startup)
     const loadWithRetry = (retries = 10, delay = 1500) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
         mainWindow.loadURL(url).then(() => {
             console.log('[Main] Successfully loaded:', url);
         }).catch(err => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
             console.error('[Main] Error loading URL:', err.message);
             if (retries > 0) {
                 console.log(`[Main] Retrying in ${delay/1000}s... (${retries} attempts left)`);
@@ -260,7 +285,17 @@ function createWindow() {
 
 // Handle nightjar:// protocol links
 function handleProtocolLink(url) {
-    console.log('[Protocol] Received link:', url);
+    // Validate: must be a string starting with nightjar://
+    if (typeof url !== 'string' || !url.startsWith('nightjar://')) {
+        console.warn('[Protocol] Rejected invalid protocol link (bad prefix)');
+        return;
+    }
+    // Reject URLs with control characters or excessive length (defense-in-depth)
+    if (url.length > 2048 || /[\x00-\x1f\x7f]/.test(url)) {
+        console.warn('[Protocol] Rejected protocol link: control chars or length >', 2048);
+        return;
+    }
+    console.log('[Protocol] Received link:', url.slice(0, 80) + (url.length > 80 ? '...' : ''));
     // Parse the nightjar:// URL and send to renderer
     safeSend('protocol-link', url);
     safeFocusWindow();
@@ -318,6 +353,11 @@ app.on('ready', async () => {
     const fallbackTimer = setTimeout(() => {
         console.warn('[Main] Backend startup timeout, creating window anyway...');
         if (!mainWindow) {
+            // Close loading window if it's still open
+            if (loadingWindow && !loadingWindow.isDestroyed()) {
+                loadingWindow.close();
+                loadingWindow = null;
+            }
             createWindow();
         }
     }, 15000); // 15 second fallback
@@ -332,6 +372,11 @@ app.on('ready', async () => {
         console.error('[Main] Backend startup failed:', err);
         console.error('[Main] Full backend error:', err);
         clearTimeout(fallbackTimer);
+        // Close loading window if it's still open to prevent window leak
+        if (loadingWindow && !loadingWindow.isDestroyed()) {
+            loadingWindow.close();
+            loadingWindow = null;
+        }
         // Create window anyway to show error
         createWindow();
     }
@@ -339,16 +384,26 @@ app.on('ready', async () => {
     // Handle protocol link if app was opened with one (Windows)
     const protocolLink = process.argv.find(arg => arg.startsWith('nightjar://'));
     if (protocolLink && isWindowUsable()) {
-        // Wait for window to be ready
-        mainWindow.webContents.once('did-finish-load', () => {
+        const deliverLink = () => {
             handleProtocolLink(protocolLink);
-        });
+        };
+        if (!mainWindow.webContents.isLoading()) {
+            deliverLink();
+        } else {
+            mainWindow.webContents.once('did-finish-load', deliverLink);
+        }
     }
 });
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
+    }
+});
+
+app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
     }
 });
 
@@ -538,6 +593,12 @@ function restartSidecar(nodeExecutable, nodeArgs, sidecarCwd, spawnEnv) {
         if (output.includes('Metadata WebSocket server listening')) {
             console.log('[Sidecar] Successfully restarted');
             sidecarRestartAttempts = 0;
+            
+            // Notify renderer that sidecar restarted so it can reconnect WebSockets
+            safeSend('backend-error', { 
+                type: 'sidecar-restarted',
+                message: 'Backend restarted after crash. Reconnecting...' 
+            });
         }
     });
     
@@ -598,9 +659,10 @@ async function startBackendWithLoadingScreen() {
                 const msg = LOADING_MESSAGES[Math.min(step, LOADING_MESSAGES.length - 1)];
                 const progress = Math.min(100, Math.round((step / 7) * 100));
                 // Use textContent instead of innerHTML to prevent XSS
-                // Escape single quotes in messages to prevent JS injection
-                const escapedFunny = (customFunny || msg.funny).replace(/'/g, "\\'");
-                const escapedReal = (customReal || msg.real).replace(/'/g, "\\'");
+                // Sanitize all special characters to prevent JS injection via executeJavaScript
+                const sanitize = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+                const escapedFunny = sanitize(customFunny || msg.funny);
+                const escapedReal = sanitize(customReal || msg.real);
                 loadingWindow.webContents.executeJavaScript(`
                     document.getElementById('progress').style.width = '${progress}%';
                     document.getElementById('funny').textContent = '${escapedFunny}';
@@ -897,7 +959,9 @@ async function startBackendWithLoadingScreen() {
             }
             
             if (loadingWindow && !loadingWindow.isDestroyed()) {
-                loadingWindow.loadURL(`data:text/html,<html><body style="background:#242424;color:white;font-family:sans-serif;padding:2em;text-align:center;"><h1>⚠️ Startup Error</h1><p>${err.message}</p><p>Platform: ${process.platform}</p><p>Check console for details</p></body></html>`);
+                // Escape error message to prevent XSS
+                const safeMsg = (err.message || 'Unknown error').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+                loadingWindow.loadURL(`data:text/html,<html><body style="background:#242424;color:white;font-family:sans-serif;padding:2em;text-align:center;"><h1>⚠️ Startup Error</h1><p>${safeMsg}</p><p>Platform: ${process.platform}</p><p>Check console for details</p></body></html>`);
             }
             reject(err);
         });
@@ -948,11 +1012,19 @@ async function startBackend() {
 
 // Synchronous handler for app version (needed by preload script at startup)
 ipcMain.on('get-app-version', (event) => {
+    if (!validateSender(event)) {
+        event.returnValue = null;
+        return;
+    }
     event.returnValue = app.getVersion();
 });
 
 // Synchronous handler for sidecar ports (needed by preload script at startup)
 ipcMain.on('get-sidecar-ports', (event) => {
+    if (!validateSender(event)) {
+        event.returnValue = null;
+        return;
+    }
     event.returnValue = global.SIDECAR_PORTS;
 });
 
@@ -972,13 +1044,13 @@ ipcMain.on('set-key', async (event, keyPayload) => {
 });
 
 ipcMain.on('yjs-update', (event, update) => {
+    if (!validateSender(event)) return;
     const doc = getDoc('p2p-editor-room');
     Y.applyUpdate(doc, new Uint8Array(update), 'ipc');
 });
 
-ipcMain.on('awareness-update', (event, update) => {
-    awarenessProtocol.applyAwarenessUpdate(awareness, new Uint8Array(update), 'ipc');
-});
+// NOTE: awareness-update IPC handler removed — not exposed in preload.js.
+// Awareness updates are routed through the sidecar WebSocket, not main-process IPC.
 
 // Relay awareness changes to the frontend and P2P network
 awareness.on('update', (changes, origin) => {
@@ -1028,6 +1100,34 @@ ipcMain.handle('identity:store', async (event, identityData) => {
         throw new Error('Unauthorized IPC sender');
     }
     try {
+        // Input validation: identityData must be a non-null object
+        if (!identityData || typeof identityData !== 'object') {
+            throw new Error('Invalid identity data: expected object');
+        }
+        // Enforce length limits on string fields to prevent oversized data injection
+        const MAX_HANDLE = 100;
+        const MAX_COLOR = 30;
+        const MAX_ICON = 20;
+        const MAX_MNEMONIC = 500;
+        const MAX_HEX_KEY = 256;
+        if (identityData.handle && (typeof identityData.handle !== 'string' || identityData.handle.length > MAX_HANDLE)) {
+            throw new Error(`Invalid handle: must be a string of at most ${MAX_HANDLE} characters`);
+        }
+        if (identityData.color && (typeof identityData.color !== 'string' || identityData.color.length > MAX_COLOR)) {
+            throw new Error(`Invalid color: must be a string of at most ${MAX_COLOR} characters`);
+        }
+        if (identityData.icon && (typeof identityData.icon !== 'string' || identityData.icon.length > MAX_ICON)) {
+            throw new Error(`Invalid icon: must be a string of at most ${MAX_ICON} characters`);
+        }
+        if (identityData.mnemonic && (typeof identityData.mnemonic !== 'string' || identityData.mnemonic.length > MAX_MNEMONIC)) {
+            throw new Error(`Invalid mnemonic: must be a string of at most ${MAX_MNEMONIC} characters`);
+        }
+        if (identityData.privateKeyHex && (typeof identityData.privateKeyHex !== 'string' || identityData.privateKeyHex.length > MAX_HEX_KEY || !/^[0-9a-f]+$/i.test(identityData.privateKeyHex))) {
+            throw new Error('Invalid privateKeyHex: must be a hex string');
+        }
+        if (identityData.publicKeyHex && (typeof identityData.publicKeyHex !== 'string' || identityData.publicKeyHex.length > MAX_HEX_KEY || !/^[0-9a-f]+$/i.test(identityData.publicKeyHex))) {
+            throw new Error('Invalid publicKeyHex: must be a hex string');
+        }
         // Convert hex back to Uint8Arrays if needed
         const toStore = {
             privateKey: identityData.privateKeyHex 
@@ -1058,6 +1158,23 @@ ipcMain.handle('identity:update', async (event, updates) => {
         throw new Error('Unauthorized IPC sender');
     }
     try {
+        // Input validation: updates must be a non-null object
+        if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+            throw new Error('Invalid updates: expected plain object');
+        }
+        // Enforce type and length limits on updatable fields
+        if (updates.handle !== undefined && (typeof updates.handle !== 'string' || updates.handle.length > 100)) {
+            throw new Error('Invalid handle: must be a string of at most 100 characters');
+        }
+        if (updates.color !== undefined && (typeof updates.color !== 'string' || updates.color.length > 30 || !/^#[0-9a-f]{3,8}$/i.test(updates.color))) {
+            throw new Error('Invalid color: must be a valid hex color string');
+        }
+        if (updates.icon !== undefined && (typeof updates.icon !== 'string' || updates.icon.length > 20)) {
+            throw new Error('Invalid icon: must be a string of at most 20 characters');
+        }
+        if (updates.devices !== undefined && !Array.isArray(updates.devices)) {
+            throw new Error('Invalid devices: must be an array');
+        }
         identity.updateIdentity(updates);
         return true;
     } catch (err) {
@@ -1094,6 +1211,9 @@ ipcMain.handle('identity:validate', async (event, mnemonic) => {
         throw new Error('Unauthorized IPC sender');
     }
     try {
+        if (typeof mnemonic !== 'string' || mnemonic.length === 0 || mnemonic.length > 500) {
+            return false;
+        }
         return identity.validateRecoveryPhrase(mnemonic);
     } catch (err) {
         console.error('[Identity] Validation error:', err);
@@ -1107,6 +1227,9 @@ ipcMain.handle('identity:export', async (event, password) => {
         throw new Error('Unauthorized IPC sender');
     }
     try {
+        if (typeof password !== 'string' || password.length === 0 || password.length > 1024) {
+            throw new Error('Invalid password: must be a non-empty string of at most 1024 characters');
+        }
         return identity.exportIdentity(password);
     } catch (err) {
         console.error('[Identity] Export error:', err);
@@ -1120,6 +1243,12 @@ ipcMain.handle('identity:import', async (event, data, password) => {
         throw new Error('Unauthorized IPC sender');
     }
     try {
+        if (typeof password !== 'string' || password.length === 0 || password.length > 1024) {
+            throw new Error('Invalid password: must be a non-empty string of at most 1024 characters');
+        }
+        if (typeof data !== 'string' || data.length === 0 || data.length > 100 * 1024) {
+            throw new Error('Invalid import data: must be a non-empty string of at most 100KB');
+        }
         const restored = identity.importIdentity(data, password);
         return {
             privateKeyHex: Buffer.from(restored.privateKey).toString('hex'),
@@ -1170,6 +1299,7 @@ swarmManager.on('awareness-update', (data) => {
 });
 
 ipcMain.handle('hyperswarm:initialize', async (event, identityData) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
         await swarmManager.initialize({
             publicKey: identityData.publicKeyHex || identityData.publicKey,
@@ -1185,6 +1315,10 @@ ipcMain.handle('hyperswarm:initialize', async (event, identityData) => {
 });
 
 ipcMain.handle('hyperswarm:join', async (event, topicHex) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof topicHex !== 'string' || topicHex.length === 0 || topicHex.length > 128 || !/^[0-9a-f]+$/i.test(topicHex)) {
+        throw new Error('Invalid topic: must be a hex string of at most 128 characters');
+    }
     try {
         await swarmManager.joinTopic(topicHex);
         return true;
@@ -1195,6 +1329,10 @@ ipcMain.handle('hyperswarm:join', async (event, topicHex) => {
 });
 
 ipcMain.handle('hyperswarm:leave', async (event, topicHex) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof topicHex !== 'string' || topicHex.length === 0 || topicHex.length > 128 || !/^[0-9a-f]+$/i.test(topicHex)) {
+        throw new Error('Invalid topic: must be a hex string of at most 128 characters');
+    }
     try {
         await swarmManager.leaveTopic(topicHex);
         return true;
@@ -1204,23 +1342,32 @@ ipcMain.handle('hyperswarm:leave', async (event, topicHex) => {
     }
 });
 
-ipcMain.on('hyperswarm:sync', (event, { topic, data }) => {
+ipcMain.on('hyperswarm:sync', (event, { topic, data } = {}) => {
+    if (!validateSender(event)) return;
+    if (typeof topic !== 'string' || topic.length === 0 || topic.length > 128) return;
+    if (data === undefined || data === null) return;
     swarmManager.broadcastSync(topic, data);
 });
 
-ipcMain.on('hyperswarm:awareness', (event, { topic, state }) => {
+ipcMain.on('hyperswarm:awareness', (event, { topic, state } = {}) => {
+    if (!validateSender(event)) return;
+    if (typeof topic !== 'string' || topic.length === 0 || topic.length > 128) return;
+    if (state === undefined || state === null) return;
     swarmManager.broadcastAwareness(topic, state);
 });
 
 ipcMain.handle('hyperswarm:peers', async (event, topicHex) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     return swarmManager.getPeers(topicHex);
 });
 
-ipcMain.handle('hyperswarm:connectionCount', async () => {
+ipcMain.handle('hyperswarm:connectionCount', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     return swarmManager.getConnectionCount();
 });
 
-ipcMain.handle('hyperswarm:destroy', async () => {
+ipcMain.handle('hyperswarm:destroy', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
         await swarmManager.destroy();
         return true;
@@ -1234,7 +1381,15 @@ ipcMain.handle('hyperswarm:destroy', async () => {
 let torManager = null;
 
 ipcMain.handle('tor:start', async (event, mode = 'bundled') => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
+        // Remove old listeners from previous torManager to prevent accumulation
+        if (torManager) {
+            torManager.removeAllListeners('bootstrap');
+            torManager.removeAllListeners('ready');
+            torManager.removeAllListeners('error');
+        }
+        
         torManager = getTorManager(mode);
         
         // Forward events to renderer
@@ -1258,7 +1413,8 @@ ipcMain.handle('tor:start', async (event, mode = 'bundled') => {
     }
 });
 
-ipcMain.handle('tor:stop', async () => {
+ipcMain.handle('tor:stop', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
         if (torManager) {
             await torManager.stop();
@@ -1270,7 +1426,8 @@ ipcMain.handle('tor:stop', async () => {
     }
 });
 
-ipcMain.handle('tor:status', async () => {
+ipcMain.handle('tor:status', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
         if (torManager) {
             return await torManager.getStatus();
@@ -1292,7 +1449,8 @@ ipcMain.handle('tor:status', async () => {
     }
 });
 
-ipcMain.handle('tor:newIdentity', async () => {
+ipcMain.handle('tor:newIdentity', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
         if (torManager) {
             return await torManager.newIdentity();
@@ -1304,14 +1462,16 @@ ipcMain.handle('tor:newIdentity', async () => {
     }
 });
 
-ipcMain.handle('tor:socksProxy', async () => {
+ipcMain.handle('tor:socksProxy', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     if (torManager) {
         return torManager.getSocksProxy();
     }
     return null;
 });
 
-ipcMain.handle('tor:onionAddress', async () => {
+ipcMain.handle('tor:onionAddress', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     if (torManager) {
         return torManager.onionAddress;
     }
@@ -1324,6 +1484,15 @@ ipcMain.handle('tor:onionAddress', async () => {
 
 ipcMain.handle('inventory:store-address', async (event, inventorySystemId, requestId, encryptedBlob) => {
     if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof inventorySystemId !== 'string' || inventorySystemId.length === 0 || inventorySystemId.length > 256) {
+        throw new Error('Invalid inventorySystemId');
+    }
+    if (typeof requestId !== 'string' || requestId.length === 0 || requestId.length > 256) {
+        throw new Error('Invalid requestId');
+    }
+    if (typeof encryptedBlob !== 'string' || encryptedBlob.length === 0 || encryptedBlob.length > 1024 * 1024) {
+        throw new Error('Invalid encrypted blob');
+    }
     try {
         await inventoryStorage.storeAddress(inventorySystemId, requestId, encryptedBlob);
         return true;
@@ -1335,6 +1504,12 @@ ipcMain.handle('inventory:store-address', async (event, inventorySystemId, reque
 
 ipcMain.handle('inventory:get-address', async (event, inventorySystemId, requestId) => {
     if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof inventorySystemId !== 'string' || inventorySystemId.length === 0 || inventorySystemId.length > 256) {
+        throw new Error('Invalid inventorySystemId');
+    }
+    if (typeof requestId !== 'string' || requestId.length === 0 || requestId.length > 256) {
+        throw new Error('Invalid requestId');
+    }
     try {
         return await inventoryStorage.getAddress(inventorySystemId, requestId);
     } catch (err) {
@@ -1345,6 +1520,12 @@ ipcMain.handle('inventory:get-address', async (event, inventorySystemId, request
 
 ipcMain.handle('inventory:delete-address', async (event, inventorySystemId, requestId) => {
     if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof inventorySystemId !== 'string' || inventorySystemId.length === 0 || inventorySystemId.length > 256) {
+        throw new Error('Invalid inventorySystemId');
+    }
+    if (typeof requestId !== 'string' || requestId.length === 0 || requestId.length > 256) {
+        throw new Error('Invalid requestId');
+    }
     try {
         return await inventoryStorage.deleteAddress(inventorySystemId, requestId);
     } catch (err) {
@@ -1355,6 +1536,9 @@ ipcMain.handle('inventory:delete-address', async (event, inventorySystemId, requ
 
 ipcMain.handle('inventory:list-addresses', async (event, inventorySystemId) => {
     if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof inventorySystemId !== 'string' || inventorySystemId.length === 0 || inventorySystemId.length > 256) {
+        throw new Error('Invalid inventorySystemId');
+    }
     try {
         return await inventoryStorage.listAddresses(inventorySystemId);
     } catch (err) {
@@ -1365,6 +1549,12 @@ ipcMain.handle('inventory:list-addresses', async (event, inventorySystemId) => {
 
 ipcMain.handle('inventory:store-saved-address', async (event, addressId, encryptedBlob) => {
     if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof addressId !== 'string' || addressId.length === 0 || addressId.length > 256) {
+        throw new Error('Invalid addressId');
+    }
+    if (typeof encryptedBlob !== 'string' || encryptedBlob.length === 0 || encryptedBlob.length > 1024 * 1024) {
+        throw new Error('Invalid encrypted blob');
+    }
     try {
         await inventoryStorage.storeSavedAddress(addressId, encryptedBlob);
         return true;
@@ -1386,6 +1576,9 @@ ipcMain.handle('inventory:get-saved-addresses', async (event) => {
 
 ipcMain.handle('inventory:delete-saved-address', async (event, addressId) => {
     if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    if (typeof addressId !== 'string' || addressId.length === 0 || addressId.length > 256) {
+        throw new Error('Invalid addressId');
+    }
     try {
         return await inventoryStorage.deleteSavedAddress(addressId);
     } catch (err) {
@@ -1397,8 +1590,10 @@ ipcMain.handle('inventory:delete-saved-address', async (event, addressId) => {
 // --- File System IPC Handlers ---
 
 // Select a folder via native OS dialog
-ipcMain.handle('dialog:selectFolder', async (_event, options = {}) => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('dialog:selectFolder', async (event, options = {}) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
+    const parentWindow = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+    const result = await dialog.showOpenDialog(parentWindow, {
         title: options.title || 'Select Download Location',
         properties: ['openDirectory', 'createDirectory'],
         defaultPath: options.defaultPath || app.getPath('downloads'),
@@ -1410,9 +1605,33 @@ ipcMain.handle('dialog:selectFolder', async (_event, options = {}) => {
 });
 
 // Save a downloaded file to disk
-ipcMain.handle('file:saveDownload', async (_event, { filePath, data }) => {
+ipcMain.handle('file:saveDownload', async (event, { filePath, data }) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
-        const dir = path.dirname(filePath);
+        // Validate path is absolute and within allowed directories
+        if (!filePath || typeof filePath !== 'string') {
+            return { success: false, error: 'Invalid file path' };
+        }
+        const resolvedPath = path.resolve(filePath);
+        
+        // Reject path traversal sequences unconditionally
+        if (filePath.includes('..')) {
+            return { success: false, error: 'Invalid file path: traversal not allowed' };
+        }
+        
+        // Enforce allowlist: only permit writes to downloads, userData, documents, or desktop
+        const allowedRoots = [
+            app.getPath('downloads'),
+            app.getPath('userData'),
+            app.getPath('documents'),
+            app.getPath('desktop'),
+        ];
+        const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root + path.sep) || resolvedPath === root);
+        if (!isAllowed) {
+            console.warn(`[Main] file:saveDownload blocked write to disallowed path: ${resolvedPath}`);
+            return { success: false, error: 'File path is outside allowed directories' };
+        }
+        const dir = path.dirname(resolvedPath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -1422,8 +1641,8 @@ ipcMain.handle('file:saveDownload', async (_event, { filePath, data }) => {
             : typeof data === 'string'
                 ? Buffer.from(data, 'base64')
                 : Buffer.from(data);
-        fs.writeFileSync(filePath, buffer);
-        return { success: true, filePath };
+        fs.writeFileSync(resolvedPath, buffer);
+        return { success: true, filePath: resolvedPath };
     } catch (err) {
         console.error('[Main] file:saveDownload error:', err);
         return { success: false, error: err.message };
@@ -1431,9 +1650,25 @@ ipcMain.handle('file:saveDownload', async (_event, { filePath, data }) => {
 });
 
 // Open a file with the system default application
-ipcMain.handle('file:open', async (_event, filePath) => {
+ipcMain.handle('file:open', async (event, filePath) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
-        const result = await shell.openPath(filePath);
+        if (!filePath || typeof filePath !== 'string' || filePath.includes('..')) {
+            return { success: false, error: 'Invalid file path' };
+        }
+        const resolved = path.resolve(filePath);
+        // Only allow opening files in user-accessible directories
+        const allowedRoots = [
+            app.getPath('downloads'),
+            app.getPath('userData'),
+            app.getPath('documents'),
+            app.getPath('desktop'),
+        ];
+        const isAllowed = allowedRoots.some(root => resolved.startsWith(root + path.sep) || resolved === root);
+        if (!isAllowed) {
+            return { success: false, error: 'File path is outside allowed directories' };
+        }
+        const result = await shell.openPath(resolved);
         if (result) {
             return { success: false, error: result };
         }
@@ -1444,9 +1679,25 @@ ipcMain.handle('file:open', async (_event, filePath) => {
 });
 
 // Show a file in the OS file explorer
-ipcMain.handle('file:showInFolder', async (_event, filePath) => {
+ipcMain.handle('file:showInFolder', async (event, filePath) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
-        shell.showItemInFolder(filePath);
+        if (!filePath || typeof filePath !== 'string' || filePath.includes('..')) {
+            return { success: false, error: 'Invalid file path' };
+        }
+        const resolved = path.resolve(filePath);
+        // Only allow showing files in user-accessible directories
+        const allowedRoots = [
+            app.getPath('downloads'),
+            app.getPath('userData'),
+            app.getPath('documents'),
+            app.getPath('desktop'),
+        ];
+        const isAllowed = allowedRoots.some(root => resolved.startsWith(root + path.sep) || resolved === root);
+        if (!isAllowed) {
+            return { success: false, error: 'File path is outside allowed directories' };
+        }
+        shell.showItemInFolder(resolved);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1454,7 +1705,8 @@ ipcMain.handle('file:showInFolder', async (_event, filePath) => {
 });
 
 // Open an external URL in the system browser (for shipping providers, etc.)
-ipcMain.handle('open-external', async (_event, url) => {
+ipcMain.handle('open-external', async (event, url) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     try {
         // Only allow http(s) URLs for security
         if (typeof url !== 'string' || (!url.startsWith('https://') && !url.startsWith('http://'))) {
@@ -1468,7 +1720,8 @@ ipcMain.handle('open-external', async (_event, url) => {
 });
 
 // Diagnostic data collection for issue reporting
-ipcMain.handle('get-diagnostic-data', async () => {
+ipcMain.handle('get-diagnostic-data', async (event) => {
+    if (!validateSender(event)) throw new Error('Unauthorized IPC sender');
     const os = require('os');
     const fs = require('fs');
     
@@ -1488,7 +1741,6 @@ ipcMain.handle('get-diagnostic-data', async () => {
             electronVersion: process.versions.electron,
             chromeVersion: process.versions.chrome,
             v8Version: process.versions.v8,
-            hostname: os.hostname(),
             cpus: os.cpus().length,
             totalMemory: os.totalmem(),
             freeMemory: os.freemem(),
@@ -1581,10 +1833,95 @@ ipcMain.handle('get-diagnostic-data', async () => {
 });
 
 // Cleanup on app quit
-app.on('before-quit', async () => {
-    await swarmManager.destroy();
-    if (torManager) {
-        await torManager.stop();
+let isQuitting = false;
+app.on('before-quit', async (e) => {
+    if (isQuitting) return;
+    isQuitting = true;
+    e.preventDefault();
+    
+    // Stop periodic Y.Doc cleanup
+    clearInterval(cleanupStaleYDocsInterval);
+    
+    // Graceful sidecar shutdown: send a message via WebSocket, wait for exit, then force-kill
+    if (sidecarProcess && !sidecarProcess.killed) {
+        const sidecarPid = sidecarProcess.pid;
+        let sidecarExited = false;
+        
+        // Listen for the process to exit on its own after graceful shutdown
+        const exitPromise = new Promise((resolve) => {
+            if (sidecarProcess) {
+                sidecarProcess.once('close', () => {
+                    sidecarExited = true;
+                    resolve();
+                });
+            } else {
+                resolve();
+            }
+        });
+        
+        try {
+            // Try to send graceful shutdown command via metadata WebSocket
+            const WebSocket = require('ws');
+            const shutdownWs = new WebSocket(`ws://localhost:${SIDECAR_META_PORT}`);
+            const shutdownGrace = new Promise((resolve) => {
+                shutdownWs.on('open', () => {
+                    shutdownWs.send(JSON.stringify({ type: 'shutdown' }));
+                    shutdownWs.close();
+                    resolve();
+                });
+                shutdownWs.on('error', () => resolve());
+                setTimeout(resolve, 3000); // Hard timeout for WebSocket connection
+            });
+            await shutdownGrace;
+            
+            // Wait up to 10 seconds for the sidecar to exit gracefully
+            // This gives the sidecar time to flush databases and clean up
+            await Promise.race([
+                exitPromise,
+                new Promise(resolve => setTimeout(resolve, 10000))
+            ]);
+        } catch (err) {
+            console.warn('[Main] Failed to send graceful shutdown to sidecar:', err.message);
+        }
+        
+        // Force-kill only if the sidecar hasn't exited yet
+        if (!sidecarExited && sidecarProcess && !sidecarProcess.killed) {
+            try {
+                if (process.platform === 'win32') {
+                    // On Windows, process.kill() sends a hard termination (no SIGTERM support).
+                    // Use taskkill /T to also kill child processes.
+                    require('child_process').execSync(`taskkill /pid ${sidecarPid} /T /F`, { stdio: 'ignore' });
+                } else {
+                    process.kill(sidecarPid, 'SIGTERM');
+                }
+                console.log('[Main] Sidecar process force-killed on quit');
+            } catch (err) {
+                // Process may have already exited between check and kill
+                if (err.code !== 'ESRCH') {
+                    console.error('[Main] Failed to kill sidecar:', err.message);
+                }
+            }
+        } else {
+            console.log('[Main] Sidecar process exited gracefully');
+        }
+        sidecarProcess = null;
     }
+    
+    // Async cleanup (best-effort, actually awaited thanks to preventDefault)
+    try {
+        await swarmManager.destroy();
+    } catch (err) {
+        console.error('[Main] Failed to destroy swarm:', err.message);
+    }
+    
+    if (torManager) {
+        try {
+            await torManager.stop();
+        } catch (err) {
+            console.error('[Main] Failed to stop Tor:', err.message);
+        }
+    }
+    
+    app.exit();
 });
 

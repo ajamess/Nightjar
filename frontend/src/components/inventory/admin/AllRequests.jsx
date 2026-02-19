@@ -311,7 +311,7 @@ export default function AllRequests() {
   }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, showToast, yInventoryNotifications, ctx.userIdentity]);
 
   // Unique states appearing in requests
-  const usedStates = [...new Set(requests.map(r => r.state).filter(Boolean))].sort();
+  const usedStates = useMemo(() => [...new Set(requests.map(r => r.state).filter(Boolean))].sort(), [requests]);
   const sortIndicator = (field) => sortField === field ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
 
   return (

@@ -31,30 +31,38 @@ export function pushNotification(yNotifications, {
   relatedId = null,
 }) {
   if (!yNotifications) return;
-  
-  // Bug #114: Deduplicate identical notifications within a short window
-  // to prevent notification spam from rapid Yjs sync events
-  const now = Date.now();
-  const existing = yNotifications.toArray();
-  const isDuplicate = existing.some(n =>
-    n.recipientId === recipientId &&
-    n.inventorySystemId === inventorySystemId &&
-    n.type === type &&
-    n.relatedId === relatedId &&
-    (now - n.createdAt) < DEDUP_WINDOW_MS
-  );
-  if (isDuplicate) return;
-  
-  yNotifications.push([{
-    id: generateId('notif-'),
-    inventorySystemId,
-    recipientId,
-    type,
-    message,
-    relatedId,
-    read: false,
-    createdAt: now,
-  }]);
+
+  const doc = yNotifications.doc;
+  const doPush = () => {
+    // Bug #114: Deduplicate identical notifications within a short window
+    // to prevent notification spam from rapid Yjs sync events.
+    // Both the dedup read and the push are inside the same transaction so the
+    // snapshot is consistent with the mutation.
+    const now = Date.now();
+    const existing = yNotifications.toArray();
+    const isDuplicate = existing.some(n =>
+      n.recipientId === recipientId &&
+      n.inventorySystemId === inventorySystemId &&
+      n.type === type &&
+      n.relatedId === relatedId &&
+      (now - n.createdAt) < DEDUP_WINDOW_MS
+    );
+    if (isDuplicate) return;
+
+    yNotifications.push([{
+      id: generateId('notif-'),
+      inventorySystemId,
+      recipientId,
+      type,
+      message,
+      relatedId,
+      read: false,
+      createdAt: now,
+    }]);
+  };
+
+  if (doc) doc.transact(doPush);
+  else doPush();
 }
 
 /**
@@ -65,11 +73,16 @@ export function pushNotification(yNotifications, {
  */
 export function markNotificationRead(yNotifications, notificationId) {
   if (!yNotifications) return;
-  const arr = yNotifications.toArray();
-  const idx = arr.findIndex(n => n.id === notificationId);
-  if (idx === -1) return;
-  yNotifications.delete(idx, 1);
-  yNotifications.insert(idx, [{ ...arr[idx], read: true }]);
+  const doc = yNotifications.doc;
+  const doMark = () => {
+    const arr = yNotifications.toArray();
+    const idx = arr.findIndex(n => n.id === notificationId);
+    if (idx === -1) return;
+    yNotifications.delete(idx, 1);
+    yNotifications.insert(idx, [{ ...arr[idx], read: true }]);
+  };
+  if (doc) doc.transact(doMark);
+  else doMark();
 }
 
 /**

@@ -51,6 +51,16 @@ const generateDiffSummary = (oldText, newText) => {
 const computeDiff = (oldText, newText) => {
     const oldLines = (oldText || '').split('\n');
     const newLines = (newText || '').split('\n');
+    
+    // Guard against large diffs that would freeze the UI
+    if (oldLines.length + newLines.length > 1000) {
+        return [{ 
+            type: 'separator', 
+            count: Math.max(oldLines.length, newLines.length),
+            message: `Diff too large to display (${oldLines.length} → ${newLines.length} lines)` 
+        }];
+    }
+    
     const diff = [];
     
     let i = 0, j = 0;
@@ -215,7 +225,9 @@ const ChangelogPanel = ({
 
     // Handle timeline slider change
     const handleSliderChange = useCallback((e) => {
-        const index = parseInt(e.target.value, 10);
+        const parsed = parseInt(e.target.value, 10);
+        if (isNaN(parsed) || changelog.length === 0) return;
+        const index = Math.max(0, Math.min(parsed, changelog.length - 1));
         setSelectedIndex(index);
         if (changelog[index]) {
             setSelectedEntry(changelog[index]);
@@ -262,7 +274,9 @@ const ChangelogPanel = ({
     }, [docId, confirm]);
 
     const formatTime = (timestamp) => {
+        if (!timestamp || isNaN(timestamp)) return '';
         const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return '';
         const now = new Date();
         const diff = now - date;
         
@@ -275,7 +289,10 @@ const ChangelogPanel = ({
     };
 
     const formatFullTime = (timestamp) => {
-        return new Date(timestamp).toLocaleString();
+        if (!timestamp || isNaN(timestamp)) return '';
+        const d = new Date(timestamp);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleString();
     };
 
     if (!isOpen) return null;
@@ -378,7 +395,7 @@ const ChangelogPanel = ({
                             <div className="diff-view">
                                 <div className="diff-header">
                                     <span>Changes from {formatTime(selectedEntry.timestamp)}</span>
-                                    {onRollback && (
+                                    {onRollback && selectedEntry?.stateSnapshot && (
                                         <button 
                                             type="button"
                                             className="rollback-btn"

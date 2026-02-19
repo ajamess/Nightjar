@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import MiniToolbar from './MiniToolbar';
 
 const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) => {
@@ -6,8 +6,38 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
     const [description, setDescription] = useState(card.description || '');
     const [color, setColor] = useState(card.color || '#6366f1');
     const textareaRef = useRef(null);
+    const cancelledRef = useRef(false);
+    const [now, setNow] = useState(Date.now());
+
+    // Only re-sync when switching to a different card; preserve local edits
+    // during remote updates to the same card to avoid overwriting in-progress work
+    useEffect(() => {
+        setTitle(card.title);
+        setDescription(card.description || '');
+        setColor(card.color || '#6366f1');
+    }, [card.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Keep relative time display updated every minute
+    useEffect(() => {
+        if (!card.createdAt) return;
+        const interval = setInterval(() => setNow(Date.now()), 60_000);
+        return () => clearInterval(interval);
+    }, [card.createdAt]);
+
+    const getRelativeTime = (timestamp) => {
+        if (!timestamp) return '';
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / 60000);
+        if (minutes < 1) return 'just now';
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
+    };
 
     const handleSave = () => {
+        if (cancelledRef.current) return;
         onUpdate({ 
             title, 
             description, 
@@ -47,6 +77,7 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
                         onClose();
                     }
                     if (e.key === 'Escape') {
+                        cancelledRef.current = true;
                         onClose();
                     }
                 }}
@@ -68,7 +99,9 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
                     setDescription(e.target.value);
                 }}
                 onBlur={() => {
-                    onUpdate({ title, description, color: color !== '#6366f1' ? color : null });
+                    if (!cancelledRef.current) {
+                        onUpdate({ title, description, color: color !== '#6366f1' ? color : null });
+                    }
                 }}
                 onKeyDown={(e) => {
                     // Allow Enter key to create new lines - don't let it propagate to parent
@@ -77,6 +110,7 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
                     }
                     // Escape closes the editor
                     if (e.key === 'Escape') {
+                        cancelledRef.current = true;
                         onClose();
                     }
                 }}
@@ -84,6 +118,12 @@ const KanbanCardEditor = ({ card, onUpdate, onDelete, onClose, onAddComment }) =
                 rows={5}
             />
             
+            {card.createdAt && (
+                <span className="card-created-time" title={new Date(card.createdAt).toLocaleString()}>
+                    Created {getRelativeTime(card.createdAt)}
+                </span>
+            )}
+
             <div className="card-edit-actions">
                 <input
                     type="color"

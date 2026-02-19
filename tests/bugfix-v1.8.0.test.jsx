@@ -44,7 +44,13 @@ jest.mock('html2canvas', () =>
   jest.fn().mockResolvedValue({ toDataURL: () => 'data:image/png;base64,mock' }),
 );
 
-global.fetch = jest.fn();
+// Mock clipboard API
+const mockClipboardWriteText = jest.fn().mockResolvedValue(undefined);
+Object.defineProperty(navigator, 'clipboard', {
+  value: { writeText: mockClipboardWriteText },
+  writable: true,
+  configurable: true,
+});
 
 import BugReportModal from '../frontend/src/components/BugReportModal';
 
@@ -52,7 +58,8 @@ describe('BugReportModal – Textarea Clearing Fix', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockShowToast.mockClear();
-    global.fetch.mockClear();
+    mockClipboardWriteText.mockClear();
+    mockClipboardWriteText.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -147,28 +154,19 @@ describe('BugReportModal – Textarea Clearing Fix', () => {
 // 2. BugReportModal – Empty PAT Guard
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('BugReportModal – Empty PAT Guard', () => {
-  let originalPat;
-  
+describe('BugReportModal – Clipboard Copy', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockShowToast.mockClear();
-    global.fetch.mockClear();
-    // Save original and clear PAT so the guard fires
-    originalPat = process.env.VITE_GITHUB_PAT;
-    delete process.env.VITE_GITHUB_PAT;
+    mockClipboardWriteText.mockClear();
+    mockClipboardWriteText.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     jest.useRealTimers();
-    // Restore PAT
-    if (originalPat !== undefined) {
-      process.env.VITE_GITHUB_PAT = originalPat;
-    }
   });
 
-  test('shows error toast and does NOT call fetch when PAT is empty', async () => {
-    // The PAT is empty by default in test environment (no VITE_GITHUB_PAT set)
+  test('copies bug report to clipboard on submit', async () => {
     render(
       <BugReportModal
         isOpen={true}
@@ -179,14 +177,14 @@ describe('BugReportModal – Empty PAT Guard', () => {
     act(() => jest.runAllTimers());
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText('📋 Copy Bug Report'));
     });
 
+    expect(mockClipboardWriteText).toHaveBeenCalledTimes(1);
     expect(mockShowToast).toHaveBeenCalledWith(
-      expect.stringContaining('missing API token'),
-      'error',
+      'Bug report copied to clipboard!',
+      'success',
     );
-    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 

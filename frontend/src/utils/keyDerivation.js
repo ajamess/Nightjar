@@ -78,7 +78,8 @@ export async function deriveKey(password, documentId, purpose = 'encryption') {
     }
     return result;
   } catch (error) {
-    console.error('[KeyDerivation] Argon2 failed:', error);
+    // Don't log raw error details - may contain sensitive context
+    console.error('[KeyDerivation] Argon2 failed:', error?.message || 'unknown error');
     throw new Error('Key derivation failed');
   }
 }
@@ -126,10 +127,20 @@ export async function deriveKeyWithCache(password, documentId, purpose = 'encryp
     return keyCache.get(cacheKey);
   }
   
-  const key = await deriveKey(password, documentId, purpose);
-  keyCache.set(cacheKey, key);
+  // Cache the promise to prevent duplicate Argon2 work on concurrent calls
+  const keyPromise = deriveKey(password, documentId, purpose);
+  keyCache.set(cacheKey, keyPromise);
   
-  return key;
+  try {
+    const key = await keyPromise;
+    // Replace promise with resolved value for faster subsequent lookups
+    keyCache.set(cacheKey, key);
+    return key;
+  } catch (error) {
+    // Remove failed promise from cache so it can be retried
+    keyCache.delete(cacheKey);
+    throw error;
+  }
 }
 
 /**

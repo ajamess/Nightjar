@@ -34,8 +34,11 @@ export class AwarenessManager extends EventEmitter {
     this.localClientId = localClientId || this._generateClientId();
     
     // Listen for awareness messages from PeerManager
-    this.peerManager.on('message', this._handleMessage.bind(this));
-    this.peerManager.on('peer-disconnected', this._handlePeerDisconnect.bind(this));
+    // Store bound references so they can be properly removed in destroy()
+    this._boundHandleMessage = this._handleMessage.bind(this);
+    this._boundHandlePeerDisconnect = this._handlePeerDisconnect.bind(this);
+    this.peerManager.on('message', this._boundHandleMessage);
+    this.peerManager.on('peer-disconnected', this._boundHandlePeerDisconnect);
   }
 
   /**
@@ -243,6 +246,14 @@ export class AwarenessManager extends EventEmitter {
       if (now - timestamp > maxAge) {
         this.remoteStates.delete(clientId);
         changed = true;
+        
+        // Also clean up the peerClients reverse map
+        for (const [peerId, clientIds] of this.peerClients) {
+          clientIds.delete(clientId);
+          if (clientIds.size === 0) {
+            this.peerClients.delete(peerId);
+          }
+        }
       }
     }
     
@@ -270,9 +281,11 @@ export class AwarenessManager extends EventEmitter {
     }
     
     if (this.peerManager) {
-      this.peerManager.off('message', this._handleMessage);
-      this.peerManager.off('peer-disconnected', this._handlePeerDisconnect);
+      this.peerManager.off('message', this._boundHandleMessage);
+      this.peerManager.off('peer-disconnected', this._boundHandlePeerDisconnect);
     }
+    this._boundHandleMessage = null;
+    this._boundHandlePeerDisconnect = null;
     
     this.localState = null;
     this.remoteStates.clear();

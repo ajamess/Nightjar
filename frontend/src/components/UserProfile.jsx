@@ -64,7 +64,7 @@ const loadUserProfile = () => {
     }
     
     try {
-        const saved = localStorage.getItem('nahma-user-profile');
+        const saved = localStorage.getItem('nightjar-user-profile');
         if (saved) {
             return JSON.parse(saved);
         }
@@ -81,7 +81,7 @@ const loadUserProfile = () => {
 // Save user profile to localStorage
 const saveUserProfile = (profile) => {
     try {
-        localStorage.setItem('nahma-user-profile', JSON.stringify(profile));
+        localStorage.setItem('nightjar-user-profile', JSON.stringify(profile));
     } catch (e) {
         console.error('Failed to save user profile:', e);
     }

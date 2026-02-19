@@ -36,8 +36,12 @@ function FolderItem({
     }
   };
   
-  const handleDragLeave = () => {
-    setIsDragOver(false);
+  const handleDragLeave = (e) => {
+    // Only clear drag-over when pointer truly leaves this element,
+    // not when it moves to a child node (prevents flicker).
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setIsDragOver(false);
+    }
   };
   
   const handleDrop = (e) => {
@@ -236,7 +240,7 @@ function FolderTreeItem({
   onDrop,
 }) {
   const isSelected = selectedFolderId === folder.id;
-  const isExpanded = expandedFolders.has(folder.id);
+  const isExpanded = expandedFolders?.has(folder.id) || false;
   
   return (
     <FolderItem

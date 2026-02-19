@@ -12,7 +12,7 @@
  */
 
 import * as Y from 'yjs';
-import { Awareness } from 'y-protocols/awareness';
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness';
 
 // WebRTC configuration
 const DEFAULT_ICE_SERVERS = [
@@ -49,6 +49,7 @@ export class WebRTCProvider {
     this.peerId = null;
     this.ws = null;
     this.peers = new Map(); // peerId -> { connection, channel, state }
+    this._syncedPeers = new Set(); // Peers that have completed sync (received step 2)
     this.connected = false;
     this.retryCount = 0;
     this.destroyed = false;
@@ -57,6 +58,9 @@ export class WebRTCProvider {
     // Connection progress tracking
     this.connectionAttempts = [];
     this.onConnectionProgress = options.onConnectionProgress || (() => {});
+    
+    // Reconnect timeout ID (for cleanup in destroy)
+    this.reconnectTimer = null;
     
     // Callbacks
     this.onStatusChange = options.onStatusChange || (() => {});
@@ -196,6 +200,9 @@ export class WebRTCProvider {
           status: 'connected',
           timestamp: Date.now(),
         });
+        if (this.connectionAttempts.length > 50) {
+          this.connectionAttempts = this.connectionAttempts.slice(-50);
+        }
         
         this.onConnectionProgress({
           current: urlIndex,
@@ -218,13 +225,19 @@ export class WebRTCProvider {
         console.log('[WebRTCProvider] Disconnected from signaling server');
         this._updateStatus('disconnected');
         
+        const wasConnected = this.connected;
+        this.connected = false;
+        
         // If we were never fully connected, try next URL
-        if (!this.connected) {
+        if (!wasConnected) {
           this.connectionAttempts.push({
             url: this.signalingUrl,
             status: 'failed',
             timestamp: Date.now(),
           });
+          if (this.connectionAttempts.length > 50) {
+            this.connectionAttempts = this.connectionAttempts.slice(-50);
+          }
           this.currentUrlIndex++;
           this._connect();
         } else {
@@ -245,6 +258,9 @@ export class WebRTCProvider {
         error: e.message,
         timestamp: Date.now(),
       });
+      if (this.connectionAttempts.length > 50) {
+        this.connectionAttempts = this.connectionAttempts.slice(-50);
+      }
       this.currentUrlIndex++;
       this._connect();
     }
@@ -267,7 +283,10 @@ export class WebRTCProvider {
     const delay = this.retryDelay * Math.pow(2, this.retryCount - 1);
     console.log(`[WebRTCProvider] Reconnecting in ${delay}ms (attempt ${this.retryCount})`);
     
-    setTimeout(() => this._connect(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this._connect();
+    }, delay);
   }
 
   /**
@@ -282,11 +301,11 @@ export class WebRTCProvider {
         break;
 
       case 'joined':
-        console.log(`[WebRTCProvider] Joined room with ${message.peers.length} peers`);
+        console.log(`[WebRTCProvider] Joined room with ${(message.peers || []).length} peers`);
         this.connected = true;
         this._updateStatus('connected');
         // Initiate connections to existing peers
-        for (const peer of message.peers) {
+        for (const peer of (message.peers || [])) {
           this._createPeerConnection(peer.peerId, true, peer);
         }
         break;
@@ -531,26 +550,30 @@ export class WebRTCProvider {
    * Handle binary message (Yjs sync)
    */
   async _handleBinaryMessage(peerId, data) {
-    const arrayBuffer = data instanceof Blob ? await data.arrayBuffer() : data;
-    const message = new Uint8Array(arrayBuffer);
-    
-    // First byte is message type
-    const messageType = message[0];
-    const payload = message.slice(1);
+    try {
+      const arrayBuffer = data instanceof Blob ? await data.arrayBuffer() : data;
+      const message = new Uint8Array(arrayBuffer);
+      
+      // First byte is message type
+      const messageType = message[0];
+      const payload = message.slice(1);
 
-    switch (messageType) {
-      case 0: // Sync step 1
-        this._handleSyncStep1(peerId, payload);
-        break;
-      case 1: // Sync step 2
-        this._handleSyncStep2(peerId, payload);
-        break;
-      case 2: // Update
-        Y.applyUpdate(this.doc, payload);
-        break;
-      case 3: // Awareness
-        this._handleAwarenessMessage(peerId, payload);
-        break;
+      switch (messageType) {
+        case 0: // Sync step 1
+          this._handleSyncStep1(peerId, payload);
+          break;
+        case 1: // Sync step 2
+          this._handleSyncStep2(peerId, payload);
+          break;
+        case 2: // Update
+          Y.applyUpdate(this.doc, payload, this);
+          break;
+        case 3: // Awareness
+          this._handleAwarenessMessage(peerId, payload);
+          break;
+      }
+    } catch (err) {
+      console.error('[WebRTCProvider] Failed to handle binary message from peer:', peerId, err);
     }
   }
 
@@ -598,17 +621,31 @@ export class WebRTCProvider {
     message[0] = 1; // Sync step 2
     message.set(diff, 1);
     
-    peer.channel.send(message);
+    try {
+      peer.channel.send(message);
+    } catch (e) {
+      console.error(`[WebRTCProvider] Failed to send sync step 2 to ${peerId}:`, e);
+      return;
+    }
     
-    // Also send our state vector so they can send their diff
-    this._sendSyncStep1(peerId);
+    // Only send our state vector if we haven't already synced with this peer.
+    // Once we receive a sync step 2, we're synced and must not start another round.
+    if (!this._syncedPeers.has(peerId)) {
+      this._sendSyncStep1(peerId);
+    }
   }
 
   /**
    * Handle sync step 2 (apply diff)
    */
   _handleSyncStep2(peerId, diff) {
-    Y.applyUpdate(this.doc, diff);
+    try {
+      Y.applyUpdate(this.doc, diff, this);
+    } catch (e) {
+      console.error(`[WebRTCProvider] Failed to apply sync step 2 from ${peerId}:`, e);
+      return;
+    }
+    this._syncedPeers.add(peerId);
   }
 
   /**
@@ -622,7 +659,7 @@ export class WebRTCProvider {
     message.set(update, 1);
 
     for (const [peerId, peer] of this.peers) {
-      if (peer.channel?.readyState === 'open') {
+      if (peer.channel?.readyState === 'open' && this._syncedPeers.has(peerId)) {
         peer.channel.send(message);
       }
     }
@@ -632,7 +669,7 @@ export class WebRTCProvider {
    * Handle awareness update
    */
   _handleAwarenessUpdate({ added, updated, removed }, origin) {
-    if (origin === 'remote') return;
+    if (origin === this) return;
 
     const changedClients = added.concat(updated).concat(removed);
     const awarenessUpdate = this._encodeAwarenessUpdate(changedClients);
@@ -649,50 +686,18 @@ export class WebRTCProvider {
   }
 
   /**
-   * Encode awareness update
+   * Encode awareness update using y-protocols/awareness
    */
   _encodeAwarenessUpdate(changedClients) {
-    const states = this.awareness.getStates();
-    const encoder = [];
-    
-    // Simple encoding: JSON of changed states
-    const update = {};
-    for (const clientId of changedClients) {
-      update[clientId] = states.get(clientId) || null;
-    }
-    
-    return new TextEncoder().encode(JSON.stringify(update));
+    return encodeAwarenessUpdate(this.awareness, changedClients);
   }
 
   /**
-   * Handle awareness message from peer
+   * Handle awareness message from peer using y-protocols/awareness
    */
   _handleAwarenessMessage(peerId, payload) {
     try {
-      const update = JSON.parse(new TextDecoder().decode(payload));
-      const added = [];
-      const updated = [];
-      const removed = [];
-      const states = this.awareness.getStates();
-
-      for (const [clientId, state] of Object.entries(update)) {
-        const id = parseInt(clientId);
-        if (id === this.awareness.clientID) continue; // Never overwrite local state
-        if (state === null) {
-          if (states.has(id)) {
-            states.delete(id);
-            removed.push(id);
-          }
-        } else {
-          const isNew = !states.has(id);
-          states.set(id, state);
-          (isNew ? added : updated).push(id);
-        }
-      }
-
-      if (added.length || updated.length || removed.length) {
-        this.awareness.emit('change', [{ added, updated, removed }, 'remote']);
-      }
+      applyAwarenessUpdate(this.awareness, payload, this);
     } catch (e) {
       console.error('[WebRTCProvider] Failed to handle awareness:', e);
     }
@@ -722,6 +727,7 @@ export class WebRTCProvider {
     }
 
     this.peers.delete(peerId);
+    this._syncedPeers.delete(peerId);
     this._emitPeersChange();
   }
 
@@ -771,9 +777,18 @@ export class WebRTCProvider {
   destroy() {
     this.destroyed = true;
     
+    // Clear pending reconnect timeout
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
     // Remove doc listeners
     this.doc.off('update', this._handleDocUpdate);
     this.awareness.off('update', this._handleAwarenessUpdate);
+
+    // Clean up awareness (clears internal timers, broadcasts null state to peers)
+    this.awareness?.destroy();
 
     // Close all peer connections
     for (const peerId of this.peers.keys()) {

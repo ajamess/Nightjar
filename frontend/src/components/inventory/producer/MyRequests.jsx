@@ -8,6 +8,7 @@ import SlidePanel from '../common/SlidePanel';
 import RequestDetail from '../common/RequestDetail';
 import { generateId, formatRelativeDate } from '../../../utils/inventoryValidation';
 import { pushNotification } from '../../../utils/inventoryNotifications';
+import { useToast } from '../../../contexts/ToastContext';
 import './ProducerMyRequests.css';
 
 const PIPELINE = [
@@ -19,6 +20,7 @@ const PIPELINE = [
 
 export default function ProducerMyRequests() {
   const ctx = useInventory();
+  const { showToast } = useToast();
   const { catalogItems, requests } = ctx;
 
   const myKey = ctx.userIdentity?.publicKeyBase62;
@@ -79,8 +81,10 @@ export default function ProducerMyRequests() {
         approvedAt: null,
         updatedAt: Date.now(),
       };
-      yArr.delete(idx, 1);
-      yArr.insert(idx, [updated]);
+      yArr.doc.transact(() => {
+        yArr.delete(idx, 1);
+        yArr.insert(idx, [updated]);
+      });
       ctx.yAddressReveals?.delete(requestId);
 
       ctx.yInventoryAuditLog?.push([{
@@ -114,9 +118,15 @@ export default function ProducerMyRequests() {
     const arr = yArr.toArray();
     const idx = arr.findIndex(r => r.id === requestId);
     if (idx === -1) return;
+    if (arr[idx].status !== 'approved') {
+      showToast(`Cannot mark in-progress: status is "${arr[idx].status}", expected "approved"`, 'error');
+      return;
+    }
     const updated = { ...arr[idx], status: 'in_progress', inProgressAt: Date.now(), updatedAt: Date.now() };
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [updated]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [updated]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -161,8 +171,10 @@ export default function ProducerMyRequests() {
     const arr = yArr.toArray();
     const idx = arr.findIndex(r => r.id === req.id);
     if (idx === -1) return;
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [{ ...arr[idx], status: 'approved', shippedAt: null, inProgressAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], status: 'approved', shippedAt: null, inProgressAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -204,8 +216,10 @@ export default function ProducerMyRequests() {
     const arr = yArr.toArray();
     const idx = arr.findIndex(r => r.id === req.id);
     if (idx === -1) return;
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [{ ...arr[idx], status: 'in_progress', shippedAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], status: 'in_progress', shippedAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -235,6 +249,54 @@ export default function ProducerMyRequests() {
           recipientId: adminKey,
           type: 'status_change',
           message: `Request for ${req.catalogItemName} was reverted to in progress`,
+          relatedId: req.id,
+        });
+      }
+    });
+  }, [ctx, myKey]);
+
+  const handleMarkShipped = useCallback((req, trackingNumber) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    const updates = { status: 'shipped', shippedAt: Date.now(), updatedAt: Date.now() };
+    if (trackingNumber) updates.trackingNumber = trackingNumber;
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], ...updates }]);
+    });
+
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_shipped',
+      targetType: 'request',
+      targetId: req.id,
+      summary: `Request ${req.id.slice(0, 8)} marked shipped`,
+    }]);
+
+    pushNotification(ctx.yInventoryNotifications, {
+      inventorySystemId: ctx.inventorySystemId,
+      recipientId: req.requestedBy,
+      type: 'request_shipped',
+      message: `Your request for ${req.catalogItemName} has been shipped`,
+      relatedId: req.id,
+    });
+
+    const admins = (ctx.collaborators || []).filter(c => c.permission === 'owner');
+    admins.forEach(admin => {
+      const adminKey = admin.publicKeyBase62 || admin.publicKey;
+      if (adminKey && adminKey !== myKey) {
+        pushNotification(ctx.yInventoryNotifications, {
+          inventorySystemId: ctx.inventorySystemId,
+          recipientId: adminKey,
+          type: 'request_shipped',
+          message: `Request for ${req.catalogItemName} has been shipped`,
           relatedId: req.id,
         });
       }
@@ -297,7 +359,7 @@ export default function ProducerMyRequests() {
                           🔨 Mark In Progress
                         </button>
                       )}
-                      {['claimed', 'pending_approval', 'approved', 'in_progress'].includes(req.status) && (
+                      {['claimed', 'pending_approval', 'approved'].includes(req.status) && (
                         <button className="pmr-btn pmr-btn--unclaim" onClick={(e) => { e.stopPropagation(); handleUnclaim(req.id); }}>
                           ↩️ Unclaim
                         </button>
@@ -329,9 +391,7 @@ export default function ProducerMyRequests() {
             onClose={() => setSelectedRequest(null)}
             onCancel={() => { handleUnclaim(selectedRequest.id); setSelectedRequest(null); }}
             onMarkInProgress={(req) => { handleMarkInProgress(req.id); setSelectedRequest(null); }}
-            onMarkShipped={(req, tracking) => {
-              setSelectedRequest(null);
-            }}
+            onMarkShipped={(req, tracking) => { handleMarkShipped(req, tracking); setSelectedRequest(null); }}
             onRevertToApproved={(req) => { handleRevertToApproved(req); setSelectedRequest(null); }}
             onRevertToInProgress={(req) => { handleRevertToInProgress(req); setSelectedRequest(null); }}
           />

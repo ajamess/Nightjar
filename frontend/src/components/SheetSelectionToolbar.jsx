@@ -70,9 +70,7 @@ const SheetSelectionToolbar = ({
         const observer = new MutationObserver(checkModals);
         observer.observe(document.body, { 
             childList: true, 
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'role']
+            subtree: false,
         });
         
         return () => observer.disconnect();

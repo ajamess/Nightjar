@@ -586,13 +586,13 @@ describe('BrowseView — bulk selection & actions', () => {
     render(<BrowseView {...browseProps({ activeFiles: files })} />);
     fireEvent.click(screen.getByTestId('browse-select-all'));
     expect(screen.getByTestId('bulk-action-bar')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'Escape' });
     expect(screen.queryByTestId('bulk-action-bar')).not.toBeInTheDocument();
   });
 
   it('should select all on Ctrl+A', () => {
     render(<BrowseView {...browseProps({ activeFiles: files })} />);
-    fireEvent.keyDown(document, { key: 'a', ctrlKey: true });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'a', ctrlKey: true });
     expect(screen.getByTestId('bulk-action-bar')).toBeInTheDocument();
     expect(screen.getByTestId('bulk-action-count')).toHaveTextContent('3 items selected');
   });
@@ -603,14 +603,14 @@ describe('BrowseView — bulk selection & actions', () => {
     // Select all
     fireEvent.click(screen.getByTestId('browse-select-all'));
     // Ctrl+D
-    fireEvent.keyDown(document, { key: 'd', ctrlKey: true });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'd', ctrlKey: true });
     expect(props.onDownloadFile).toHaveBeenCalledTimes(3);
   });
 
   it('should show confirm dialog on Delete key', () => {
     render(<BrowseView {...browseProps({ activeFiles: files })} />);
     fireEvent.click(screen.getByTestId('browse-select-all'));
-    fireEvent.keyDown(document, { key: 'Delete' });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'Delete' });
     expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     expect(screen.getByText(/delete 3 items/i)).toBeInTheDocument();
   });
@@ -619,7 +619,7 @@ describe('BrowseView — bulk selection & actions', () => {
     const props = browseProps({ activeFiles: files });
     render(<BrowseView {...props} />);
     fireEvent.click(screen.getByTestId('browse-select-all'));
-    fireEvent.keyDown(document, { key: 'Delete' });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'Delete' });
     fireEvent.click(screen.getByTestId('confirm-dialog-confirm'));
     expect(props.onDeleteFile).toHaveBeenCalledTimes(3);
     // Bulk action bar should disappear after delete
@@ -630,7 +630,7 @@ describe('BrowseView — bulk selection & actions', () => {
     const props = browseProps({ activeFiles: files });
     render(<BrowseView {...props} />);
     fireEvent.click(screen.getByTestId('browse-select-all'));
-    fireEvent.keyDown(document, { key: 'Delete' });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'Delete' });
     fireEvent.click(screen.getByTestId('confirm-dialog-cancel'));
     expect(props.onDeleteFile).not.toHaveBeenCalled();
     // Selection should remain
@@ -737,7 +737,7 @@ describe('BrowseView — end-to-end scenarios', () => {
     render(<BrowseView {...props} />);
 
     // Select all via Ctrl+A
-    fireEvent.keyDown(document, { key: 'a', ctrlKey: true });
+    fireEvent.keyDown(screen.getByTestId('browse-view'), { key: 'a', ctrlKey: true });
     expect(screen.getByTestId('bulk-action-count')).toHaveTextContent('2 items selected');
 
     // Click delete in bulk bar

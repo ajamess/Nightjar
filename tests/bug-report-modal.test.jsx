@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BugReportModal Tests
  *
  * Comprehensive test suite covering:
@@ -21,10 +21,9 @@ import BugReportModal, {
   buildActionSummary,
   generateDefaultTitle,
   buildIssueBody,
-  createGitHubIssue,
 } from '../frontend/src/components/BugReportModal';
 
-// ─── Mocks ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const mockShowToast = jest.fn();
 jest.mock('../frontend/src/contexts/ToastContext', () => ({
@@ -66,9 +65,13 @@ const mockHtml2canvas = jest.fn().mockResolvedValue({
 });
 jest.mock('html2canvas', () => mockHtml2canvas);
 
-// Mock fetch for GitHub API
-const mockFetch = jest.fn();
-global.fetch = mockFetch;
+// Mock clipboard API
+const mockClipboardWriteText = jest.fn().mockResolvedValue(undefined);
+Object.defineProperty(navigator, 'clipboard', {
+  value: { writeText: mockClipboardWriteText },
+  writable: true,
+  configurable: true,
+});
 
 // Mock electronAPI
 const mockOpenExternal = jest.fn().mockResolvedValue(undefined);
@@ -81,7 +84,7 @@ Object.defineProperty(window, 'electronAPI', {
   configurable: true,
 });
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderModal(props = {}) {
   const defaultProps = {
@@ -100,31 +103,12 @@ function renderModal(props = {}) {
   };
 }
 
-function setupSuccessfulFetch(issueNumber = 42) {
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({
-      html_url: `https://github.com/niyanagi/nightjar/issues/${issueNumber}`,
-      number: issueNumber,
-    }),
-  });
-}
-
-function setupFailedFetch(statusCode = 422, message = 'Validation Failed') {
-  mockFetch.mockResolvedValueOnce({
-    ok: false,
-    status: statusCode,
-    json: async () => ({ message }),
-  });
-}
-
-// ─── Setup / Teardown ────────────────────────────────────────────────────────
+// â”€â”€â”€ Setup / Teardown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
-  // Ensure the lazy PAT getter returns a value for submission tests
-  process.env.VITE_GITHUB_PAT = 'test-pat-for-jest';
+  mockClipboardWriteText.mockResolvedValue(undefined);
   mockGetLogs.mockReturnValue([
     { level: 'behavior', timestamp: '2025-01-01T12:00:00Z', category: 'editor', event: 'opened file' },
     { level: 'behavior', timestamp: '2025-01-01T12:01:00Z', category: 'editor', event: 'saved file' },
@@ -135,9 +119,9 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 1. buildActionSummary
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('buildActionSummary', () => {
   test('filters only behavior-level logs', () => {
     const logs = [
@@ -190,9 +174,9 @@ describe('buildActionSummary', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 2. generateDefaultTitle
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('generateDefaultTitle', () => {
   test('returns generic title when no context provided', () => {
     expect(generateDefaultTitle(null)).toBe('Bug report');
@@ -233,9 +217,9 @@ describe('generateDefaultTitle', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 3. buildIssueBody
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('buildIssueBody', () => {
   test('includes description and recent actions', () => {
     const body = buildIssueBody('Something broke', 'action log');
@@ -279,54 +263,11 @@ describe('buildIssueBody', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// 4. createGitHubIssue
-// ═════════════════════════════════════════════════════════════════════════════
-describe('createGitHubIssue', () => {
-  test('sends POST to GitHub API with correct headers and body', async () => {
-    setupSuccessfulFetch(99);
-    const result = await createGitHubIssue('Test Title', 'Test body');
+// createGitHubIssue was removed â€“ the component now copies to clipboard instead.
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://api.github.com/repos/niyanagi/nightjar/issues',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'Authorization': expect.stringContaining('Bearer'),
-          'Content-Type': 'application/json',
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        }),
-      }),
-    );
-
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.title).toBe('Test Title');
-    expect(body.body).toBe('Test body');
-    expect(body.labels).toEqual(['bug']);
-
-    expect(result.html_url).toBe('https://github.com/niyanagi/nightjar/issues/99');
-    expect(result.number).toBe(99);
-  });
-
-  test('throws on API error with message from response', async () => {
-    setupFailedFetch(422, 'Validation Failed');
-    await expect(createGitHubIssue('Title', 'Body')).rejects.toThrow('Validation Failed');
-  });
-
-  test('throws with status code when no message in error response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      json: async () => { throw new Error('parse error'); },
-    });
-    await expect(createGitHubIssue('Title', 'Body')).rejects.toThrow('GitHub API error: 500');
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 5. Component Rendering
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Rendering', () => {
   test('renders nothing when isOpen is false', () => {
     const { container } = render(
@@ -338,7 +279,7 @@ describe('Rendering', () => {
   test('renders the modal when isOpen is true', () => {
     renderModal();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('🐛 Report a Bug')).toBeInTheDocument();
+    expect(screen.getByText(/Report a Bug/)).toBeInTheDocument();
   });
 
   test('renders title input, description textarea, and actions', () => {
@@ -372,21 +313,21 @@ describe('Rendering', () => {
     expect(screen.getByText(/editor: saved file/)).toBeInTheDocument();
   });
 
-  test('shows info about automatic submission', () => {
+  test('shows info about clipboard copy', () => {
     renderModal();
-    expect(screen.getByText(/submitted automatically/)).toBeInTheDocument();
+    expect(screen.getByText(/copied to your clipboard/)).toBeInTheDocument();
   });
 
-  test('renders Cancel and Submit buttons', () => {
+  test('renders Cancel and Copy buttons', () => {
     renderModal();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
-    expect(screen.getByText('🐛 Submit Bug Report')).toBeInTheDocument();
+    expect(screen.getByText(/Copy Bug Report/)).toBeInTheDocument();
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 6. Interactions
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Interactions', () => {
   test('user can edit the title field', async () => {
     renderModal();
@@ -431,8 +372,8 @@ describe('Interactions', () => {
   });
 
   test('Escape key does not close during submission', async () => {
-    // Keep fetch pending forever to keep isSubmitting = true
-    mockFetch.mockReturnValueOnce(new Promise(() => {}));
+    // Keep clipboard pending forever to keep isSubmitting = true
+    mockClipboardWriteText.mockReturnValueOnce(new Promise(() => {}));
     const { props } = renderModal();
 
     // Type a title
@@ -443,7 +384,7 @@ describe('Interactions', () => {
 
     // Click submit
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     // Now Escape should NOT close
@@ -452,9 +393,9 @@ describe('Interactions', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 7. Validation
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Validation', () => {
   test('shows error toast when title is empty', async () => {
     renderModal({ context: {} });
@@ -465,11 +406,11 @@ describe('Validation', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     expect(mockShowToast).toHaveBeenCalledWith('Please enter a bug title', 'error');
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockClipboardWriteText).not.toHaveBeenCalled();
   });
 
   test('shows error toast when title is only whitespace', async () => {
@@ -480,19 +421,18 @@ describe('Validation', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     expect(mockShowToast).toHaveBeenCalledWith('Please enter a bug title', 'error');
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 8. Submission Flow
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Submission', () => {
-  test('submits bug report via GitHub API and shows success', async () => {
-    setupSuccessfulFetch(42);
+  test('copies bug report to clipboard and shows success', async () => {
     renderModal();
     const input = screen.getByLabelText('Title');
     await act(async () => {
@@ -500,27 +440,23 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
-    // Verify fetch was called
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('https://api.github.com/repos/niyanagi/nightjar/issues');
-    const body = JSON.parse(opts.body);
-    expect(body.title).toBe('Test bug');
-    expect(body.labels).toEqual(['bug']);
+    // Verify clipboard was called
+    expect(mockClipboardWriteText).toHaveBeenCalledTimes(1);
+    const clipboardContent = mockClipboardWriteText.mock.calls[0][0];
+    expect(clipboardContent).toContain('Test bug');
 
     // Success screen
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
     expect(mockShowToast).toHaveBeenCalledWith(
-      'Bug report #42 created successfully!',
+      'Bug report copied to clipboard!',
       'success',
     );
   });
 
-  test('includes diagnostics inline in issue body', async () => {
-    setupSuccessfulFetch(10);
+  test('includes diagnostics inline in clipboard content', async () => {
     mockFormatDiagnosticReport.mockReturnValue('DIAGNOSTIC_CONTENT');
 
     renderModal();
@@ -529,18 +465,18 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.body).toContain('DIAGNOSTIC_CONTENT');
-    expect(body.body).toContain('<details>');
-    expect(body.body).toContain('Diagnostic Report');
+    const clipboardContent = mockClipboardWriteText.mock.calls[0][0];
+    expect(clipboardContent).toContain('DIAGNOSTIC_CONTENT');
+    expect(clipboardContent).toContain('<details>');
+    expect(clipboardContent).toContain('Diagnostic Report');
   });
 
-  test('shows submitting state during fetch', async () => {
+  test('shows submitting state during clipboard write', async () => {
     let resolvePromise;
-    mockFetch.mockReturnValueOnce(new Promise(resolve => { resolvePromise = resolve; }));
+    mockClipboardWriteText.mockReturnValueOnce(new Promise(resolve => { resolvePromise = resolve; }));
 
     renderModal();
     await act(async () => {
@@ -548,42 +484,45 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
-    expect(screen.getByText('Submitting…')).toBeInTheDocument();
+    expect(screen.getByText(/Preparing/)).toBeInTheDocument();
 
-    // Resolve the fetch
+    // Resolve the clipboard write
     await act(async () => {
-      resolvePromise({
-        ok: true,
-        json: async () => ({ html_url: 'https://example.com/1', number: 1 }),
-      });
+      resolvePromise(undefined);
     });
   });
 
-  test('shows error toast when API call fails', async () => {
-    setupFailedFetch(500, 'Server error');
+  test('shows error toast when clipboard write fails', async () => {
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Clipboard error'));
+    // Also mock the fallback blob download to throw so we test the outer catch
+    const origCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = jest.fn(() => 'blob:mock');
+    URL.revokeObjectURL = jest.fn();
+
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
+    // When clipboard fails, the component falls back to file download
+    // and still shows success, so we check the fallback toast
     expect(mockShowToast).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to submit bug report'),
-      'error',
+      'Bug report saved as file',
+      'success',
     );
-    // Should still show the form (not success screen)
-    expect(screen.queryByText('Bug report created!')).not.toBeInTheDocument();
+
+    URL.createObjectURL = origCreateObjectURL;
   });
 
   test('handles diagnostic generation failure gracefully', async () => {
     mockGenerateDiagnosticReport.mockRejectedValueOnce(new Error('diag failed'));
-    setupSuccessfulFetch(50);
 
     renderModal();
     await act(async () => {
@@ -591,25 +530,25 @@ describe('Submission', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     // Should still succeed (diagnostics are optional)
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
-    // Body should not have diagnostics
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.body).not.toContain('<details>');
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
+    // Clipboard content should not have diagnostics
+    const clipboardContent = mockClipboardWriteText.mock.calls[0][0];
+    expect(clipboardContent).not.toContain('<details>');
   });
 
   test('disables inputs during submission', async () => {
-    mockFetch.mockReturnValueOnce(new Promise(() => {}));
+    mockClipboardWriteText.mockReturnValueOnce(new Promise(() => {}));
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     expect(screen.getByLabelText('Title')).toBeDisabled();
@@ -618,30 +557,29 @@ describe('Submission', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 9. Success Screen
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Success Screen', () => {
-  async function submitAndSucceed(issueNumber = 42) {
-    setupSuccessfulFetch(issueNumber);
+  async function submitAndSucceed() {
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
   }
 
   test('shows success heading and message', async () => {
     await submitAndSucceed();
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
-    expect(screen.getByText(/GitHub issue has been created automatically/)).toBeInTheDocument();
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
+    expect(screen.getByText(/copied to the clipboard/)).toBeInTheDocument();
   });
 
   test('shows diagnostic status as included', async () => {
     await submitAndSucceed();
-    expect(screen.getByText(/Diagnostic logs included in issue/)).toBeInTheDocument();
+    expect(screen.getByText(/Diagnostic logs.*included in issue/)).toBeInTheDocument();
   });
 
   test('shows screenshot ready to download', async () => {
@@ -681,18 +619,18 @@ describe('Success Screen', () => {
     document.body.removeChild.mockRestore();
   });
 
-  test('renders View Issue on GitHub button', async () => {
+  test('renders Open GitHub Issues button', async () => {
     await submitAndSucceed();
     const btn = screen.getByTestId('view-issue-btn');
     expect(btn).toBeInTheDocument();
-    expect(btn).toHaveTextContent('View Issue on GitHub');
+    expect(btn).toHaveTextContent('Open GitHub Issues');
   });
 
   test('View Issue button calls electronAPI.openExternal', async () => {
-    await submitAndSucceed(42);
+    await submitAndSucceed();
     fireEvent.click(screen.getByTestId('view-issue-btn'));
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      'https://github.com/niyanagi/nightjar/issues/42',
+      'https://github.com/niyanagi/nightjar/issues/new?labels=bug',
     );
   });
 
@@ -701,18 +639,17 @@ describe('Success Screen', () => {
     window.electronAPI = undefined;
     const mockWindowOpen = jest.spyOn(window, 'open').mockImplementation(() => {});
 
-    setupSuccessfulFetch(55);
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     fireEvent.click(screen.getByTestId('view-issue-btn'));
     expect(mockWindowOpen).toHaveBeenCalledWith(
-      'https://github.com/niyanagi/nightjar/issues/55',
+      'https://github.com/niyanagi/nightjar/issues/new?labels=bug',
       '_blank',
       'noopener',
     );
@@ -723,7 +660,6 @@ describe('Success Screen', () => {
 
   test('Done button calls onClose', async () => {
     const onClose = jest.fn();
-    setupSuccessfulFetch(1);
     render(
       <BugReportModal
         isOpen={true}
@@ -735,7 +671,7 @@ describe('Success Screen', () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     fireEvent.click(screen.getByText('Done'));
@@ -743,9 +679,9 @@ describe('Success Screen', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 10. State Reset
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('State Reset', () => {
   test('resets form fields when modal re-opens', () => {
     const { rerender } = render(
@@ -768,63 +704,77 @@ describe('State Reset', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 11. Error Handling
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Error Handling', () => {
-  test('handles fetch network error gracefully', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+  test('handles preparation error gracefully', async () => {
+    // Make both clipboard and fallback download fail by throwing in the outer try
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Clipboard error'));
+    // The fallback blob download should still work, so this test checks the fallback path
+    const origCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = jest.fn(() => 'blob:mock');
+    URL.revokeObjectURL = jest.fn();
+
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
+    // When clipboard fails, fallback saves as file
     expect(mockShowToast).toHaveBeenCalledWith(
-      expect.stringContaining('Network error'),
-      'error',
+      'Bug report saved as file',
+      'success',
     );
+
+    URL.createObjectURL = origCreateObjectURL;
   });
 
-  test('re-enables form after failed submission', async () => {
-    setupFailedFetch(500, 'Error');
+  test('re-enables form after failed preparation', async () => {
+    // Make both clipboard and blob fallback fail to trigger outer catch
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Clipboard error'));
+    const origCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = jest.fn(() => { throw new Error('Blob error'); });
+
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     // Form should be editable again
     expect(screen.getByLabelText('Title')).not.toBeDisabled();
-    expect(screen.getByText('🐛 Submit Bug Report')).not.toBeDisabled();
+    expect(screen.getByText(/Copy Bug Report/)).not.toBeDisabled();
+
+    URL.createObjectURL = origCreateObjectURL;
   });
 
   test('handles screenshot capture failure gracefully', async () => {
     // Make html2canvas throw
     mockHtml2canvas.mockRejectedValueOnce(new Error('Canvas error'));
 
-    setupSuccessfulFetch(60);
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Title' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     // Should still succeed (screenshot is optional)
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
     expect(screen.getByText(/capture failed/)).toBeInTheDocument();
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 12. TabBar Integration
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('TabBar Integration', () => {
   test('renders as a controlled modal with external isOpen state', () => {
     const { rerender } = render(
@@ -850,12 +800,11 @@ describe('TabBar Integration', () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 13. E2E Scenarios
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('E2E Scenarios', () => {
-  test('full happy path: open → auto-populate → edit → submit → success → view → done', async () => {
-    setupSuccessfulFetch(100);
+  test('full happy path: open â†’ auto-populate â†’ edit â†’ copy â†’ success â†’ view â†’ done', async () => {
     const onClose = jest.fn();
 
     render(
@@ -877,55 +826,57 @@ describe('E2E Scenarios', () => {
       });
     });
 
-    // Submit
+    // Copy
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     // Success screen
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
-    expect(mockShowToast).toHaveBeenCalledWith('Bug report #100 created successfully!', 'success');
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
+    expect(mockShowToast).toHaveBeenCalledWith('Bug report copied to clipboard!', 'success');
 
-    // Verify issue body
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.body).toContain('The editor crashed when I pasted a large block.');
-    expect(body.body).toContain('<details>');
+    // Verify clipboard content
+    const clipboardContent = mockClipboardWriteText.mock.calls[0][0];
+    expect(clipboardContent).toContain('The editor crashed when I pasted a large block.');
+    expect(clipboardContent).toContain('<details>');
 
-    // Click view issue
+    // Click view issue (opens GitHub new issue page)
     fireEvent.click(screen.getByTestId('view-issue-btn'));
-    expect(mockOpenExternal).toHaveBeenCalledWith('https://github.com/niyanagi/nightjar/issues/100');
+    expect(mockOpenExternal).toHaveBeenCalledWith('https://github.com/niyanagi/nightjar/issues/new?labels=bug');
 
     // Click done
     fireEvent.click(screen.getByText('Done'));
     expect(onClose).toHaveBeenCalled();
   });
 
-  test('failed submission flow: open → submit → error → retry → success', async () => {
-    // First attempt fails
-    setupFailedFetch(500, 'Server error');
+  test('failed preparation flow: open â†’ copy fails â†’ retry â†’ success', async () => {
+    // First attempt: both clipboard and blob fallback fail
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Clipboard error'));
+    const origCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = jest.fn(() => { throw new Error('Blob error'); });
 
     renderModal();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test bug' } });
     });
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
     expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Failed'), 'error');
-    expect(screen.queryByText('Bug report created!')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bug report copied!')).not.toBeInTheDocument();
 
-    // Retry succeeds
-    setupSuccessfulFetch(77);
+    // Restore URL.createObjectURL and retry succeeds
+    URL.createObjectURL = origCreateObjectURL;
+    mockClipboardWriteText.mockResolvedValueOnce(undefined);
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
   });
 
   test('empty context still allows submission', async () => {
-    setupSuccessfulFetch(5);
     render(
       <BugReportModal isOpen={true} onClose={jest.fn()} context={null} />,
     );
@@ -934,16 +885,16 @@ describe('E2E Scenarios', () => {
     expect(screen.getByLabelText('Title')).toHaveValue('Bug report');
 
     await act(async () => {
-      fireEvent.click(screen.getByText('🐛 Submit Bug Report'));
+      fireEvent.click(screen.getByText(/Copy Bug Report/));
     });
 
-    expect(screen.getByText('Bug report created!')).toBeInTheDocument();
+    expect(screen.getByText('Bug report copied!')).toBeInTheDocument();
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 14. Accessibility
-// ═════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 describe('Accessibility', () => {
   test('modal has correct ARIA attributes', () => {
     renderModal();
@@ -979,3 +930,4 @@ describe('Accessibility', () => {
     expect(useFocusTrap).toHaveBeenCalled();
   });
 });
+

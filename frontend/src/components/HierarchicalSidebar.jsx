@@ -48,6 +48,7 @@ const TreeItem = React.memo(function TreeItem({
     onDocumentDrop, // Callback when a document is dropped on this folder
     children,
     collaborators = [],
+    // Long-press support for mobile context menu is handled via internal ref
     workspaceColor, // Color of the workspace for system folders
 }) {
     const [isDragOver, setIsDragOver] = useState(false);
@@ -209,6 +210,27 @@ const TreeItem = React.memo(function TreeItem({
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDownItem}
                 onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e, item, type); }}
+                onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    const timer = setTimeout(() => {
+                        // Synthesize a context menu event from the touch position
+                        const syntheticEvent = { preventDefault: () => {}, clientX: touch.clientX, clientY: touch.clientY };
+                        onContextMenu?.(syntheticEvent, item, type);
+                    }, 500);
+                    e.currentTarget._longPressTimer = timer;
+                }}
+                onTouchEnd={(e) => {
+                    if (e.currentTarget._longPressTimer) {
+                        clearTimeout(e.currentTarget._longPressTimer);
+                        e.currentTarget._longPressTimer = null;
+                    }
+                }}
+                onTouchMove={(e) => {
+                    if (e.currentTarget._longPressTimer) {
+                        clearTimeout(e.currentTarget._longPressTimer);
+                        e.currentTarget._longPressTimer = null;
+                    }
+                }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -275,7 +297,7 @@ const TreeItem = React.memo(function TreeItem({
                                 key={idx}
                                 className={`tree-item__pip ${collab.isFocused ? 'tree-item__pip--focused' : ''}`}
                                 style={{ backgroundColor: collab.color }}
-                                title={`${collab.name}${collab.isFocused ? ' (active)' : ''}`}
+                                title={`${collab.name || 'User'}${collab.isFocused ? ' (active)' : ''}`}
                                 data-focused={collab.isFocused ? 'true' : 'false'}
                             >
                                 {collab.icon || collab.name?.charAt(0).toUpperCase()}
@@ -335,7 +357,7 @@ function WelcomeState({ onCreateWorkspace, onJoinWorkspace }) {
     return (
         <div className="sidebar-welcome">
             <div className="sidebar-welcome__icon">
-                <img src="/assets/nightjar-logo.png" alt="Nightjar" />
+                <img src={`${window.location.protocol === 'file:' ? '.' : ''}/assets/nightjar-logo.png`} alt="Nightjar" />
             </div>
             <h3 className="sidebar-welcome__title">Welcome to Nightjar</h3>
             <p className="sidebar-welcome__text">
@@ -440,13 +462,14 @@ const HierarchicalSidebar = ({
     onShowHelp,
 }) => {
     // Permission context
-    const { canCreate, canDelete } = usePermissions();
+    const { canCreate, canEdit, canDelete } = usePermissions();
     
     // Folder context - for updating folder properties
     const { updateFolder } = useFolders();
     
     // Check if user can create/delete in current workspace
     const canCreateInWorkspace = currentWorkspace ? canCreate('workspace', currentWorkspace.id) : false;
+    const canEditInWorkspace = currentWorkspace ? canEdit('workspace', currentWorkspace.id) : false;
     const canDeleteInWorkspace = currentWorkspace ? canDelete('workspace', currentWorkspace.id) : false;
     
     // State
@@ -533,7 +556,7 @@ const HierarchicalSidebar = ({
         if (item.isSystem) return;
         
         // Don't show context menu if user has no permitted actions
-        if (!canDeleteInWorkspace) return;
+        if (!canEditInWorkspace && !canDeleteInWorkspace) return;
         
         // Clamp context menu position to viewport bounds
         const menuWidth = 180;
@@ -546,7 +569,7 @@ const HierarchicalSidebar = ({
             item,
             type
         });
-    }, [canDeleteInWorkspace]);
+    }, [canEditInWorkspace, canDeleteInWorkspace]);
     
     const closeContextMenu = useCallback(() => {
         setContextMenu(null);
@@ -1010,7 +1033,7 @@ const HierarchicalSidebar = ({
                         tabIndex={-1}
                         ref={(el) => el?.focus()}
                     >
-                        {canDeleteInWorkspace && (
+                        {canEditInWorkspace && (
                             <button
                                 type="button"
                                 className="context-menu__item"
@@ -1020,7 +1043,7 @@ const HierarchicalSidebar = ({
                                 Edit Properties
                             </button>
                         )}
-                        {canDeleteInWorkspace && (
+                        {canEditInWorkspace && (
                             <button
                                 type="button"
                                 className="context-menu__item"

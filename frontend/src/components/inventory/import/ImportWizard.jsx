@@ -261,12 +261,7 @@ export default function ImportWizard() {
                     <span className="iw-stat-value">{importResult.imported}</span>
                     <span className="iw-stat-label">Imported</span>
                   </div>
-                  {importResult.skipped > 0 && (
-                    <div className="iw-stat">
-                      <span className="iw-stat-value">{importResult.skipped}</span>
-                      <span className="iw-stat-label">Skipped</span>
-                    </div>
-                  )}
+
                   {importResult.errors > 0 && (
                     <div className="iw-stat error">
                       <span className="iw-stat-value">{importResult.errors}</span>

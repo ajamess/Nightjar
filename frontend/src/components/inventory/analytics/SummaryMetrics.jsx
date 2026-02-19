@@ -23,7 +23,7 @@ const METRIC_DEFS = [
 /**
  * @param {{ requests: object[], producerCapacities: Map, dateRange: [number,number] }} props
  */
-export default function SummaryMetrics({ requests, producerCapacities, dateRange }) {
+export default function SummaryMetrics({ requests, producerCapacities, dateRange, isAllTime: isAllTimeProp }) {
   const metrics = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];
     const ts = r => r.requestedAt || r.createdAt || 0;
@@ -31,8 +31,8 @@ export default function SummaryMetrics({ requests, producerCapacities, dateRange
     const total = inRange.length;
 
     // Previous period (same duration, offset backwards)
-    // For "All Time" (from===0), split data into halves: first half = prev, second half = current
-    const isAllTime = from === 0;
+    // For "All Time", split data into halves: first half = prev, second half = current
+    const isAllTime = isAllTimeProp || from === 0;
     let prevRange, prevTotal;
     let currentRange;
     if (isAllTime) {
@@ -81,17 +81,20 @@ export default function SummaryMetrics({ requests, producerCapacities, dateRange
 
     const activeProds = producerCapacities ? Object.keys(producerCapacities).length : 0;
 
+    // Count unique producers (assignedTo) active in the previous period
+    const prevActiveProducers = new Set(prevRange.map(r => r.assignedTo).filter(Boolean)).size;
+
     return {
       totalRequests: { value: curTotal, prev: prevTotal },
       totalUnitsShipped: { value: totalUnits, prev: prevUnits },
       avgFulfillmentDays: { value: avgDays, prev: prevAvgDays },
       blockedRate: { value: curTotal > 0 ? (blocked / curTotal) * 100 : 0, prev: prevTotal > 0 ? (prevBlocked / prevTotal) * 100 : 0 },
-      activeProducers: { value: activeProds, prev: activeProds },
+      activeProducers: { value: activeProds, prev: prevActiveProducers },
       claimRate: { value: curTotal > 0 ? (claimed / curTotal) * 100 : 0, prev: prevTotal > 0 ? (prevClaimed / prevTotal) * 100 : 0 },
       urgentPercent: { value: curTotal > 0 ? (urgent / curTotal) * 100 : 0, prev: prevTotal > 0 ? (prevUrgent / prevTotal) * 100 : 0 },
       cancellationRate: { value: curTotal > 0 ? (cancelled / curTotal) * 100 : 0, prev: prevTotal > 0 ? (prevCancelled / prevTotal) * 100 : 0 },
     };
-  }, [requests, producerCapacities, dateRange]);
+  }, [requests, producerCapacities, dateRange, isAllTimeProp]);
 
   return (
     <div className="summary-metrics">
@@ -102,8 +105,9 @@ export default function SummaryMetrics({ requests, producerCapacities, dateRange
         const isUp = delta > 0;
         const isNeutral = Math.abs(delta) < 0.5;
         // For blocked/cancel rate, up is bad
-        const isBad = ['blockedRate', 'cancellationRate', 'urgentPercent'].includes(def.key) && isUp;
-        const isGood = ['blockedRate', 'cancellationRate', 'urgentPercent'].includes(def.key) ? !isUp : isUp;
+        const inverseMetrics = ['blockedRate', 'cancellationRate', 'urgentPercent', 'avgFulfillmentDays'];
+        const isBad = inverseMetrics.includes(def.key) && isUp;
+        const isGood = inverseMetrics.includes(def.key) ? !isUp : isUp;
 
         let displayValue;
         if (def.format === 'percent') displayValue = `${m.value.toFixed(1)}%`;

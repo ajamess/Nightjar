@@ -142,7 +142,8 @@ function startTor() {
     console.log('Starting Tor...');
     
     // Start Tor with the necessary configuration
-    const torProcess = execSync(`"${TOR_EXECUTABLE}" --SocksPort 9050 --ControlPort 9051 --DataDirectory ${TOR_DIR}/data`, { stdio: 'inherit' });
+    const torDataDir = path.join(TOR_DIR, 'data');
+    const torProcess = execSync(`"${TOR_EXECUTABLE}" --SocksPort 9050 --ControlPort 9051 --DataDirectory "${torDataDir}"`, { stdio: 'inherit' });
     
     console.log('Tor started successfully.');
 }

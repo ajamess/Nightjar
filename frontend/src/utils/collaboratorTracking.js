@@ -118,7 +118,7 @@ export function syncCollaboratorsFromAwareness(collaborators, awarenessStates, m
     if (!state?.user) return;
 
     updateCollaborator(collaborators, {
-      peerId: String(clientId),
+      peerId: state.user.publicKey || String(clientId),
       name: state.user.name || 'Anonymous',
       color: state.user.color,
       icon: state.user.icon,

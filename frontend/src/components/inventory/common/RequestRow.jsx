@@ -15,7 +15,7 @@ import ChatButton from '../../common/ChatButton';
 import { useInventory } from '../../../contexts/InventoryContext';
 import './RequestRow.css';
 
-export default function RequestRow({
+export default React.memo(function RequestRow({
   request,
   collaborators = [],
   isExpanded = false,
@@ -45,15 +45,17 @@ export default function RequestRow({
       </td>
       <td className="request-row__assigned">
         {assignedName}
-        <ChatButton
-          publicKey={request.assignedTo}
-          name={assignedName}
-          collaborators={collaborators}
-          onStartChatWith={onStartChatWith}
-          currentUserKey={userIdentity?.publicKeyBase62}
-        />
+        {request.assignedTo && (
+          <ChatButton
+            publicKey={request.assignedTo}
+            name={assignedName}
+            collaborators={collaborators}
+            onStartChatWith={onStartChatWith}
+            currentUserKey={userIdentity?.publicKeyBase62}
+          />
+        )}
       </td>
       <td className="request-row__date">{formatRelativeDate(request.requestedAt)}</td>
     </tr>
   );
-}
+})

@@ -33,6 +33,9 @@ export default function ScanIdentity({ onComplete, onBack }) {
             if (scannerRef.current) {
                 scannerRef.current.stop();
             }
+            if (fileScannerRef.current) {
+                try { fileScannerRef.current.stop(); } catch (_) {}
+            }
         };
     }, []);
     
@@ -69,6 +72,8 @@ export default function ScanIdentity({ onComplete, onBack }) {
         console.log('Scan error:', errorMessage);
     };
     
+    const fileScannerRef = useRef(null);
+
     const handleFileUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -76,7 +81,12 @@ export default function ScanIdentity({ onComplete, onBack }) {
         setError(null);
         
         try {
+            // Stop any previous file scanner before creating a new one
+            if (fileScannerRef.current) {
+                try { await fileScannerRef.current.stop(); } catch (_) {}
+            }
             const scanner = new QRScanner('qr-reader-file');
+            fileScannerRef.current = scanner;
             const result = await scanner.scanFile(file);
             setScannedData(result);
         } catch (err) {

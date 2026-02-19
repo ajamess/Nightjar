@@ -67,7 +67,7 @@ export function getSystemInfo() {
  * Collect all diagnostic data and copy to clipboard
  */
 export async function generateDiagnosticReport() {
-    const isElectron = window.electronAPI;
+    const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
     
     const report = {
         timestamp: new Date().toISOString(),
@@ -80,7 +80,7 @@ export async function generateDiagnosticReport() {
     };
 
     // Get Electron-specific data if available
-    if (isElectron) {
+    if (isElectron && typeof window.electronAPI.getDiagnosticData === 'function') {
         try {
             const electronData = await window.electronAPI.getDiagnosticData();
             report.electronData = electronData.app;

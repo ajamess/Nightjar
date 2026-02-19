@@ -59,12 +59,25 @@ export function useAuthorAttribution(provider, userHandle, userColor) {
     const getAuthorStyles = useCallback(() => {
         if (!showColorCoding) return '';
         
-        return authors.map(author => `
-            .author-${author.clientId} {
-                background-color: ${author.color}20;
-                border-left: 2px solid ${author.color};
+        // Sanitize color values to prevent CSS injection from malicious peers
+        const sanitizeColor = (color) => {
+            if (typeof color !== 'string') return '#888888';
+            // Only allow valid CSS color formats: hex, rgb(), hsl(), named colors
+            if (/^#[0-9a-fA-F]{3,8}$/.test(color)) return color;
+            if (/^(rgb|hsl)a?\(\s*[\d.,\s%]+\)$/.test(color)) return color;
+            if (/^[a-zA-Z]{1,20}$/.test(color)) return color;
+            return '#888888'; // Fallback for suspicious values
+        };
+        
+        return authors.map(author => {
+            const safeColor = sanitizeColor(author.color);
+            return `
+            .author-${Number(author.clientId) || 0} {
+                background-color: ${safeColor}20;
+                border-left: 2px solid ${safeColor};
             }
-        `).join('\n');
+        `;
+        }).join('\n');
     }, [authors, showColorCoding]);
 
     // Get author info by client ID

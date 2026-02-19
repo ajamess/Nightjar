@@ -1,7 +1,7 @@
 // frontend/src/components/Onboarding/RestoreIdentity.jsx
 // Component for restoring identity from recovery phrase
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { restoreIdentityFromMnemonic, validateMnemonic, EMOJI_OPTIONS } from '../../utils/identity';
 
 const COLOR_PRESETS = [
@@ -19,6 +19,16 @@ export default function RestoreIdentity({ hasExistingIdentity, onComplete, onBac
     const [restoring, setRestoring] = useState(false);
     const [error, setError] = useState(null);
     const [hadLocalData, setHadLocalData] = useState(false);
+    const timerRef = useRef(null);
+    
+    // Cleanup timers on unmount
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+            }
+        };
+    }, []);
     
     const handleWordChange = (index, value) => {
         const newWords = [...words];
@@ -69,11 +79,14 @@ export default function RestoreIdentity({ hasExistingIdentity, onComplete, onBac
                 setHadLocalData(true);
                 setRestoring(false);
                 
+                // Clear sensitive mnemonic words from state
+                setWords(Array(12).fill(''));
+                
                 // Show success screen
                 setStep('success');
                 
                 // Auto-complete after showing success message
-                setTimeout(() => {
+                timerRef.current = setTimeout(() => {
                     onComplete(identity, true);
                 }, 2000);
             } else {
@@ -104,12 +117,15 @@ export default function RestoreIdentity({ hasExistingIdentity, onComplete, onBac
             identity.icon = selectedEmoji;
             identity.color = selectedColor;
             
+            // Clear sensitive mnemonic words from state
+            setWords(Array(12).fill(''));
+            
             // Show success screen for new device
             setHadLocalData(false);
             setStep('success');
             
             // Auto-complete after showing success message
-            setTimeout(() => {
+            timerRef.current = setTimeout(() => {
                 onComplete(identity, false);
             }, 3000);
         } catch (e) {

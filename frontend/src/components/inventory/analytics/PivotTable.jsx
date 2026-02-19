@@ -7,8 +7,11 @@
  * See docs/INVENTORY_SYSTEM_SPEC.md §8 (pivot controls)
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { resolveUserName } from '../../../utils/resolveUserName';
+
+// Map dashboard groupBy values to internal PivotTable keys
+const GROUP_KEY_MAP = { state: 'requesterState', producer: 'assignedTo', week: 'week' };
 
 const GROUP_KEYS = [
   { key: 'item', label: 'Item', accessor: r => r.catalogItemName || 'Unknown' },
@@ -16,13 +19,29 @@ const GROUP_KEYS = [
   { key: 'status', label: 'Status', accessor: r => r.status || 'Unknown' },
   { key: 'urgency', label: 'Urgency', accessor: r => r.urgent ? 'urgent' : 'normal' },
   { key: 'assignedTo', label: 'Producer', accessor: r => r.assignedTo || 'Unassigned' },
+  { key: 'week', label: 'Week', accessor: r => {
+    const t = r.requestedAt || r.createdAt || 0;
+    const d = new Date(t);
+    // ISO week start (Monday)
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 1 - day);
+    return d.toISOString().slice(0, 10);
+  }},
 ];
 
 /**
  * @param {{ requests: object[], collaborators: object[], dateRange: [number,number] }} props
  */
-export default function PivotTable({ requests, collaborators, dateRange }) {
-  const [groupBy, setGroupBy] = useState('item');
+export default function PivotTable({ requests, collaborators, dateRange, groupBy: externalGroupBy }) {
+  const mapGroupKey = (key) => GROUP_KEY_MAP[key] || key;
+  const [groupBy, setGroupBy] = useState(externalGroupBy && externalGroupBy !== 'none' ? mapGroupKey(externalGroupBy) : 'item');
+
+  // Sync with parent groupBy when it changes
+  useEffect(() => {
+    if (externalGroupBy && externalGroupBy !== 'none') {
+      setGroupBy(mapGroupKey(externalGroupBy));
+    }
+  }, [externalGroupBy]);
 
   const grouped = useMemo(() => {
     const [from, to] = dateRange || [0, Date.now()];

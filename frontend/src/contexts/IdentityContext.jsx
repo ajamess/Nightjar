@@ -23,6 +23,9 @@ function convertHexKeysToUint8Arrays(identityData) {
     
     // Convert privateKeyHex to privateKey (Uint8Array)
     if (result.privateKeyHex && !result.privateKey) {
+        if (!/^[0-9a-fA-F]+$/.test(result.privateKeyHex) || result.privateKeyHex.length % 2 !== 0) {
+            throw new Error('Invalid hex format for private key');
+        }
         result.privateKey = new Uint8Array(
             result.privateKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
         );
@@ -30,6 +33,9 @@ function convertHexKeysToUint8Arrays(identityData) {
     
     // Convert publicKeyHex to publicKey (Uint8Array)
     if (result.publicKeyHex && !result.publicKey) {
+        if (!/^[0-9a-fA-F]+$/.test(result.publicKeyHex) || result.publicKeyHex.length % 2 !== 0) {
+            throw new Error('Invalid hex format for public key');
+        }
         result.publicKey = new Uint8Array(
             result.publicKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
         );
@@ -52,6 +58,7 @@ export function IdentityProvider({ children }) {
     const [error, setError] = useState(null);
     const [needsOnboarding, setNeedsOnboarding] = useState(false);
     const [hasExistingIdentity, setHasExistingIdentity] = useState(false);
+    const [isUnlocked, setIsUnlocked] = useState(false);
     
     // Load identity on mount - but DON'T auto-load if it exists
     useEffect(() => {
@@ -76,7 +83,7 @@ export function IdentityProvider({ children }) {
             
             // Check if running in Electron with IPC (legacy system)
             if (window.electronAPI?.identity) {
-                const exists = await window.electronAPI.identity.has();
+                const exists = await window.electronAPI.identity.hasIdentity();
                 setHasExistingIdentity(exists);
                 
                 if (exists) {
@@ -169,6 +176,7 @@ export function IdentityProvider({ children }) {
             
             setIdentity(identityData);
             setNeedsOnboarding(false);
+            setIsUnlocked(true);
             
             // Dispatch event to notify other contexts that identity was created
             // WorkspaceContext listens for this to reinitialize P2P
@@ -352,6 +360,13 @@ export function IdentityProvider({ children }) {
                 }
             }
             
+            // Validate required fields on imported identity
+            const requiredFields = ['publicKeyBase62', 'handle'];
+            const missingFields = requiredFields.filter(f => !restored || !restored[f]);
+            if (missingFields.length > 0) {
+                throw new Error(`Imported identity is missing required fields: ${missingFields.join(', ')}`);
+            }
+
             // Persist imported identity in web mode (Electron handles this in IPC)
             if (!window.electronAPI?.identity) {
                 secureStorage.set(IDENTITY_KEY, restored);
@@ -359,6 +374,7 @@ export function IdentityProvider({ children }) {
             
             setIdentity(restored);
             setNeedsOnboarding(false);
+            setIsUnlocked(true);
             
             // Dispatch event to notify other contexts (P2P, WorkspaceContext) that identity changed
             window.dispatchEvent(new CustomEvent('identity-created', { detail: restored }));
@@ -379,6 +395,7 @@ export function IdentityProvider({ children }) {
             setIdentity(identityData);
             setNeedsOnboarding(false);
             setHasExistingIdentity(true);
+            setIsUnlocked(true);
             
             // CRITICAL: Sync to sidecar for workspace isolation
             // The sidecar filters workspaces by publicKeyBase62
@@ -418,6 +435,9 @@ export function IdentityProvider({ children }) {
         loading,
         error,
         needsOnboarding,
+        hasExistingIdentity,
+        isUnlocked,
+        setIsUnlocked,
         createIdentity,
         updateIdentity,
         deleteIdentity,
@@ -432,6 +452,9 @@ export function IdentityProvider({ children }) {
         loading,
         error,
         needsOnboarding,
+        hasExistingIdentity,
+        isUnlocked,
+        setIsUnlocked,
         createIdentity,
         updateIdentity,
         deleteIdentity,

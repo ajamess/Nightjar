@@ -33,9 +33,10 @@ import NightjarMascot from './components/NightjarMascot';
 import HelpPage from './components/common/HelpPage';
 import SearchPalette from './components/SearchPalette';
 import BugReportModal from './components/BugReportModal';
-import { handleIndexResults } from './services/SearchIndexCache';
+import { handleIndexResults, clearCache as clearSearchIndexCache } from './services/SearchIndexCache';
 import { useAutoLock } from './hooks/useAutoLock';
 import identityManager from './utils/identityManager';
+import { deleteChangelogForDocument } from './utils/changelogStore';
 import { useAuthorAttribution } from './hooks/useAuthorAttribution';
 import { useChangelogObserver } from './hooks/useChangelogObserver';
 import { useWorkspaceSync } from './hooks/useWorkspaceSync';
@@ -705,11 +706,24 @@ function App() {
             // Clean up ydocs for previous workspace
             if (prevWorkspaceIdRef.current) {
                 ydocsRef.current.forEach((docData, docId) => {
-                    if (docData.provider) {
-                        docData.provider.destroy();
+                    try {
+                        if (docData.provider) {
+                            docData.provider.destroy();
+                        }
+                    } catch (err) {
+                        console.warn(`[App] Failed to destroy provider for doc ${docId}:`, err);
                     }
-                    if (docData.ydoc) {
-                        docData.ydoc.destroy();
+                    try {
+                        docData.indexeddbProvider?.destroy();
+                    } catch (err) {
+                        console.warn(`[App] Failed to destroy indexeddbProvider for doc ${docId}:`, err);
+                    }
+                    try {
+                        if (docData.ydoc) {
+                            docData.ydoc.destroy();
+                        }
+                    } catch (err) {
+                        console.warn(`[App] Failed to destroy ydoc for doc ${docId}:`, err);
                     }
                 });
                 ydocsRef.current.clear();
@@ -718,6 +732,9 @@ function App() {
             // Clear open tabs and active document
             setOpenTabs([]);
             setActiveDocId(null);
+            
+            // Clear search index cache to prevent cross-workspace result leaks
+            clearSearchIndexCache();
             
             // Reset collaborator tracking to prevent stale data from previous workspace
             setDocumentCollaborators({});
@@ -836,11 +853,25 @@ function App() {
     // --- Initialize session key and metadata connection ---
     useEffect(() => {
         // 1. Initialize or retrieve session key
-        // Priority: URL fragment > localStorage > generate new
+        // Priority: URL fragment > sessionStorage > localStorage (legacy) > generate new
+        // SECURITY: Use sessionStorage in Electron mode so the key doesn't persist across
+        // app restarts. localStorage is only used in web mode for room sharing.
         let key = getKeyFromUrl();
         
         if (!key || key.length !== nacl.secretbox.keyLength) {
-            // Try to load from localStorage
+            // Try sessionStorage first (preferred — does not persist to disk)
+            const sessionStored = sessionStorage.getItem('nahma-session-key');
+            if (sessionStored) {
+                try {
+                    key = uint8ArrayFromString(sessionStored, 'base64url');
+                } catch (e) {
+                    console.error('Failed to parse stored key from sessionStorage:', e);
+                }
+            }
+        }
+        
+        if (!key || key.length !== nacl.secretbox.keyLength) {
+            // Fallback: try localStorage for backward compat / web mode persistence
             const storedKey = localStorage.getItem('nahma-session-key');
             if (storedKey) {
                 try {
@@ -856,10 +887,22 @@ function App() {
             key = nacl.randomBytes(nacl.secretbox.keyLength);
         }
         
-        // Always persist to URL and localStorage
+        // Persist key — sessionStorage for Electron (ephemeral), localStorage for web (shareable rooms)
         const keyString = uint8ArrayToString(key, 'base64url');
-        window.history.replaceState(null, '', '#' + keyString);
-        localStorage.setItem('nahma-session-key', keyString);
+        if (isElectronMode) {
+            // Electron: use sessionStorage (cleared on app close, never written to disk profile)
+            sessionStorage.setItem('nahma-session-key', keyString);
+            // Remove any legacy localStorage entry left from older versions
+            localStorage.removeItem('nahma-session-key');
+        } else {
+            // Web mode: persist to URL fragment and localStorage for room sharing
+            window.history.replaceState(null, '', '#' + keyString);
+            try {
+                localStorage.setItem('nahma-session-key', keyString);
+            } catch (err) {
+                console.warn('[App] Failed to persist session key to localStorage (quota exceeded?):', err);
+            }
+        }
         
         setSessionKey(key);
 
@@ -998,12 +1041,15 @@ function App() {
             isCleanedUp = true;
             clearTimeout(reconnectTimer);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            if (metaSocket && metaSocket.readyState !== WebSocket.CONNECTING) {
-                // Only close if not still connecting (avoids StrictMode double-invoke error)
-                metaSocket.close();
-            } else if (metaSocket) {
-                // For connecting sockets, let them complete then close
-                metaSocket.onopen = () => metaSocket.close();
+            if (metaSocket) {
+                if (metaSocket.readyState === WebSocket.OPEN || metaSocket.readyState === WebSocket.CLOSING) {
+                    metaSocket.close();
+                } else if (metaSocket.readyState === WebSocket.CONNECTING) {
+                    // Capture reference to avoid stale closure if metaSocket is reassigned
+                    const socketToClose = metaSocket;
+                    socketToClose.onopen = () => socketToClose.close();
+                    socketToClose.onerror = () => {}; // Suppress error if connection fails
+                }
             }
         };
     }, []);
@@ -1351,12 +1397,16 @@ function App() {
         // Cleanup providers
         const docRef = ydocsRef.current.get(docId);
         if (docRef) {
-            docRef.provider.destroy();
-            // Also cleanup IndexedDB provider if exists (web mode)
-            if (docRef.indexeddbProvider) {
-                docRef.indexeddbProvider.destroy();
+            try { docRef.provider?.destroy(); } catch (err) {
+                console.warn(`[App] Failed to destroy provider for doc ${docId}:`, err);
             }
-            docRef.ydoc.destroy();
+            // Also cleanup IndexedDB provider if exists (web mode)
+            try { docRef.indexeddbProvider?.destroy(); } catch (err) {
+                console.warn(`[App] Failed to destroy indexeddbProvider for doc ${docId}:`, err);
+            }
+            try { docRef.ydoc?.destroy(); } catch (err) {
+                console.warn(`[App] Failed to destroy ydoc for doc ${docId}:`, err);
+            }
             ydocsRef.current.delete(docId);
         }
     }, []);
@@ -1365,6 +1415,7 @@ function App() {
         closeDocument(docId);
 
         // ALWAYS remove from shared document list so P2P peers see the deletion
+        // (also cleans up document-folder mapping and trash entries in Yjs)
         syncRemoveDocument(docId);
 
         // Also remove from inventory Y.Map if this was an inventory system
@@ -1374,6 +1425,21 @@ function App() {
         // Also remove from file storage Y.Map if this was a file storage system
         // (safe no-op if docId doesn't exist in the map)
         syncRemoveFileStorageSystem(docId);
+
+        // Clean up IndexedDB storage for this document (web mode only)
+        // IndexeddbPersistence.destroy() only disconnects — it does NOT delete the database
+        if (!isElectronMode) {
+            try {
+                indexedDB.deleteDatabase(`nahma-doc-${docId}`);
+            } catch (err) {
+                console.warn(`[App] Failed to delete IndexedDB for doc ${docId}:`, err);
+            }
+        }
+
+        // Clean up changelog entries for deleted document
+        deleteChangelogForDocument(docId).catch(err => {
+            console.warn(`[App] Failed to delete changelog for doc ${docId}:`, err);
+        });
 
         // Notify sidecar - Electron mode only
         if (isElectronMode && metaSocketRef.current?.readyState === WebSocket.OPEN) {
@@ -1681,10 +1747,11 @@ function App() {
         const tracker = createCollaboratorTracker(activeDoc.ydoc, activeDoc.provider.awareness);
         collaboratorTrackerRef.current = tracker;
         
-        // Update counts function
+        // Update counts function — derive online count from awareness, not stale closure
         const updateCounts = () => {
-            // Online count from current awareness (matching the collaborators array)
-            const onlineCount = collaborators.length;
+            // Online count from awareness states (live query, avoids stale closure)
+            const states = activeDoc.provider.awareness.getStates();
+            const onlineCount = Math.max(0, states.size - 1); // exclude self
             // Total count from historical tracking
             const totalCount = tracker.getTotalCount();
             setCollaboratorCounts({ online: onlineCount, total: totalCount });
@@ -1693,14 +1760,18 @@ function App() {
         // Subscribe to changes in the collaborators Y.Array
         tracker.collaborators.observe(updateCounts);
         
+        // Also listen to awareness changes for live online count
+        activeDoc.provider.awareness.on('change', updateCounts);
+        
         // Initial count
         updateCounts();
         
         return () => {
             tracker.collaborators.unobserve(updateCounts);
+            activeDoc.provider.awareness.off('change', updateCounts);
             tracker.destroy();
         };
-    }, [activeDoc?.ydoc, activeDoc?.provider, collaborators.length]);
+    }, [activeDoc?.ydoc, activeDoc?.provider]);
 
     // --- Render ---
     
@@ -1890,12 +1961,9 @@ function App() {
                         if (!docType && (doc?.type === DOC_TYPES.FILE_STORAGE || docId.startsWith('fs-'))) {
                             docType = DOC_TYPES.FILE_STORAGE;
                         }
-                        if (!docType && doc?.name?.toLowerCase().includes('kanban')) {
-                            docType = DOC_TYPES.KANBAN;
-                        }
-                        if (!docType && doc?.name?.toLowerCase().includes('sheet')) {
-                            docType = DOC_TYPES.SHEET;
-                        }
+                        // Always default to TEXT if docType is missing.
+                        // Name-based guessing (e.g. "kanban" / "sheet" in name) was removed
+                        // because it caused incorrect type detection for renamed documents.
                         openDocument(docId, doc?.name, docType || DOC_TYPES.TEXT);
                     }}
                     onCreateDocument={(name, folderId, icon, color) => createDocument(name, folderId, DOC_TYPES.TEXT, icon, color)}
@@ -2281,16 +2349,33 @@ function App() {
                                 Y.applyUpdate(newDoc, stateData);
                                 const fragment = activeDoc.ydoc.get('prosemirror', Y.XmlFragment);
                                 const newFragment = newDoc.get('prosemirror', Y.XmlFragment);
+                                // Snapshot the original content before deleting, so we can
+                                // restore it if copying from the snapshot doc fails.
+                                const originalItems = fragment.toArray().map(item => item.clone());
                                 activeDoc.ydoc.transact(() => {
                                     fragment.delete(0, fragment.length);
-                                    // Copy content from new doc
-                                    newFragment.toArray().forEach(item => {
-                                        fragment.push([item.clone()]);
-                                    });
+                                    try {
+                                        // Copy content from new doc
+                                        newFragment.toArray().forEach(item => {
+                                            fragment.push([item.clone()]);
+                                        });
+                                    } catch (restoreErr) {
+                                        // Restoration failed — re-insert the original content
+                                        // so the document is never left empty.
+                                        console.error('[Rollback] Failed to restore snapshot, re-inserting original:', restoreErr);
+                                        originalItems.forEach(item => {
+                                            fragment.push([item]);
+                                        });
+                                        throw restoreErr; // re-throw so outer catch can report
+                                    }
                                 });
-                            } finally {
+                            } catch (err) {
+                                console.error('[Rollback] Rollback failed:', err);
                                 newDoc.destroy();
+                                showToast('Rollback failed — original content preserved', 'error');
+                                return;
                             }
+                            newDoc.destroy();
                         } else {
                             // Old format: plain text (fallback)
                             console.log('Rollback to text not supported for ProseMirror');

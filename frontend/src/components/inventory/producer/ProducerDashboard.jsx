@@ -106,36 +106,51 @@ export default function ProducerDashboard() {
     return m;
   }, [catalogItems]);
 
+  // Memoize active catalog items to avoid re-filtering on every render
+  const activeCatalogItems = useMemo(() => catalogItems.filter(c => c.active !== false), [catalogItems]);
+
+  // Pre-group kanban cards by column to avoid N filter passes in render
+  const kanbanColumns = useMemo(() => {
+    return KANBAN_COLUMNS.map(col => ({
+      ...col,
+      requests: myRequests.filter(r => col.statuses.includes(r.status)),
+    }));
+  }, [myRequests]);
+
   // Save capacity for one item
   const handleSaveCapacity = useCallback((itemId, values) => {
     if (!ctx.yProducerCapacities || !myKey) return;
-    const existing = ctx.yProducerCapacities.get(myKey) || {};
-    const updated = {
-      ...existing,
-      inventorySystemId: ctx.inventorySystemId,
-      items: {
-        ...(existing.items || {}),
-        [itemId]: {
-          ...(existing.items?.[itemId] || {}),
-          ...values,
-          updatedAt: Date.now(),
+    const doc = ctx.yProducerCapacities.doc;
+    const doSave = () => {
+      const existing = ctx.yProducerCapacities.get(myKey) || {};
+      const updated = {
+        ...existing,
+        inventorySystemId: ctx.inventorySystemId,
+        items: {
+          ...(existing.items || {}),
+          [itemId]: {
+            ...(existing.items?.[itemId] || {}),
+            ...values,
+            updatedAt: Date.now(),
+          },
         },
-      },
-      updatedAt: Date.now(),
-    };
-    ctx.yProducerCapacities.set(myKey, updated);
+        updatedAt: Date.now(),
+      };
+      ctx.yProducerCapacities.set(myKey, updated);
 
-    ctx.yInventoryAuditLog?.push([{
-      id: generateId(),
-      inventorySystemId: ctx.inventorySystemId,
-      timestamp: Date.now(),
-      actorId: myKey,
-      actorRole: 'editor',
-      action: 'capacity_updated',
-      targetType: 'capacity',
-      targetId: itemId,
-      summary: `Capacity updated: stock=${values.currentStock}, rate=${values.capacityPerDay}/day`,
-    }]);
+      ctx.yInventoryAuditLog?.push([{
+        id: generateId(),
+        inventorySystemId: ctx.inventorySystemId,
+        timestamp: Date.now(),
+        actorId: myKey,
+        actorRole: 'editor',
+        action: 'capacity_updated',
+        targetType: 'capacity',
+        targetId: itemId,
+        summary: `Capacity updated: stock=${values.currentStock}, rate=${values.capacityPerDay}/day`,
+      }]);
+    };
+    if (doc) doc.transact(doSave); else doSave();
   }, [ctx, myKey]);
 
   const handleUnclaim = useCallback((requestId) => {
@@ -162,8 +177,10 @@ export default function ProducerDashboard() {
         approvedAt: null,
         updatedAt: Date.now(),
       };
-      yArr.delete(idx, 1);
-      yArr.insert(idx, [updated]);
+      yArr.doc.transact(() => {
+        yArr.delete(idx, 1);
+        yArr.insert(idx, [updated]);
+      });
 
       // Delete address reveal if exists
       ctx.yAddressReveals?.delete(requestId);
@@ -205,8 +222,14 @@ export default function ProducerDashboard() {
     const idx = arr.findIndex(r => r.id === requestId);
     if (idx === -1) return;
     const req = arr[idx];
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [{ ...req, status: 'in_progress', inProgressAt: Date.now(), updatedAt: Date.now() }]);
+    if (req.status !== 'approved') {
+      showToast(`Cannot mark in-progress: status is "${req.status}", expected "approved"`, 'error');
+      return;
+    }
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...req, status: 'in_progress', inProgressAt: Date.now(), updatedAt: Date.now() }]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -251,8 +274,10 @@ export default function ProducerDashboard() {
     const arr = yArr.toArray();
     const idx = arr.findIndex(r => r.id === req.id);
     if (idx === -1) return;
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [{ ...arr[idx], status: 'approved', shippedAt: null, inProgressAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], status: 'approved', shippedAt: null, inProgressAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -295,8 +320,10 @@ export default function ProducerDashboard() {
     const arr = yArr.toArray();
     const idx = arr.findIndex(r => r.id === req.id);
     if (idx === -1) return;
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [{ ...arr[idx], status: 'in_progress', shippedAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], status: 'in_progress', shippedAt: null, trackingNumber: null, updatedAt: Date.now() }]);
+    });
 
     ctx.yInventoryAuditLog?.push([{
       id: generateId(),
@@ -331,6 +358,56 @@ export default function ProducerDashboard() {
       }
     });
     showToast(`#${req.id?.slice(4, 10)} → In Progress`, 'success');
+  }, [ctx, myKey, showToast]);
+
+  const handleMarkShipped = useCallback((req, trackingNumber) => {
+    const yArr = ctx.yInventoryRequests;
+    if (!yArr) return;
+    const arr = yArr.toArray();
+    const idx = arr.findIndex(r => r.id === req.id);
+    if (idx === -1) return;
+    const updates = { status: 'shipped', shippedAt: Date.now(), updatedAt: Date.now() };
+    if (trackingNumber) updates.trackingNumber = trackingNumber;
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [{ ...arr[idx], ...updates }]);
+    });
+
+    ctx.yInventoryAuditLog?.push([{
+      id: generateId(),
+      inventorySystemId: ctx.inventorySystemId,
+      timestamp: Date.now(),
+      actorId: myKey,
+      actorRole: 'editor',
+      action: 'request_shipped',
+      targetType: 'request',
+      targetId: req.id,
+      summary: `Request ${req.id?.slice(0, 8)} marked shipped`,
+    }]);
+
+    if (req.requestedBy) {
+      pushNotification(ctx.yInventoryNotifications, {
+        inventorySystemId: ctx.inventorySystemId,
+        recipientId: req.requestedBy,
+        type: 'request_shipped',
+        message: `Your request for ${req.catalogItemName || 'item'} has been shipped`,
+        relatedId: req.id,
+      });
+    }
+    const admins = (ctx.collaborators || []).filter(c => c.permission === 'owner');
+    admins.forEach(admin => {
+      const adminKey = admin.publicKeyBase62 || admin.publicKey;
+      if (adminKey && adminKey !== myKey) {
+        pushNotification(ctx.yInventoryNotifications, {
+          inventorySystemId: ctx.inventorySystemId,
+          recipientId: adminKey,
+          type: 'request_shipped',
+          message: `Request for ${req.catalogItemName || 'item'} has been shipped`,
+          relatedId: req.id,
+        });
+      }
+    });
+    showToast(`#${req.id?.slice(4, 10)} → Shipped`, 'success');
   }, [ctx, myKey, showToast]);
 
   // My stats
@@ -398,7 +475,7 @@ export default function ProducerDashboard() {
       <section className="pd-section">
         <h3>My Capacity</h3>
         <div className="pd-capacity-grid">
-          {catalogItems.filter(c => c.active !== false).map(item => (
+          {activeCatalogItems.map(item => (
             <CapacityInput
               key={item.id}
               item={item}
@@ -413,8 +490,8 @@ export default function ProducerDashboard() {
       <section className="pd-section">
         <h3>My Active Requests</h3>
         <div className="pd-kanban">
-          {KANBAN_COLUMNS.map(col => {
-            const colReqs = myRequests.filter(r => col.statuses.includes(r.status));
+          {kanbanColumns.map(col => {
+            const colReqs = col.requests;
             return (
               <div key={col.key} className="pd-kanban-col">
                 <div className="pd-kanban-col-header">
@@ -484,9 +561,7 @@ export default function ProducerDashboard() {
             onClose={() => setSelectedRequest(null)}
             onCancel={() => { handleUnclaim(selectedRequest.id); setSelectedRequest(null); }}
             onMarkInProgress={(req) => { handleMarkInProgress(req.id); setSelectedRequest(null); }}
-            onMarkShipped={(req, tracking) => {
-              setSelectedRequest(null);
-            }}
+            onMarkShipped={(req, tracking) => { handleMarkShipped(req, tracking); setSelectedRequest(null); }}
             onRevertToApproved={(req) => { handleRevertToApproved(req); setSelectedRequest(null); }}
             onRevertToInProgress={(req) => { handleRevertToInProgress(req); setSelectedRequest(null); }}
           />

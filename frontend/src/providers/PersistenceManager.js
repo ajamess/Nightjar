@@ -111,6 +111,19 @@ export class PersistenceManager {
     }
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        fn(value);
+      };
+
+      const timeout = setTimeout(() => {
+        settle(reject, new Error('Connection timed out after 30 seconds'));
+        try { this.ws?.close(); } catch { /* ignore */ }
+      }, 30000);
+
       this.ws = new WebSocket(this.signalingUrl);
       
       this.ws.onopen = () => {
@@ -123,11 +136,12 @@ export class PersistenceManager {
 
       this.ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        this._handleMessage(msg, resolve, reject);
+        this._handleMessage(msg, (v) => settle(resolve, v), (e) => settle(reject, e));
       };
 
-      this.ws.onerror = (err) => reject(err);
-      this.ws.onclose = () => {
+      this.ws.onerror = (err) => settle(reject, err);
+      this.ws.onclose = (event) => {
+        settle(reject, new Error(`WebSocket closed before joining (code: ${event.code})`));
         // Reconnect logic could go here
       };
     });
@@ -190,6 +204,7 @@ export class PersistenceManager {
    */
   async storeState(docId, ydoc) {
     if (!this.persistenceEnabled || !this.workspaceKey) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const state = Y.encodeStateAsUpdate(ydoc);
     const encrypted = await encryptForServer(this.workspaceKey, state);
@@ -206,6 +221,7 @@ export class PersistenceManager {
    */
   async storeUpdate(docId, update) {
     if (!this.persistenceEnabled || !this.workspaceKey) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const encrypted = await encryptForServer(this.workspaceKey, update);
     
@@ -221,6 +237,9 @@ export class PersistenceManager {
    */
   async requestSync(docId) {
     if (!this.workspaceKey) {
+      return null;
+    }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return null;
     }
 

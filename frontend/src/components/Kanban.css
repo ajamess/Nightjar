@@ -408,6 +408,17 @@
     background: var(--hover-bg, #2d2d44);
 }
 
+/* Touch devices: always show edit button since hover is unavailable */
+@media (pointer: coarse) {
+    .btn-edit-card {
+        opacity: 0.6;
+    }
+
+    .kanban-card {
+        cursor: default;
+    }
+}
+
 .card-content h4 {
     margin: 0 0 4px 0;
     font-size: 0.875rem;
@@ -535,6 +546,28 @@
     background: var(--bg-tertiary);
     border-color: var(--accent-color);
     color: var(--accent-color);
+}
+
+/* Touch device enhancements */
+@media (pointer: coarse) {
+    .kanban-board {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .kanban-column {
+        touch-action: pan-y;
+    }
+
+    .kanban-card[draggable="true"] {
+        touch-action: none;
+    }
+
+    .btn-add-card,
+    .btn-add-column,
+    .btn-delete-column {
+        min-height: 44px;
+        min-width: 44px;
+    }
 }
 
 /* Scrollbar styling */

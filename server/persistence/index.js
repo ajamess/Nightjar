@@ -126,6 +126,36 @@ class DocumentManager {
   constructor(storage) {
     this.storage = storage;
     this.docs = new Map(); // roomId -> { doc, lastUpdate }
+    this.MAX_CACHED_DOCS = 500;
+    this.EVICTION_AGE_MS = 60 * 60 * 1000; // 1 hour
+
+    // Periodic eviction of stale docs to prevent memory exhaustion
+    this._evictionInterval = setInterval(() => this._evictStaleDocs(), 5 * 60 * 1000);
+  }
+
+  /**
+   * Evict docs that haven't been updated recently to free memory
+   */
+  _evictStaleDocs() {
+    const now = Date.now();
+    let evicted = 0;
+    for (const [roomId, entry] of this.docs) {
+      if (now - entry.lastUpdate > this.EVICTION_AGE_MS) {
+        // Save before evicting
+        try {
+          const state = Y.encodeStateAsUpdate(entry.doc);
+          this.storage.storeDocument(roomId, state);
+        } catch (e) {
+          // Best-effort save
+        }
+        entry.doc.destroy();
+        this.docs.delete(roomId);
+        evicted++;
+      }
+    }
+    if (evicted > 0) {
+      console.log(`[DocManager] Evicted ${evicted} stale docs (${this.docs.size} remaining)`);
+    }
   }
 
   /**
@@ -208,8 +238,15 @@ class DocumentManager {
    * Save all documents and clean up
    */
   close() {
+    if (this._evictionInterval) {
+      clearInterval(this._evictionInterval);
+      this._evictionInterval = null;
+    }
     for (const [roomId] of this.docs) {
       this.saveDocument(roomId);
+    }
+    for (const entry of this.docs.values()) {
+      try { entry.doc.destroy(); } catch (e) { /* ignore */ }
     }
     this.docs.clear();
   }
@@ -325,6 +362,13 @@ class PersistenceNode {
   joinRoom(roomId) {
     if (this.rooms.has(roomId)) return;
     
+    // Limit total rooms to prevent memory exhaustion
+    const MAX_PERSISTENCE_ROOMS = 1000;
+    if (this.rooms.size >= MAX_PERSISTENCE_ROOMS) {
+      console.warn(`[Persistence] Room limit reached (${MAX_PERSISTENCE_ROOMS}), not joining ${roomId.slice(0, 8)}...`);
+      return;
+    }
+    
     console.log(`[Persistence] Joining room ${roomId.slice(0, 8)}...`);
     this.rooms.add(roomId);
     
@@ -367,6 +411,23 @@ class PersistenceNode {
     
     if (!roomId) {
       console.log(`[Persistence] No room for peer ${fromPeerId.slice(0, 8)}`);
+      return;
+    }
+
+    // Validate that the roomId matches the room the peer actually joined
+    if (peer && peer.roomId && signal.roomId && signal.roomId !== peer.roomId) {
+      console.warn(`[Persistence] Peer ${fromPeerId.slice(0, 8)} sent signal for room ${signal.roomId.slice(0, 8)} but joined room ${peer.roomId.slice(0, 8)} — rejecting`);
+      return;
+    }
+
+    // Validate array sizes to prevent memory exhaustion from untrusted peers
+    const MAX_SYNC_ARRAY_SIZE = 10 * 1024 * 1024; // 10MB max
+    if (signal.stateVector && Array.isArray(signal.stateVector) && signal.stateVector.length > MAX_SYNC_ARRAY_SIZE) {
+      console.warn(`[Persistence] Rejecting oversized stateVector from ${fromPeerId.slice(0, 8)}`);
+      return;
+    }
+    if (signal.update && Array.isArray(signal.update) && signal.update.length > MAX_SYNC_ARRAY_SIZE) {
+      console.warn(`[Persistence] Rejecting oversized update from ${fromPeerId.slice(0, 8)}`);
       return;
     }
 

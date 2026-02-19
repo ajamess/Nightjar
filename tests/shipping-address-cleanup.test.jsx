@@ -877,6 +877,7 @@ describe('AddressReveal — unclaim in embedded mode', () => {
         requestId="req-uc1"
         reveal={MOCK_REVEAL}
         identity={PRODUCER_IDENTITY}
+        request={{ id: 'req-uc1', status: 'approved' }}
         onShipped={jest.fn()}
         onClose={jest.fn()}
         embedded

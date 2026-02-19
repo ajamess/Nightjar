@@ -32,17 +32,26 @@ export default function ItemDemand({ requests, catalogItems, dateRange }) {
     const [from, to] = dateRange || [0, Date.now()];
     const inRange = requests.filter(r => (r.requestedAt || r.createdAt || 0) >= from && (r.requestedAt || r.createdAt || 0) <= to);
 
+    // Build a lookup from catalogItem id → display name
+    const nameById = {};
+    for (const ci of (catalogItems || [])) {
+      nameById[ci.id] = ci.name;
+    }
+
     const byItem = {};
     for (const r of inRange) {
-      const key = r.catalogItemName || 'Unknown';
-      if (!byItem[key]) byItem[key] = { name: key, value: 0, units: 0 };
+      const key = r.catalogItemId || 'unknown';
+      if (!byItem[key]) {
+        const displayName = nameById[key] || r.catalogItemName || 'Unknown';
+        byItem[key] = { name: displayName, value: 0, units: 0 };
+      }
       byItem[key].value++;
       byItem[key].units += r.quantity || 0;
     }
 
     return Object.values(byItem)
       .sort((a, b) => b.value - a.value);
-  }, [requests, dateRange]);
+  }, [requests, dateRange, catalogItems]);
 
   if (data.length === 0) {
     return <div className="chart-empty">No request data in this period</div>;

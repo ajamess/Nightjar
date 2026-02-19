@@ -43,18 +43,28 @@ export default function useFileUpload({
   userPublicKey,
   createFileRecord,
   setChunkAvailability,
+  batchSetChunkAvailability,
   addAuditEntry,
 }) {
   const [uploads, setUploads] = useState(new Map()); // uploadId -> upload state
   const dbRef = useRef(null);
+  const dbOpeningRef = useRef(null);
   const uploadIdCounter = useRef(0);
 
-  /** Get or open IndexedDB */
+  /** Get or open IndexedDB (serialised to prevent leaked connections) */
   const getDb = useCallback(async () => {
-    if (!dbRef.current && workspaceId) {
-      dbRef.current = await openChunkStore(workspaceId);
-    }
-    return dbRef.current;
+    if (dbRef.current) return dbRef.current;
+    if (!workspaceId) return null;
+    if (dbOpeningRef.current) return dbOpeningRef.current;
+    dbOpeningRef.current = openChunkStore(workspaceId).then(db => {
+      dbRef.current = db;
+      dbOpeningRef.current = null;
+      return db;
+    }).catch(err => {
+      dbOpeningRef.current = null;
+      throw err;
+    });
+    return dbOpeningRef.current;
   }, [workspaceId]);
 
   // Close stale IndexedDB connection when workspaceId changes or on unmount
@@ -64,6 +74,7 @@ export default function useFileUpload({
         try { dbRef.current.close(); } catch (_) { /* already closed or mock */ }
         dbRef.current = null;
       }
+      dbOpeningRef.current = null;
     };
   }, [workspaceId]);
 
@@ -152,9 +163,13 @@ export default function useFileUpload({
         folderId,
       });
 
-      // Set chunk availability for ourselves
-      for (let i = 0; i < result.chunkCount; i++) {
-        setChunkAvailability(fileId, i, [userPublicKey]);
+      // Set chunk availability for ourselves (batched into single Yjs transaction)
+      if (batchSetChunkAvailability) {
+        batchSetChunkAvailability(fileId, result.chunkCount, [userPublicKey]);
+      } else {
+        for (let i = 0; i < result.chunkCount; i++) {
+          setChunkAvailability(fileId, i, [userPublicKey]);
+        }
       }
 
       // Apply optional metadata
@@ -168,20 +183,14 @@ export default function useFileUpload({
         fileId,
       });
 
-      addAuditEntry?.({
-        action: 'file_uploaded',
-        fileId,
-        fileName: file.name,
-        sizeBytes: result.totalSize,
-        chunkCount: result.chunkCount,
-      });
+      // Audit entry is already logged by createFileRecord — no duplicate here.
 
       return { fileId, uploadId };
     } catch (err) {
       updateStatus(UPLOAD_STATUS.ERROR, { error: err.message });
       throw err;
     }
-  }, [workspaceId, workspaceKey, userPublicKey, createFileRecord, setChunkAvailability, addAuditEntry, getDb]);
+  }, [workspaceId, workspaceKey, userPublicKey, createFileRecord, setChunkAvailability, batchSetChunkAvailability, getDb]);
 
   /**
    * Upload multiple files at once.

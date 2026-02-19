@@ -68,8 +68,24 @@ export function InventoryProvider({
   collaborators,
   onStartChatWith,
 }) {
-  // Call useInventorySync once here so children don't need to
-  const sync = useInventorySync(
+  // Call useInventorySync once here so children don't need to.
+  // Destructure into individual values so useMemo below gets stable
+  // references (the sync object itself is always a new reference).
+  const {
+    ready,
+    currentSystem,
+    inventorySystems,
+    catalogItems,
+    requests,
+    producerCapacities,
+    addressReveals,
+    pendingAddresses,
+    auditLog,
+    openRequestCount,
+    pendingApprovalCount,
+    activeRequestCount,
+    allRequests,
+  } = useInventorySync(
     {
       yInventorySystems,
       yCatalogItems,
@@ -99,14 +115,28 @@ export function InventoryProvider({
     collaborators,
     onStartChatWith,
     // Derived reactive state from useInventorySync
-    ...sync,
+    ready,
+    currentSystem,
+    inventorySystems,
+    catalogItems,
+    requests,
+    producerCapacities,
+    addressReveals,
+    pendingAddresses,
+    auditLog,
+    openRequestCount,
+    pendingApprovalCount,
+    activeRequestCount,
+    allRequests,
   }), [
     inventorySystemId, workspaceId, currentWorkspace,
     yInventorySystems, yCatalogItems, yInventoryRequests,
     yProducerCapacities, yAddressReveals, yPendingAddresses,
     yInventoryAuditLog, yInventoryNotifications, userIdentity, collaborators,
     onStartChatWith,
-    sync,
+    ready, currentSystem, inventorySystems, catalogItems, requests,
+    producerCapacities, addressReveals, pendingAddresses, auditLog,
+    openRequestCount, pendingApprovalCount, activeRequestCount, allRequests,
   ]);
 
   return (

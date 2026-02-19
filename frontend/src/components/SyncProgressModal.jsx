@@ -5,7 +5,7 @@
  * Shows sync progress phases and handles retry/expiration.
  */
 
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import './SyncProgressModal.css';
 
@@ -31,13 +31,19 @@ export default function SyncProgressModal({
 }) {
   const modalRef = useRef(null);
   
+  // Live clock so time-based memos recompute every second
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  
   // Focus trap for accessibility
   useFocusTrap(modalRef, true);
 
   // Calculate time remaining until expiration
   const timeRemaining = useMemo(() => {
     if (!expiresAt) return null;
-    const now = Date.now();
     const expires = typeof expiresAt === 'number' ? expiresAt : new Date(expiresAt).getTime();
     const remaining = expires - now;
     if (remaining <= 0) return 'Expired';
@@ -50,7 +56,7 @@ export default function SyncProgressModal({
     if (hours > 0) return `${hours}h ${minutes % 60}m remaining`;
     if (minutes > 0) return `${minutes}m remaining`;
     return 'Less than a minute';
-  }, [expiresAt]);
+  }, [expiresAt, now]);
 
   const isExpired = timeRemaining === 'Expired';
   const isError = phase === 'failed' || phase === 'expired';
@@ -73,12 +79,12 @@ export default function SyncProgressModal({
   // Calculate elapsed time
   const elapsedTime = useMemo(() => {
     if (!progress.startTime) return null;
-    const elapsed = Date.now() - progress.startTime;
+    const elapsed = now - progress.startTime;
     const seconds = Math.floor(elapsed / 1000);
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m ${seconds % 60}s`;
-  }, [progress.startTime]);
+  }, [progress.startTime, now]);
 
   return (
     <div className="sync-progress-modal-overlay">

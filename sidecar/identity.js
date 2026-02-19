@@ -151,8 +151,10 @@ function storeIdentity(identity) {
     };
     
     const tmpPath = identityPath + '.tmp';
-    fs.writeFileSync(tmpPath, JSON.stringify(storable, null, 2), 'utf-8');
+    fs.writeFileSync(tmpPath, JSON.stringify(storable, null, 2), { encoding: 'utf-8', mode: 0o600 });
     fs.renameSync(tmpPath, identityPath);
+    // Ensure restrictive permissions on the final file (rename may not preserve mode on all platforms)
+    try { fs.chmodSync(identityPath, 0o600); } catch (e) { /* chmod not supported on Windows, permissions handled by ACLs */ }
     console.log('[Identity] Stored identity at:', identityPath);
     
     return true;
@@ -173,9 +175,22 @@ function loadIdentity() {
         const data = JSON.parse(fs.readFileSync(identityPath, 'utf-8'));
         
         // Convert back to proper format
+        const privateKey = new Uint8Array(Buffer.from(data.privateKeyHex, 'hex'));
+        const publicKey = new Uint8Array(Buffer.from(data.publicKeyHex, 'hex'));
+        
+        // Validate key lengths (Ed25519: 64-byte secret key, 32-byte public key)
+        if (privateKey.length !== nacl.sign.secretKeyLength) {
+            console.error(`[Identity] Invalid private key length: ${privateKey.length}, expected ${nacl.sign.secretKeyLength}`);
+            return null;
+        }
+        if (publicKey.length !== nacl.sign.publicKeyLength) {
+            console.error(`[Identity] Invalid public key length: ${publicKey.length}, expected ${nacl.sign.publicKeyLength}`);
+            return null;
+        }
+        
         const identity = {
-            privateKey: new Uint8Array(Buffer.from(data.privateKeyHex, 'hex')),
-            publicKey: new Uint8Array(Buffer.from(data.publicKeyHex, 'hex')),
+            privateKey,
+            publicKey,
             publicKeyBase62: data.publicKeyBase62,
             mnemonic: decryptMnemonic(data.mnemonicEncrypted),
             handle: data.handle,
@@ -257,8 +272,11 @@ function validateRecoveryPhrase(mnemonic) {
             return false;
         }
         
-        // Compare the decrypted stored mnemonic with the provided phrase
-        return mnemonic.trim() === storedMnemonic.trim();
+        // Timing-safe comparison to prevent side-channel attacks
+        const a = Buffer.from(mnemonic.trim(), 'utf-8');
+        const b = Buffer.from(storedMnemonic.trim(), 'utf-8');
+        if (a.length !== b.length) return false;
+        return crypto.timingSafeEqual(a, b);
     } catch (e) {
         console.error('[Identity] Failed to validate recovery phrase:', e);
         return false;
@@ -272,6 +290,8 @@ function validateRecoveryPhrase(mnemonic) {
 function getMachineKey() {
     // Derive a key from machine-specific info using proper PBKDF2
     // This is NOT secure against determined attackers, just casual access
+    // Enhancement: use a per-installation random salt to prevent key reproduction
+    // from publicly-known machine info alone
     const os = require('os');
     const info = [
         os.hostname(),
@@ -280,9 +300,33 @@ function getMachineKey() {
         'Nightjar-identity-key-v1'
     ].join(':');
     
+    // Use a per-installation random salt (generated once, stored alongside identity)
+    // IMPORTANT: Use configuredBasePath (module-scope), not 'basePath' which is undefined here
+    const effectiveBasePath = configuredBasePath || (process.env.HOME || process.env.USERPROFILE || '.');
+    const saltPath = path.join(effectiveBasePath, '.machine-salt');
+    let salt;
+    try {
+        if (fs.existsSync(saltPath)) {
+            salt = fs.readFileSync(saltPath);
+        } else {
+            // Generate a new random salt on first use
+            salt = crypto.randomBytes(32);
+            // Ensure directory exists
+            const dir = path.dirname(saltPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(saltPath, salt, { mode: 0o600 });
+        }
+    } catch (e) {
+        // Fallback to deterministic salt if file operations fail
+        console.warn('[Identity] Could not read/write machine salt file:', e.message, '- using fallback');
+        salt = Buffer.from('Nightjar-machine-key-salt', 'utf-8');
+    }
+    
     // Use PBKDF2 to derive a proper 32-byte key
-    const salt = Buffer.from('Nightjar-machine-key-salt', 'utf-8');
-    const key = crypto.pbkdf2Sync(info, salt, 10000, 32, 'sha256');
+    // 100,000 iterations to match export key derivation strength (OWASP recommends ≥600k for SHA-256)
+    const key = crypto.pbkdf2Sync(info, salt, 100000, 32, 'sha256');
     
     return new Uint8Array(key);
 }
@@ -299,8 +343,17 @@ function encryptMnemonic(mnemonic) {
 }
 
 function decryptMnemonic(encrypted) {
+    if (!encrypted || typeof encrypted !== 'string') {
+        throw new Error('Invalid encrypted mnemonic: expected non-empty hex string');
+    }
     const key = getMachineKey();
     const packed = Buffer.from(encrypted, 'hex');
+    
+    // Minimum length: nonce (24 bytes) + secretbox overhead (16 bytes) + at least 1 byte plaintext
+    const minLength = nacl.secretbox.nonceLength + nacl.secretbox.overheadLength + 1;
+    if (packed.length < minLength) {
+        throw new Error(`Encrypted mnemonic too short: ${packed.length} bytes, need at least ${minLength}`);
+    }
     
     const nonce = new Uint8Array(packed.slice(0, nacl.secretbox.nonceLength));
     const ciphertext = new Uint8Array(packed.slice(nacl.secretbox.nonceLength));
@@ -318,6 +371,11 @@ function decryptMnemonic(encrypted) {
  * @param {string} password - Password to encrypt the export
  */
 function exportIdentity(password) {
+    // Enforce minimum password strength for export encryption
+    if (!password || typeof password !== 'string' || password.length < 8) {
+        throw new Error('Export password must be at least 8 characters long');
+    }
+    
     const identity = loadIdentity();
     if (!identity) {
         throw new Error('No identity to export');
@@ -356,7 +414,12 @@ function exportIdentity(password) {
  * Import identity from file backup
  */
 function importIdentity(exportedData, password) {
-    const parsed = JSON.parse(exportedData);
+    let parsed;
+    try {
+        parsed = JSON.parse(exportedData);
+    } catch (e) {
+        throw new Error('Invalid identity file: not valid JSON. The file may be corrupted.');
+    }
     
     if (parsed.version !== 1 && parsed.version !== 2) {
         throw new Error('Unsupported export version');
@@ -386,7 +449,12 @@ function importIdentity(exportedData, password) {
         throw new Error('Wrong password or corrupted file');
     }
     
-    const payload = JSON.parse(new TextDecoder().decode(plaintext));
+    let payload;
+    try {
+        payload = JSON.parse(new TextDecoder().decode(plaintext));
+    } catch (e) {
+        throw new Error('Decrypted identity data is corrupted or not valid JSON');
+    }
     
     // Regenerate identity from mnemonic
     const bip39 = require('bip39');

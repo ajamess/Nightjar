@@ -156,12 +156,15 @@ export default function AdminDashboard({ onNavigate }) {
   const aging14 = requests.filter(r => !['cancelled', 'delivered', 'shipped'].includes(r.status) && (now - r.requestedAt) > 14 * MS_PER_DAY).length;
 
   const handleApprove = useCallback(async (req) => {
+    if (!yInventoryRequests || !yInventoryAuditLog) return;
     const items = yInventoryRequests.toArray();
     const idx = items.findIndex(r => r.id === req.id);
     if (idx === -1) return;
     const updated = { ...items[idx], status: 'approved', approvedAt: Date.now(), approvedBy: userIdentity?.publicKeyBase62, updatedAt: Date.now() };
-    yInventoryRequests.delete(idx, 1);
-    yInventoryRequests.insert(idx, [updated]);
+    yInventoryRequests.doc.transact(() => {
+      yInventoryRequests.delete(idx, 1);
+      yInventoryRequests.insert(idx, [updated]);
+    });
 
     // Create address reveal for the assigned producer
     if (updated.assignedTo) {
@@ -241,12 +244,15 @@ export default function AdminDashboard({ onNavigate }) {
   }, [yInventoryRequests, yInventoryAuditLog, inventorySystemId, userIdentity, showToast, ctx.yInventoryNotifications, ctx.currentWorkspace, ctx.workspaceId, ctx.yPendingAddresses, ctx.yAddressReveals]);
 
   const handleReject = useCallback((req) => {
+    if (!yInventoryRequests || !yInventoryAuditLog) return;
     const items = yInventoryRequests.toArray();
     const idx = items.findIndex(r => r.id === req.id);
     if (idx === -1) return;
     const updated = { ...items[idx], status: 'open', assignedTo: null, assignedAt: null, claimedBy: null, claimedAt: null, approvedAt: null, approvedBy: null, updatedAt: Date.now() };
-    yInventoryRequests.delete(idx, 1);
-    yInventoryRequests.insert(idx, [updated]);
+    yInventoryRequests.doc.transact(() => {
+      yInventoryRequests.delete(idx, 1);
+      yInventoryRequests.insert(idx, [updated]);
+    });
     yInventoryAuditLog.push([{
       id: generateId('aud-'),
       inventorySystemId,
@@ -448,10 +454,12 @@ function InflowOutflowChart({ requests }) {
         (r.status === 'shipped' || r.status === 'delivered') &&
         r.shippedAt >= dayStart && r.shippedAt < dayEnd
       ).length;
-      const blocked = requests.filter(r =>
-        r.status === 'blocked' &&
-        r.requestedAt <= dayEnd
-      ).length;
+      // NOTE: No `blockedAt` timestamp exists, so we can only check current status.
+      // Only show the blocked count on the most recent day to avoid misleading
+      // back-projection of the current blocked state across all historical days.
+      const blocked = i === 0
+        ? requests.filter(r => r.status === 'blocked' && r.requestedAt <= dayEnd).length
+        : 0;
       const label = new Date(dayEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       days.push({ date: label, incoming, fulfilled, blocked });
     }

@@ -29,6 +29,7 @@ export default function FileDetailPanel({
   collaborators,
   isFavorite = false,
   canEdit = true,
+  onStartChatWith,
 }) {
   const [editingDescription, setEditingDescription] = useState(false);
   const [description, setDescription] = useState('');
@@ -133,7 +134,7 @@ export default function FileDetailPanel({
                   publicKey={file.uploadedBy}
                   name={uploaderName}
                   collaborators={collaborators}
-                  onStartChatWith={null}
+                  onStartChatWith={onStartChatWith}
                   currentUserKey={userPublicKey}
                 />
               </span>

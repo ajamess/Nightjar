@@ -70,7 +70,23 @@ export function PermissionProvider({ children }) {
   // Document-to-folder mapping: documentId -> folderId
   const [documentFolders, setDocumentFolders] = useState(new Map());
 
-  // Clear permission cache when workspace data changes
+  // Stable workspaces ref — only updated when actual data changes (deep comparison)
+  // This prevents cache thrashing when the parent passes a new array reference with identical data
+  const stableWorkspacesRef = useRef(workspaces);
+  const prevWorkspacesJsonRef = useRef(JSON.stringify(workspaces));
+
+  useEffect(() => {
+    const json = JSON.stringify(workspaces);
+    if (json !== prevWorkspacesJsonRef.current) {
+      prevWorkspacesJsonRef.current = json;
+      stableWorkspacesRef.current = workspaces;
+      // Actual workspace data changed — clear cache and notify consumers
+      permissionCacheRef.current = new Map();
+      setPermissionVersion(v => v + 1);
+    }
+  }, [workspaces]);
+
+  // Clear permission cache when other dependencies change
   useEffect(() => {
     permissionCacheRef.current = new Map();
   }, [currentWorkspaceId, currentWorkspace, folderHierarchy, documentFolders]);
@@ -122,9 +138,9 @@ export function PermissionProvider({ children }) {
    * @returns {string} Permission level or 'none'
    */
   const getWorkspacePermission = useCallback((workspaceId) => {
-    const workspace = workspaces.find(w => w.id === workspaceId);
+    const workspace = stableWorkspacesRef.current.find(w => w.id === workspaceId);
     return workspace?.myPermission || 'none';
-  }, [workspaces]);
+  }, []);
 
   /**
    * Resolve permission for a folder by walking up the hierarchy

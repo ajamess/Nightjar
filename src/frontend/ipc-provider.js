@@ -1,6 +1,6 @@
 // src/frontend/ipc-provider.js
 import * as Y from 'yjs';
-import { Awareness } from 'y-protocols/awareness';
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness';
 
 /**
  * Check if running in Electron environment with electronAPI available
@@ -40,17 +40,24 @@ export class IpcProvider {
         this._onAwarenessUpdate = ({ added, updated, removed }) => {
             if (!isElectronAvailable()) return;
             const changedClients = added.concat(updated).concat(removed);
-            const update = Y.encodeAwarenessUpdate(this.awareness, changedClients);
+            const update = encodeAwarenessUpdate(this.awareness, changedClients);
             window.electronAPI.sendAwarenessUpdate(update);
         };
 
         this._onBackendUpdate = (update) => {
+            // Guard: only apply if still connected to prevent stale updates
+            if (!this.connected) return;
             Y.applyUpdate(this.doc, update, this);
         };
 
         this._onBackendAwarenessUpdate = (update) => {
-            Y.applyAwarenessUpdate(this.awareness, update, this);
+            if (!this.connected) return;
+            applyAwarenessUpdate(this.awareness, update, this);
         };
+
+        // Track IPC removal functions for proper cleanup
+        this._removeYjsListener = null;
+        this._removeAwarenessListener = null;
 
         this.connect();
     }
@@ -64,8 +71,11 @@ export class IpcProvider {
         this.doc.on('update', this._onUpdate);
         this.awareness.on('update', this._onAwarenessUpdate);
 
-        window.electronAPI.onYjsUpdate(this._onBackendUpdate);
-        window.electronAPI.onAwarenessUpdate(this._onBackendAwarenessUpdate);
+        // Store removal functions if the API supports them
+        const yjsRemover = window.electronAPI.onYjsUpdate(this._onBackendUpdate);
+        const awarenessRemover = window.electronAPI.onAwarenessUpdate(this._onBackendAwarenessUpdate);
+        this._removeYjsListener = typeof yjsRemover === 'function' ? yjsRemover : null;
+        this._removeAwarenessListener = typeof awarenessRemover === 'function' ? awarenessRemover : null;
         this.connected = true;
     }
 
@@ -76,7 +86,14 @@ export class IpcProvider {
         this.awareness.off('update', this._onAwarenessUpdate);
         this.connected = false;
 
-        // We need a way to remove just our listeners from the electronAPI
-        // For now, we assume the App component handles the full cleanup.
+        // Remove IPC listeners to prevent stale callbacks applying updates to old ydocs
+        if (this._removeYjsListener) {
+            this._removeYjsListener();
+            this._removeYjsListener = null;
+        }
+        if (this._removeAwarenessListener) {
+            this._removeAwarenessListener();
+            this._removeAwarenessListener = null;
+        }
     }
 }

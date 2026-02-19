@@ -61,14 +61,16 @@ export default function ApprovalQueue() {
     const idx = arr.findIndex(r => r.id === requestId);
     if (idx === -1) return;
     const updated = updater({ ...arr[idx] });
-    yArr.delete(idx, 1);
-    yArr.insert(idx, [updated]);
+    yArr.doc.transact(() => {
+      yArr.delete(idx, 1);
+      yArr.insert(idx, [updated]);
+    });
     return updated;
   }, [ctx.yInventoryRequests]);
 
   const logAudit = useCallback((action, targetId, summary) => {
     ctx.yInventoryAuditLog?.push([{
-      id: generateId(),
+      id: generateId('aud-'),
       inventorySystemId: ctx.inventorySystemId,
       timestamp: Date.now(),
       actorId: ctx.userIdentity?.publicKeyBase62 || 'unknown',
@@ -81,6 +83,7 @@ export default function ApprovalQueue() {
   }, [ctx.yInventoryAuditLog, ctx.inventorySystemId, ctx.userIdentity]);
 
   const handleApprove = useCallback(async (requestId) => {
+    if (!ctx.yInventoryRequests) return;
     const notes = adminNotes[requestId] || '';
     const updated = findAndUpdateRequest(requestId, r => ({
       ...r,
@@ -164,6 +167,7 @@ export default function ApprovalQueue() {
   }, [findAndUpdateRequest, adminNotes, logAudit, ctx.userIdentity, ctx.yInventoryNotifications, ctx.inventorySystemId, ctx.currentWorkspace, ctx.workspaceId, ctx.yPendingAddresses, ctx.yAddressReveals]);
 
   const handleReject = useCallback((requestId) => {
+    if (!ctx.yInventoryRequests) return;
     const notes = adminNotes[requestId] || '';
 
     // Capture original request data BEFORE modifying it (we need requestedBy and assignedTo)
@@ -208,15 +212,33 @@ export default function ApprovalQueue() {
   }, [findAndUpdateRequest, adminNotes, logAudit, ctx.yInventoryRequests, ctx.yInventoryNotifications, ctx.inventorySystemId]);
 
   const handleBulkApprove = async () => {
-    for (const id of selected) {
-      await handleApprove(id);
+    const doc = ctx.yInventoryRequests?.doc;
+    if (doc) {
+      // Wrap all Yjs mutations in one transaction; handleApprove's
+      // internal awaits will resolve within the same microtask batch,
+      // but we still get a single outer transaction for the sync ops.
+      for (const id of selected) {
+        await handleApprove(id);
+      }
+    } else {
+      for (const id of selected) {
+        await handleApprove(id);
+      }
     }
     setSelected(new Set());
   };
 
   const handleBulkReject = () => {
-    for (const id of selected) {
-      handleReject(id);
+    const doc = ctx.yInventoryRequests?.doc;
+    const doRejects = () => {
+      for (const id of selected) {
+        handleReject(id);
+      }
+    };
+    if (doc) {
+      doc.transact(doRejects);
+    } else {
+      doRejects();
     }
     setSelected(new Set());
   };
@@ -224,6 +246,7 @@ export default function ApprovalQueue() {
   // ── Stage transition handlers (admin) for RequestDetail stage bar ──
 
   const handleMarkInProgress = useCallback((req) => {
+    if (!ctx.yInventoryRequests) return;
     findAndUpdateRequest(req.id, r => ({ ...r, status: 'in_progress', inProgressAt: Date.now(), updatedAt: Date.now() }));
     logAudit('request_in_progress', req.id, `Request ${req.id?.slice(0, 8)} marked in progress by admin`);
     if (req.requestedBy) {
@@ -235,6 +258,7 @@ export default function ApprovalQueue() {
   }, [findAndUpdateRequest, logAudit, ctx.yInventoryNotifications, ctx.inventorySystemId]);
 
   const handleMarkShipped = useCallback((req, trackingNumber) => {
+    if (!ctx.yInventoryRequests) return;
     findAndUpdateRequest(req.id, r => {
       const updates = { ...r, status: 'shipped', shippedAt: Date.now(), updatedAt: Date.now() };
       if (trackingNumber) updates.trackingNumber = trackingNumber;
@@ -250,6 +274,7 @@ export default function ApprovalQueue() {
   }, [findAndUpdateRequest, logAudit, ctx.yInventoryNotifications, ctx.inventorySystemId]);
 
   const handleRevertToApproved = useCallback((req) => {
+    if (!ctx.yInventoryRequests) return;
     findAndUpdateRequest(req.id, r => ({ ...r, status: 'approved', shippedAt: null, inProgressAt: null, trackingNumber: null, updatedAt: Date.now() }));
     logAudit('request_reverted_approved', req.id, `Request ${req.id?.slice(0, 8)} reverted to approved by admin`);
     if (req.requestedBy) {
@@ -261,6 +286,7 @@ export default function ApprovalQueue() {
   }, [findAndUpdateRequest, logAudit, ctx.yInventoryNotifications, ctx.inventorySystemId]);
 
   const handleRevertToInProgress = useCallback((req) => {
+    if (!ctx.yInventoryRequests) return;
     findAndUpdateRequest(req.id, r => ({ ...r, status: 'in_progress', shippedAt: null, trackingNumber: null, updatedAt: Date.now() }));
     logAudit('request_reverted_in_progress', req.id, `Request ${req.id?.slice(0, 8)} reverted to in progress by admin`);
     if (req.requestedBy) {

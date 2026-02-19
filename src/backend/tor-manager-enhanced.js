@@ -217,6 +217,12 @@ Log notice file ${path.join(this.options.dataDir, 'tor.log').replace(/\\/g, '/')
     return new Promise((resolve, reject) => {
       const socket = net.createConnection(this.options.controlPort, '127.0.0.1');
       
+      // Timeout to prevent hanging if Tor control port is unresponsive
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject(new Error('Control connection timeout'));
+      }, 5000);
+      
       socket.on('connect', () => {
         // Authenticate using cookie
         const cookiePath = path.join(this.options.dataDir, 'control_auth_cookie');
@@ -234,14 +240,20 @@ Log notice file ${path.join(this.options.dataDir, 'tor.log').replace(/\\/g, '/')
       
       socket.on('data', (data) => {
         const response = data.toString();
+        clearTimeout(timeout);
         if (response.startsWith('250')) {
           resolve(socket);
         } else {
+          socket.destroy();
           reject(new Error(`Control authentication failed: ${response}`));
         }
       });
       
-      socket.on('error', reject);
+      socket.on('error', (err) => {
+        clearTimeout(timeout);
+        socket.destroy();
+        reject(err);
+      });
     });
   }
   
@@ -252,16 +264,23 @@ Log notice file ${path.join(this.options.dataDir, 'tor.log').replace(/\\/g, '/')
     const socket = await this.connectControl();
     
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject(new Error(`Command timeout: ${command}`));
+      }, 5000);
+      
       socket.write(`${command}\r\n`);
       
       socket.on('data', (data) => {
+        clearTimeout(timeout);
         const response = data.toString();
         socket.end();
         resolve(response);
       });
       
       socket.on('error', (err) => {
-        socket.end();
+        clearTimeout(timeout);
+        socket.destroy();
         reject(err);
       });
     });

@@ -21,24 +21,48 @@ export function usePresence() {
 
 // Simple throttle function
 function throttle(func, limit) {
-    let inThrottle = false;
+    let lastCall = 0;
     let lastArgs = null;
+    let timer = null;
     
-    return function(...args) {
-        lastArgs = args;
-        if (!inThrottle) {
+    function throttled(...args) {
+        const now = Date.now();
+        const remaining = limit - (now - lastCall);
+        
+        if (remaining <= 0) {
+            // Enough time has passed — execute immediately
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            lastCall = now;
+            lastArgs = null;
             func.apply(this, args);
-            inThrottle = true;
-            setTimeout(() => {
-                inThrottle = false;
-                // Execute with last args if any were queued
-                if (lastArgs) {
-                    func.apply(this, lastArgs);
-                    lastArgs = null;
-                }
-            }, limit);
+        } else {
+            // Within throttle window — queue the latest args
+            lastArgs = args;
+            if (!timer) {
+                timer = setTimeout(() => {
+                    timer = null;
+                    lastCall = Date.now();
+                    if (lastArgs) {
+                        func.apply(this, lastArgs);
+                        lastArgs = null;
+                    }
+                }, remaining);
+            }
         }
+    }
+    
+    throttled.cancel = () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        lastArgs = null;
     };
+    
+    return throttled;
 }
 
 export function PresenceProvider({ children, awareness }) {
@@ -103,7 +127,25 @@ export function PresenceProvider({ children, awareness }) {
                 }
             });
             
-            setPeers(newPeers);
+            setPeers(prev => {
+                if (prev.size !== newPeers.size) return newPeers;
+                for (const [key, val] of newPeers) {
+                    const old = prev.get(key);
+                    if (!old) return newPeers;
+                    // Compare all render-relevant fields (skip lastSeen to avoid heartbeat churn)
+                    if (old.isTyping !== val.isTyping ||
+                        old.openDocumentId !== val.openDocumentId ||
+                        old.user?.id !== val.user?.id ||
+                        old.user?.name !== val.user?.name ||
+                        old.user?.color !== val.user?.color ||
+                        old.user?.icon !== val.user?.icon ||
+                        JSON.stringify(old.cursor) !== JSON.stringify(val.cursor) ||
+                        JSON.stringify(old.selection) !== JSON.stringify(val.selection)) {
+                        return newPeers;
+                    }
+                }
+                return prev; // No change — keep old reference
+            });
         };
         
         awareness.on('change', handleChange);
@@ -111,9 +153,14 @@ export function PresenceProvider({ children, awareness }) {
         
         return () => {
             awareness.off('change', handleChange);
-            // Clear local awareness state on unmount to remove stale presence
+            // Clear only the fields this context owns instead of wiping all shared awareness
             try {
-                awareness.setLocalState(null);
+                awareness.setLocalStateField('user', null);
+                awareness.setLocalStateField('cursor', null);
+                awareness.setLocalStateField('selection', null);
+                awareness.setLocalStateField('isTyping', null);
+                awareness.setLocalStateField('lastSeen', null);
+                awareness.setLocalStateField('openDocumentId', null);
             } catch (e) {
                 // Ignore errors if awareness is already destroyed
             }
@@ -130,11 +177,14 @@ export function PresenceProvider({ children, awareness }) {
         }
     }, [awareness]);
     
-    // Memoize throttled version
-    const updateCursor = useMemo(
-        () => throttle(updateCursorRaw, PRESENCE_THROTTLE_MS),
-        [updateCursorRaw]
-    );
+    // Memoize throttled version, cancelling the previous timer on recreation
+    const throttledCursorRef = useRef(null);
+    const updateCursor = useMemo(() => {
+        if (throttledCursorRef.current) throttledCursorRef.current.cancel();
+        const fn = throttle(updateCursorRaw, PRESENCE_THROTTLE_MS);
+        throttledCursorRef.current = fn;
+        return fn;
+    }, [updateCursorRaw]);
     
     // Update selection with optional documentId for per-document filtering
     // Throttled to 100ms to match sidecar and prevent excessive network traffic
@@ -146,11 +196,14 @@ export function PresenceProvider({ children, awareness }) {
         }
     }, [awareness]);
     
-    // Memoize throttled version
-    const updateSelection = useMemo(
-        () => throttle(updateSelectionRaw, PRESENCE_THROTTLE_MS),
-        [updateSelectionRaw]
-    );
+    // Memoize throttled version, cancelling the previous timer on recreation
+    const throttledSelectionRef = useRef(null);
+    const updateSelection = useMemo(() => {
+        if (throttledSelectionRef.current) throttledSelectionRef.current.cancel();
+        const fn = throttle(updateSelectionRaw, PRESENCE_THROTTLE_MS);
+        throttledSelectionRef.current = fn;
+        return fn;
+    }, [updateSelectionRaw]);
     
     // Update which document is currently open (for presence indicators)
     const updateOpenDocument = useCallback((documentId) => {
@@ -181,7 +234,7 @@ export function PresenceProvider({ children, awareness }) {
         }
     }, [awareness]);
     
-    // Cleanup typing timeout on unmount to prevent state updates after unmount
+    // Cleanup typing timeout and throttle timers on unmount
     useEffect(() => {
         isMountedRef.current = true;
         return () => {
@@ -189,6 +242,8 @@ export function PresenceProvider({ children, awareness }) {
             if (typingTimeoutRef.current) {
                 clearTimeout(typingTimeoutRef.current);
             }
+            if (throttledCursorRef.current) throttledCursorRef.current.cancel();
+            if (throttledSelectionRef.current) throttledSelectionRef.current.cancel();
         };
     }, []);
     

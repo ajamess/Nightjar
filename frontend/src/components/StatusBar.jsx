@@ -61,6 +61,20 @@ const StatusBar = ({
         }
     }, [showNetworkPopover]);
 
+    // Close collaborators dropdown when clicking outside
+    const collaboratorsDropdownRef = useRef(null);
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (collaboratorsDropdownRef.current && !collaboratorsDropdownRef.current.contains(e.target)) {
+                setShowCollaborators(false);
+            }
+        };
+        if (showCollaborators) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showCollaborators]);
+
     // Handle clicking on a collaborator
     const handleCollaboratorClick = (collab, event) => {
         const rect = event.currentTarget.getBoundingClientRect();
@@ -330,7 +344,7 @@ const StatusBar = ({
                     <div className="collaborators" ref={containerRef} data-testid="collaborator-list">
                         {visibleCollabs.map((collab, idx) => (
                             <div 
-                                key={idx}
+                                key={collab.clientId || collab.publicKey || collab.name || idx}
                                 className={`collaborator-avatar clickable ${expandedChip === idx ? 'expanded' : ''}`}
                                 style={{ backgroundColor: collab.color }}
                                 onMouseEnter={() => setExpandedChip(idx)}
@@ -349,13 +363,13 @@ const StatusBar = ({
                             </div>
                         ))}
                         {hiddenCollabs.length > 0 && (
+                          <div ref={collaboratorsDropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
                             <div 
                                 className="collaborator-avatar more"
                                 onClick={() => setShowCollaborators(!showCollaborators)}
                             >
                                 +{hiddenCollabs.length}
                             </div>
-                        )}
                         
                         {showCollaborators && hiddenCollabs.length > 0 && (
                             <div className="collaborators-dropdown">
@@ -365,7 +379,7 @@ const StatusBar = ({
                                 <div className="dropdown-list">
                                     {hiddenCollabs.map((collab, idx) => (
                                         <div 
-                                            key={idx} 
+                                            key={collab.clientId || collab.publicKey || collab.name || idx} 
                                             className="collab-item clickable"
                                             onClick={(e) => {
                                                 handleCollaboratorClick(collab, e);
@@ -383,6 +397,8 @@ const StatusBar = ({
                                     ))}
                                 </div>
                             </div>
+                        )}
+                          </div>
                         )}
                     </div>
                 )}

@@ -153,7 +153,11 @@ export function secureSet(key, value) {
   
   const json = JSON.stringify(value);
   const encrypted = encrypt(json);
-  localStorage.setItem(STORAGE_PREFIX + key, encrypted);
+  try {
+    localStorage.setItem(STORAGE_PREFIX + key, encrypted);
+  } catch (err) {
+    console.error(`[SecureStorage] Failed to store key "${key}" (quota exceeded?):`, err);
+  }
 }
 
 /**
@@ -215,7 +219,10 @@ export function secureClear() {
   }
   keysToRemove.forEach(key => localStorage.removeItem(key));
   
-  // Also clear session key
+  // Wipe session key buffer contents before releasing reference
+  if (sessionKey) {
+    sessionKey.fill(0);
+  }
   sessionStorage.removeItem('Nightjar_session_enc_key');
   sessionKey = null;
 }

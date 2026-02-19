@@ -173,12 +173,21 @@ export class MeshParticipant extends EventEmitter {
     
     this.meshConnections.set(remoteKey, conn);
 
-    // Set up message handling
+    // Set up message handling with buffer overflow protection
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB max buffer
     let buffer = Buffer.alloc(0);
     
     conn.on('data', (data) => {
       // Accumulate data (messages may be fragmented)
       buffer = Buffer.concat([buffer, data]);
+      
+      // Prevent buffer overflow attacks
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        console.error(`[Mesh] Buffer overflow from ${remoteKey.slice(0, 16)}..., closing connection`);
+        conn.destroy();
+        buffer = Buffer.alloc(0);
+        return;
+      }
       
       // Try to parse complete messages (newline-delimited JSON)
       const lines = buffer.toString().split('\n');
@@ -202,6 +211,12 @@ export class MeshParticipant extends EventEmitter {
 
     conn.on('error', (err) => {
       console.error(`[Mesh] Connection error ${remoteKey.slice(0, 16)}...`, err.message);
+      this.meshConnections.delete(remoteKey);
+      try {
+        if (!conn.destroyed) conn.destroy();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
     });
 
     // If we're a relay, send a greeting
@@ -377,8 +392,12 @@ export class MeshParticipant extends EventEmitter {
     const { relays } = msg;
     if (!Array.isArray(relays)) return;
     
-    for (const relay of relays) {
-      if (relay.nodeId && relay.endpoints) {
+    // Limit how many relays we accept from a single bootstrap response
+    const safeRelays = relays.slice(0, MAX_ROUTING_TABLE_SIZE);
+    
+    for (const relay of safeRelays) {
+      if (relay.nodeId && relay.endpoints && typeof relay.nodeId === 'string'
+          && Array.isArray(relay.endpoints) && relay.endpoints.length > 0) {
         this.knownRelays.set(relay.nodeId, {
           endpoints: relay.endpoints,
           capabilities: relay.capabilities || {},
@@ -389,7 +408,17 @@ export class MeshParticipant extends EventEmitter {
       }
     }
     
-    console.log(`[Mesh] Received ${relays.length} relays from bootstrap`);
+    // Trim routing table if it grew beyond limit
+    if (this.knownRelays.size > MAX_ROUTING_TABLE_SIZE) {
+      const entries = [...this.knownRelays.entries()]
+        .sort((a, b) => a[1].lastSeen - b[1].lastSeen);
+      while (this.knownRelays.size > MAX_ROUTING_TABLE_SIZE * 0.8) {
+        const [oldKey] = entries.shift();
+        this.knownRelays.delete(oldKey);
+      }
+    }
+    
+    console.log(`[Mesh] Received ${safeRelays.length} relays from bootstrap`);
   }
 
   /**
@@ -426,18 +455,30 @@ export class MeshParticipant extends EventEmitter {
   _handleWorkspaceAnnounce(msg, remoteKey) {
     const { topicHex, action, nodeId } = msg;
     if (!topicHex || !nodeId) return;
-    
-    if (!this.workspaceTopics.has(topicHex)) {
-      this.workspaceTopics.set(topicHex, new Set());
-    }
-    
-    const peers = this.workspaceTopics.get(topicHex);
+    // Validate topicHex format (should be hex string)
+    if (typeof topicHex !== 'string' || topicHex.length > 128) return;
     
     if (action === 'join') {
+      // Enforce limit on total workspace topics to prevent memory exhaustion
+      if (!this.workspaceTopics.has(topicHex) && this.workspaceTopics.size >= MAX_WORKSPACE_ANNOUNCEMENTS * 20) {
+        console.warn(`[Mesh] Workspace topic limit reached, ignoring announcement`);
+        return;
+      }
+      if (!this.workspaceTopics.has(topicHex)) {
+        this.workspaceTopics.set(topicHex, new Set());
+      }
+      const peers = this.workspaceTopics.get(topicHex);
       peers.add(nodeId);
       this.emit('workspace-peer-joined', { topicHex, nodeId });
     } else if (action === 'leave') {
-      peers.delete(nodeId);
+      const peers = this.workspaceTopics.get(topicHex);
+      if (peers) {
+        peers.delete(nodeId);
+        // Clean up empty Sets to prevent memory leak
+        if (peers.size === 0) {
+          this.workspaceTopics.delete(topicHex);
+        }
+      }
       this.emit('workspace-peer-left', { topicHex, nodeId });
     }
   }

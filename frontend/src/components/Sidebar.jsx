@@ -124,7 +124,7 @@ const Sidebar = ({
 
     // Filter documents for current folder
     const filteredDocuments = useMemo(() => (documents || []).filter(doc => {
-        if (activeFolderId === 'all' || !activeFolderId) return true;
+        if (activeFolderId === 'all' || !activeFolderId) return !doc.deletedAt;
         if (activeFolderId === 'recent') {
             // Show docs edited in last 7 days
             const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -258,7 +258,7 @@ const Sidebar = ({
                                 onClick={() => onSelectDocument(doc.id)}
                                 draggable
                                 onDragStart={(e) => {
-                                    e.dataTransfer.setData('documentId', doc.id);
+                                    e.dataTransfer.setData('application/json', JSON.stringify({ type: 'document', id: doc.id }));
                                     e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 data-testid={`doc-${doc.id}`}
@@ -278,9 +278,9 @@ const Sidebar = ({
                                                     key={idx}
                                                     className={`user-pip ${collab.isFocused ? 'focused' : ''}`}
                                                     style={{ backgroundColor: collab.color }}
-                                                    title={collab.name + (collab.isFocused ? ' (editing)' : '')}
+                                                    title={(collab.name || 'User') + (collab.isFocused ? ' (editing)' : '')}
                                                 >
-                                                    {collab.icon || collab.name.charAt(0).toUpperCase()}
+                                                    {collab.icon || collab.name?.charAt(0)?.toUpperCase() || '?'}
                                                 </span>
                                             ))}
                                             {collabs.length > 5 && (

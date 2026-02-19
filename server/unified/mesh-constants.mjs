@@ -8,6 +8,9 @@
  */
 
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pkg = require('./package.json');
 
 // =============================================================================
 // Mesh Topics
@@ -209,7 +212,14 @@ export function verifyAnnouncementToken(token, ip, secret, issuedAt) {
   
   const expectedData = `${ip}:${secret}:${issuedAt}`;
   const expectedToken = crypto.createHash('sha256').update(expectedData).digest('hex');
-  return token === expectedToken;
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(token, 'hex'),
+      Buffer.from(expectedToken, 'hex')
+    );
+  } catch (e) {
+    return false; // Length mismatch or invalid hex
+  }
 }
 
 /**
@@ -227,6 +237,5 @@ export function parseBootstrapNodes(nodesStr) {
  * @returns {string} Version string (e.g., "1.0.0")
  */
 export function getVersion() {
-  // TODO: Read from package.json
-  return '1.0.0';
+  return pkg.version || '1.0.0';
 }

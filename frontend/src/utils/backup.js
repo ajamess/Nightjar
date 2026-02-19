@@ -123,8 +123,10 @@ export async function createBackup(identity, workspaces = [], passphrase = null)
   let backupKey = deriveBackupKey(identity.mnemonic);
   
   // If passphrase provided, XOR with passphrase-derived key for extra security
+  let passphraseSalt = null;
   if (passphrase) {
-    const passphraseKey = await deriveKeyFromPassphrase(passphrase);
+    passphraseSalt = generateSalt();
+    const passphraseKey = await deriveKeyFromPassphrase(passphrase, passphraseSalt);
     backupKey = xorBytes(backupKey, passphraseKey);
   }
   
@@ -148,6 +150,7 @@ export async function createBackup(identity, workspaces = [], passphrase = null)
     version: BACKUP_VERSION,
     createdAt: new Date().toISOString(),
     hasPassphrase: !!passphrase,
+    passphraseSalt: passphraseSalt ? uint8ToBase64(passphraseSalt) : null,
     identity: {
       publicKey: identity.publicKeyBase62,
       encryptedSecretKey,
@@ -157,14 +160,25 @@ export async function createBackup(identity, workspaces = [], passphrase = null)
 }
 
 /**
+ * Generate a random salt for passphrase-based key derivation
+ * @returns {Uint8Array} 16-byte random salt
+ */
+function generateSalt() {
+  return crypto.getRandomValues(new Uint8Array(16));
+}
+
+/**
  * Derive a key from a passphrase using PBKDF2
  * 
  * @param {string} passphrase - User passphrase
+ * @param {Uint8Array} salt - Random salt (16 bytes)
  * @returns {Promise<Uint8Array>} 32-byte key
  */
-async function deriveKeyFromPassphrase(passphrase) {
+async function deriveKeyFromPassphrase(passphrase, salt) {
+  if (!salt || salt.length === 0) {
+    throw new Error('Salt is required for passphrase key derivation');
+  }
   const encoder = new TextEncoder();
-  const salt = encoder.encode('nightjar-backup-salt-v1');
   
   // Use Web Crypto API when available, fall back to Node.js crypto
   if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -265,7 +279,11 @@ export async function restoreBackup(backup, mnemonic, passphrase = null) {
     if (!passphrase) {
       throw new Error('This backup requires a passphrase');
     }
-    const passphraseKey = await deriveKeyFromPassphrase(passphrase);
+    // Use stored salt, or fall back to legacy constant salt for old backups
+    const salt = backup.passphraseSalt
+      ? base64ToUint8(backup.passphraseSalt)
+      : new TextEncoder().encode('nightjar-backup-salt-v1');
+    const passphraseKey = await deriveKeyFromPassphrase(passphrase, salt);
     backupKey = xorBytes(backupKey, passphraseKey);
   }
   

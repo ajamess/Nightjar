@@ -12,7 +12,7 @@
  * - Cross-platform sync (Electron connecting to web-hosted workspaces via serverUrl)
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { isElectron } from '../hooks/useEnvironment';
@@ -307,7 +307,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
         name: userProfile.name || 'Anonymous',
         color: userProfile.color || '#6366f1',
         icon: userProfile.icon || '👤',
-        publicKey: userIdentity?.publicKeyBase62 || null, // Stable identity for deduplication
+        publicKey: userIdentityRef.current?.publicKeyBase62 || null, // Stable identity for deduplication
         lastActive: Date.now(),
       });
       
@@ -496,8 +496,8 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       
       // CRITICAL: Only set initial info if we're the owner
       // This prevents joiners from overwriting workspace info with "Shared Workspace"
-      if (myPermission !== 'owner') {
-        console.log(`[WorkspaceSync] trySetInitialInfo - skipping (not owner, permission: ${myPermission})`);
+      if (myPermissionRef.current !== 'owner') {
+        console.log(`[WorkspaceSync] trySetInitialInfo - skipping (not owner, permission: ${myPermissionRef.current})`);
         return;
       }
       
@@ -507,11 +507,13 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       if (!existingName) {
         hasSetInitialInfo = true;
         console.log(`[WorkspaceSync] Setting initial workspace info (owner, no existing name in Yjs)`);
-        yInfo.set('name', initialWorkspaceInfo.name);
-        yInfo.set('icon', initialWorkspaceInfo.icon || '📁');
-        yInfo.set('color', initialWorkspaceInfo.color || '#6366f1');
-        yInfo.set('createdBy', initialWorkspaceInfo.createdBy || 'unknown');
-        yInfo.set('createdAt', initialWorkspaceInfo.createdAt || Date.now());
+        ydoc.transact(() => {
+          yInfo.set('name', initialWorkspaceInfo.name);
+          yInfo.set('icon', initialWorkspaceInfo.icon || '📁');
+          yInfo.set('color', initialWorkspaceInfo.color || '#6366f1');
+          yInfo.set('createdBy', initialWorkspaceInfo.createdBy || 'unknown');
+          yInfo.set('createdAt', initialWorkspaceInfo.createdAt || Date.now());
+        });
       } else {
         console.log(`[WorkspaceSync] NOT setting initial info - Yjs already has name: "${existingName}"`);
       }
@@ -1046,13 +1048,15 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   
   // Add a document to the workspace
   const addDocument = useCallback((doc) => {
-    if (!yDocumentsRef.current) return;
+    if (!yDocumentsRef.current || !ydocRef.current) return;
     
-    // Check if already exists
-    const existing = yDocumentsRef.current.toArray().find(d => d.id === doc.id);
-    if (existing) return;
-    
-    yDocumentsRef.current.push([doc]);
+    ydocRef.current.transact(() => {
+      // Check if already exists
+      const existing = yDocumentsRef.current.toArray().find(d => d.id === doc.id);
+      if (existing) return;
+      
+      yDocumentsRef.current.push([doc]);
+    });
   }, []);
   
   // Remove a document from the workspace
@@ -1064,6 +1068,20 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       const index = docs.findIndex(d => d.id === docId);
       if (index !== -1) {
         yDocumentsRef.current.delete(index, 1);
+      }
+      
+      // Also clean up document-folder mapping (prevent orphaned entries)
+      if (yDocFoldersRef.current && yDocFoldersRef.current.has(docId)) {
+        yDocFoldersRef.current.delete(docId);
+      }
+      
+      // Also clean up from trashed documents if present
+      if (yTrashedDocsRef.current) {
+        const trashed = yTrashedDocsRef.current.toArray();
+        const trashIdx = trashed.findIndex(d => d.id === docId);
+        if (trashIdx !== -1) {
+          yTrashedDocsRef.current.delete(trashIdx, 1);
+        }
       }
     };
     if (ydocRef.current) {
@@ -1109,10 +1127,14 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   // Update an inventory system (e.g. rename)
   const updateInventorySystem = useCallback((inventorySystemId, updates) => {
     if (!yInventorySystemsRef.current) return;
-    const existing = yInventorySystemsRef.current.get(inventorySystemId);
-    if (existing) {
-      yInventorySystemsRef.current.set(inventorySystemId, { ...existing, ...updates, updatedAt: Date.now() });
-    }
+    const doc = yInventorySystemsRef.current.doc || ydocRef.current;
+    const doUpdate = () => {
+      const existing = yInventorySystemsRef.current.get(inventorySystemId);
+      if (existing) {
+        yInventorySystemsRef.current.set(inventorySystemId, { ...existing, ...updates, updatedAt: Date.now() });
+      }
+    };
+    if (doc) doc.transact(doUpdate); else doUpdate();
   }, []);
   
   // --- File Storage CRUD operations ---
@@ -1134,10 +1156,14 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   // Update a file storage system (e.g. rename)
   const updateFileStorageSystem = useCallback((fileStorageSystemId, updates) => {
     if (!yFileStorageSystemsRef.current) return;
-    const existing = yFileStorageSystemsRef.current.get(fileStorageSystemId);
-    if (existing) {
-      yFileStorageSystemsRef.current.set(fileStorageSystemId, { ...existing, ...updates, updatedAt: Date.now() });
-    }
+    const doc = yFileStorageSystemsRef.current.doc || ydocRef.current;
+    const doUpdate = () => {
+      const existing = yFileStorageSystemsRef.current.get(fileStorageSystemId);
+      if (existing) {
+        yFileStorageSystemsRef.current.set(fileStorageSystemId, { ...existing, ...updates, updatedAt: Date.now() });
+      }
+    };
+    if (doc) doc.transact(doUpdate); else doUpdate();
   }, []);
   
   // Add a folder
@@ -1160,13 +1186,17 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   const updateFolder = useCallback((folderId, updates) => {
     if (!yFoldersRef.current) return;
     
-    const existing = yFoldersRef.current.get(folderId);
-    console.log('[WorkspaceSync] updateFolder:', { folderId, updates, found: !!existing });
-    if (existing) {
-      const folder = { ...existing, ...updates };
-      console.log('[WorkspaceSync] updateFolder - merged folder:', folder);
-      yFoldersRef.current.set(folderId, folder);
-    }
+    const doc = yFoldersRef.current.doc || ydocRef.current;
+    const doUpdate = () => {
+      const existing = yFoldersRef.current.get(folderId);
+      console.log('[WorkspaceSync] updateFolder:', { folderId, updates, found: !!existing });
+      if (existing) {
+        const folder = { ...existing, ...updates };
+        console.log('[WorkspaceSync] updateFolder - merged folder:', folder);
+        yFoldersRef.current.set(folderId, folder);
+      }
+    };
+    if (doc) doc.transact(doUpdate); else doUpdate();
   }, []);
   
   // Set document-folder mapping
@@ -1181,13 +1211,15 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   
   // Move document to trash (soft delete)
   const trashDocument = useCallback((document, deletedBy = null) => {
-    if (!yTrashedDocsRef.current) return;
+    if (!yTrashedDocsRef.current || !ydocRef.current) return;
     const trashedDoc = {
       ...document,
       deletedAt: Date.now(),
       deletedBy,
     };
-    yTrashedDocsRef.current.push([trashedDoc]);
+    ydocRef.current.transact(() => {
+      yTrashedDocsRef.current.push([trashedDoc]);
+    });
   }, []);
   
   // Restore document from trash
@@ -1226,13 +1258,27 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   const updateWorkspaceInfo = useCallback((updates) => {
     if (!yInfoRef.current) return;
     
-    Object.entries(updates).forEach(([key, value]) => {
-      yInfoRef.current.set(key, value);
-    });
+    const doc = yInfoRef.current.doc || ydocRef.current;
+    const doUpdate = () => {
+      Object.entries(updates).forEach(([key, value]) => {
+        yInfoRef.current.set(key, value);
+      });
+    };
+    if (doc) doc.transact(doUpdate); else doUpdate();
   }, []);
   
   // Add or update a member in the workspace (keyed by publicKey)
   const addMember = useCallback((publicKey, memberData) => {
+    const myPerm = myPermissionRef.current;
+    if (myPerm !== 'owner' && myPerm !== 'editor') {
+      console.error('[WorkspaceSync] addMember: insufficient permissions');
+      return;
+    }
+    // Never allow setting 'owner' unless caller is owner
+    if (memberData?.permission === 'owner' && myPerm !== 'owner') {
+      console.error('[WorkspaceSync] addMember: only owner can grant owner');
+      return;
+    }
     if (!yMembersRef.current) return;
     
     const now = Date.now();
@@ -1264,6 +1310,10 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   // Kick a member from the workspace (owner only)
   // Simplified: just requires the target publicKey - caller is responsible for authorization
   const kickMember = useCallback((targetPublicKey, reason = '') => {
+    if (myPermissionRef.current !== 'owner') {
+      console.error('[WorkspaceSync] kickMember: caller is not an owner');
+      return false;
+    }
     if (!yKickedRef.current || !yMembersRef.current) {
       console.error('[WorkspaceSync] kickMember: refs not available');
       return false;
@@ -1271,22 +1321,27 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     
     console.log(`[WorkspaceSync] Kicking member: ${targetPublicKey}`);
     
-    // Add to kicked map
-    yKickedRef.current.set(targetPublicKey, {
-      kickedAt: Date.now(),
-      kickedBy: userIdentity?.publicKeyBase62 || 'unknown',
-      reason,
-    });
-    
-    // Remove from members map
-    if (yMembersRef.current.has(targetPublicKey)) {
-      yMembersRef.current.delete(targetPublicKey);
-      console.log(`[WorkspaceSync] Removed from members map`);
-    }
+    // Wrap both operations in a single transaction for atomicity
+    const doc = yKickedRef.current.doc || yMembersRef.current.doc || ydocRef.current;
+    const doKick = () => {
+      // Add to kicked map
+      yKickedRef.current.set(targetPublicKey, {
+        kickedAt: Date.now(),
+        kickedBy: userIdentityRef.current?.publicKeyBase62 || 'unknown',
+        reason,
+      });
+      
+      // Remove from members map
+      if (yMembersRef.current.has(targetPublicKey)) {
+        yMembersRef.current.delete(targetPublicKey);
+        console.log(`[WorkspaceSync] Removed from members map`);
+      }
+    };
+    if (doc) doc.transact(doKick); else doKick();
     
     console.log(`[WorkspaceSync] Member kicked successfully`);
     return true;
-  }, [userIdentity?.publicKeyBase62]);
+  }, []);
   
   // Check if a publicKey is in the kicked list
   const checkIsKicked = useCallback((publicKey) => {
@@ -1302,6 +1357,10 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
   
   // Transfer ownership to another member
   const transferOwnership = useCallback((newOwnerPublicKey) => {
+    if (myPermissionRef.current !== 'owner') {
+      console.error('[WorkspaceSync] transferOwnership: caller is not an owner');
+      return false;
+    }
     if (!yInfoRef.current || !yMembersRef.current) return false;
     
     const doc = yInfoRef.current.doc || yMembersRef.current.doc;
@@ -1323,10 +1382,10 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
       }
       
       // Demote the current owner to 'editor' so only one owner exists
-      if (userIdentity?.publicKeyBase62) {
-        const currentOwner = yMembersRef.current.get(userIdentity.publicKeyBase62);
+      if (userIdentityRef.current?.publicKeyBase62) {
+        const currentOwner = yMembersRef.current.get(userIdentityRef.current.publicKeyBase62);
         if (currentOwner) {
-          yMembersRef.current.set(userIdentity.publicKeyBase62, {
+          yMembersRef.current.set(userIdentityRef.current.publicKeyBase62, {
             ...currentOwner,
             permission: 'editor',
             permissionUpdatedAt: now,
@@ -1341,7 +1400,7 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     
     console.log(`[WorkspaceSync] Transferred ownership to ${newOwnerPublicKey}`);
     return true;
-  }, [userIdentity?.publicKeyBase62]);
+  }, []);
   
   // Update a member's permission (owner only, supports multi-owner)
   // For founding owner demotion: sets pendingDemotion instead of writing directly
@@ -1355,100 +1414,119 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     }
     
     // Authorization: caller must be an owner
-    if (myPermission !== 'owner') {
+    if (myPermissionRef.current !== 'owner') {
       console.error('[WorkspaceSync] updateMemberPermission: caller is not an owner');
       return false;
     }
     
-    const targetMember = yMembersRef.current.get(targetPublicKey);
-    if (!targetMember) {
-      console.error(`[WorkspaceSync] updateMemberPermission: member not found: ${targetPublicKey}`);
-      return false;
-    }
+    const doc = yMembersRef.current.doc || yInfoRef.current.doc || ydocRef.current;
+    let result = false;
     
-    // If permission is the same, no-op
-    if (targetMember.permission === newPermission) return true;
-    
-    const now = Date.now();
-    const foundingOwner = yInfoRef.current.get('createdBy');
-    const isSelf = targetPublicKey === userIdentity?.publicKeyBase62;
-    
-    // Founding owner protection: if demoting the founding owner (and it's not self-demotion),
-    // set a pendingDemotion marker instead of writing directly
-    const permHierarchy = { owner: 3, editor: 2, viewer: 1 };
-    const isDemotion = (permHierarchy[newPermission] || 0) < (permHierarchy[targetMember.permission] || 0);
-    
-    if (targetPublicKey === foundingOwner && isDemotion && !isSelf) {
-      // Get caller's display name for the pending demotion notification
-      const callerMember = yMembersRef.current.get(userIdentity?.publicKeyBase62);
-      const callerName = callerMember?.displayName || callerMember?.handle || 'An owner';
+    const doUpdate = () => {
+      const targetMember = yMembersRef.current.get(targetPublicKey);
+      if (!targetMember) {
+        console.error(`[WorkspaceSync] updateMemberPermission: member not found: ${targetPublicKey}`);
+        return;
+      }
       
+      // If permission is the same, no-op
+      if (targetMember.permission === newPermission) { result = true; return; }
+      
+      const now = Date.now();
+      const foundingOwner = yInfoRef.current.get('createdBy');
+      const currentIdentityKey = userIdentityRef.current?.publicKeyBase62;
+      const isSelf = targetPublicKey === currentIdentityKey;
+      
+      // Founding owner protection: if demoting the founding owner (and it's not self-demotion),
+      // set a pendingDemotion marker instead of writing directly
+      const permHierarchy = { owner: 3, editor: 2, viewer: 1 };
+      const isDemotion = (permHierarchy[newPermission] || 0) < (permHierarchy[targetMember.permission] || 0);
+      
+      if (targetPublicKey === foundingOwner && isDemotion && !isSelf) {
+        // Get caller's display name for the pending demotion notification
+        const callerMember = yMembersRef.current.get(currentIdentityKey);
+        const callerName = callerMember?.displayName || callerMember?.handle || 'An owner';
+        
+        yMembersRef.current.set(targetPublicKey, {
+          ...targetMember,
+          lastSeen: now,
+          pendingDemotion: {
+            requestedBy: currentIdentityKey,
+            requestedByName: callerName,
+            requestedPermission: newPermission,
+            requestedAt: now,
+          },
+        });
+        console.log(`[WorkspaceSync] Pending demotion request for founding owner ${targetPublicKey} → ${newPermission}`);
+        result = 'pending';
+        return;
+      }
+      
+      // Direct permission update for all other cases
       yMembersRef.current.set(targetPublicKey, {
         ...targetMember,
-        lastSeen: now,
-        pendingDemotion: {
-          requestedBy: userIdentity?.publicKeyBase62,
-          requestedByName: callerName,
-          requestedPermission: newPermission,
-          requestedAt: now,
-        },
-      });
-      console.log(`[WorkspaceSync] Pending demotion request for founding owner ${targetPublicKey} → ${newPermission}`);
-      return 'pending';
-    }
-    
-    // Direct permission update for all other cases
-    yMembersRef.current.set(targetPublicKey, {
-      ...targetMember,
-      permission: newPermission,
-      permissionUpdatedAt: now,
-      pendingDemotion: null,
-      lastSeen: now,
-    });
-    
-    console.log(`[WorkspaceSync] Updated permission: ${targetPublicKey} → ${newPermission}`);
-    return true;
-  }, [myPermission, userIdentity?.publicKeyBase62]);
-  
-  // Respond to a pending demotion request (founding owner only)
-  const respondToPendingDemotion = useCallback((accept) => {
-    if (!yMembersRef.current || !userIdentity?.publicKeyBase62) return false;
-    
-    const myKey = userIdentity.publicKeyBase62;
-    const myMember = yMembersRef.current.get(myKey);
-    if (!myMember?.pendingDemotion) return false;
-    
-    const now = Date.now();
-    
-    if (accept) {
-      // Accept: apply the demotion
-      const newPermission = myMember.pendingDemotion.requestedPermission;
-      yMembersRef.current.set(myKey, {
-        ...myMember,
         permission: newPermission,
         permissionUpdatedAt: now,
         pendingDemotion: null,
         lastSeen: now,
       });
-      console.log(`[WorkspaceSync] Founding owner accepted demotion → ${newPermission}`);
-    } else {
-      // Decline: clear the pending demotion
-      yMembersRef.current.set(myKey, {
-        ...myMember,
-        pendingDemotion: null,
-        lastSeen: now,
-      });
-      console.log(`[WorkspaceSync] Founding owner declined demotion`);
-    }
+      
+      console.log(`[WorkspaceSync] Updated permission: ${targetPublicKey} → ${newPermission}`);
+      result = true;
+    };
+    if (doc) doc.transact(doUpdate); else doUpdate();
+    return result;
+  }, []);
+  
+  // Respond to a pending demotion request (founding owner only)
+  const respondToPendingDemotion = useCallback((accept) => {
+    if (!yMembersRef.current || !userIdentityRef.current?.publicKeyBase62) return false;
     
-    return true;
-  }, [userIdentity?.publicKeyBase62]);
+    const doc = yMembersRef.current.doc || ydocRef.current;
+    let result = false;
+    
+    const doRespond = () => {
+      const myKey = userIdentityRef.current.publicKeyBase62;
+      const myMember = yMembersRef.current.get(myKey);
+      if (!myMember?.pendingDemotion) return;
+      
+      const now = Date.now();
+      
+      if (accept) {
+        // Accept: apply the demotion
+        const newPermission = myMember.pendingDemotion.requestedPermission;
+        yMembersRef.current.set(myKey, {
+          ...myMember,
+          permission: newPermission,
+          permissionUpdatedAt: now,
+          pendingDemotion: null,
+          lastSeen: now,
+        });
+        console.log(`[WorkspaceSync] Founding owner accepted demotion → ${newPermission}`);
+      } else {
+        // Decline: clear the pending demotion
+        yMembersRef.current.set(myKey, {
+          ...myMember,
+          pendingDemotion: null,
+          lastSeen: now,
+        });
+        console.log(`[WorkspaceSync] Founding owner declined demotion`);
+      }
+      result = true;
+    };
+    if (doc) doc.transact(doRespond); else doRespond();
+    
+    return result;
+  }, []);
 
   // Expose ydoc and provider for workspace-level features (e.g., chat)
   const getYdoc = useCallback(() => ydocRef.current, []);
   const getProvider = useCallback(() => providerRef.current, []);
   
-  return {
+  // Memoize the return value so WorkspaceSyncContext.Provider receives a stable
+  // object reference. Without this, every render of the provider component creates
+  // a new object, causing ALL context consumers to re-render unnecessarily.
+  return useMemo(() => ({
     documents,
     folders,
     workspaceInfo,
@@ -1522,7 +1600,22 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     addFileStorageSystem,
     removeFileStorageSystem,
     updateFileStorageSystem,
-  };
+  }), [
+    // State variables (trigger memo recomputation when any changes)
+    documents, folders, workspaceInfo, connected, synced,
+    syncPhase, syncProgress, documentFolders, trashedDocuments,
+    collaborators, onlineCount, totalCount, collaboratorsByDocument,
+    members, kicked, isKicked,
+    // Callbacks (stable via useCallback, included for correctness)
+    getYdoc, getProvider, getYjsDocumentCount, setOpenDocumentId,
+    addDocument, removeDocument, updateDocument,
+    addFolder, removeFolder, updateFolder, updateWorkspaceInfo,
+    setDocumentFolder, trashDocument, restoreDocument, permanentlyDeleteDocument,
+    addMember, kickMember, checkIsKicked, getOwnerPublicKey,
+    transferOwnership, updateMemberPermission, respondToPendingDemotion,
+    addInventorySystem, removeInventorySystem, updateInventorySystem,
+    addFileStorageSystem, removeFileStorageSystem, updateFileStorageSystem,
+  ]);
 }
 
 export default useWorkspaceSync;

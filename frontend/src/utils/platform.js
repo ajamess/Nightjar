@@ -66,7 +66,12 @@ export const NativeBridge = {
         return window.electronAPI.identity.store(identity);
       }
       // For Capacitor, use localStorage
-      localStorage.setItem('Nightjar_identity', JSON.stringify(identity));
+      try {
+        localStorage.setItem('Nightjar_identity', JSON.stringify(identity));
+      } catch (err) {
+        console.error('[NativeBridge] Failed to store identity (quota exceeded?):', err);
+        return false;
+      }
       return true;
     },
     
@@ -118,6 +123,16 @@ export const NativeBridge = {
       } catch (err) {
         throw new Error('Invalid identity data');
       }
+    },
+
+    async validate(mnemonic) {
+      if (Platform.isElectron()) {
+        return window.electronAPI.identity.validate(mnemonic);
+      }
+      // For non-Electron platforms, basic BIP39 validation (12/24 words)
+      if (!mnemonic || typeof mnemonic !== 'string') return false;
+      const words = mnemonic.trim().split(/\s+/);
+      return words.length === 12 || words.length === 24;
     }
   },
   

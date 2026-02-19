@@ -42,7 +42,7 @@ class ErrorBoundary extends React.Component {
       `Timestamp: ${new Date().toISOString()}`,
       `User Agent: ${navigator.userAgent}`,
       `Platform: ${navigator.platform}`,
-      `URL: ${window.location.href}`,
+      `URL: ${window.location.origin + window.location.pathname}`,
       '',
       '=== Error ===',
       error?.toString() || 'Unknown error',

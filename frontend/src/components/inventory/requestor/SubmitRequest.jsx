@@ -258,19 +258,23 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
           estimatedFulfillmentDate: null,
         };
 
-        yInventoryRequests.push([request]);
+        const reqDoc = yInventoryRequests.doc;
+        const doPush = () => {
+          yInventoryRequests.push([request]);
 
-        yInventoryAuditLog.push([{
-          id: generateId('aud-'),
-          inventorySystemId,
-          action: 'request_submitted',
-          targetId: requestId,
-          targetType: 'request',
-          summary: `Request submitted: ${item.itemName} x${item.quantity} to ${address.city}, ${address.state}`,
-          actorId: userIdentity?.publicKeyBase62 || '',
-          actorRole: isOwner ? 'owner' : 'viewer',
-          timestamp: now,
-        }]);
+          yInventoryAuditLog.push([{
+            id: generateId('aud-'),
+            inventorySystemId,
+            action: 'request_submitted',
+            targetId: requestId,
+            targetType: 'request',
+            summary: `Request submitted: ${item.itemName} x${item.quantity} to ${address.city}, ${address.state}`,
+            actorId: userIdentity?.publicKeyBase62 || '',
+            actorRole: isOwner ? 'owner' : 'viewer',
+            timestamp: now,
+          }]);
+        };
+        if (reqDoc) reqDoc.transact(doPush); else doPush();
       }
 
       // Auto-assign if enabled (spec §5.2)
@@ -281,27 +285,31 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
           if (ctx.yProducerCapacities?.forEach) {
             ctx.yProducerCapacities.forEach((val, key) => { capMap[key] = val; });
           }
-          const allReqs = yInventoryRequests.toArray();
-          for (const requestId of requestIds) {
-            const req = allReqs.find(r => r.id === requestId);
-            if (!req) continue;
-            const results = assignRequests(allReqs, capMap, req.catalogItemId);
-            const myAssignment = results.find(a => a.requestId === requestId && a.producerId);
-            if (myAssignment) {
-              const arr = yInventoryRequests.toArray();
-              const idx = arr.findIndex(r => r.id === requestId);
-              if (idx !== -1) {
-                yInventoryRequests.delete(idx, 1);
-                yInventoryRequests.insert(idx, [{
-                  ...arr[idx],
-                  status: settings.requireApproval ? 'pending_approval' : 'claimed',
-                  assignedTo: myAssignment.producerId,
-                  assignedAt: now,
-                  estimatedFulfillmentDate: myAssignment.estimatedDate,
-                }]);
+          const autoDoc = yInventoryRequests.doc;
+          const doAutoAssign = () => {
+            const allReqs = yInventoryRequests.toArray();
+            for (const requestId of requestIds) {
+              const req = allReqs.find(r => r.id === requestId);
+              if (!req) continue;
+              const results = assignRequests(allReqs, capMap, req.catalogItemId);
+              const myAssignment = results.find(a => a.requestId === requestId && a.producerId);
+              if (myAssignment) {
+                const arr = yInventoryRequests.toArray();
+                const idx = arr.findIndex(r => r.id === requestId);
+                if (idx !== -1) {
+                  yInventoryRequests.delete(idx, 1);
+                  yInventoryRequests.insert(idx, [{
+                    ...arr[idx],
+                    status: settings.requireApproval ? 'pending_approval' : 'claimed',
+                    assignedTo: myAssignment.producerId,
+                    assignedAt: now,
+                    estimatedFulfillmentDate: myAssignment.estimatedDate,
+                  }]);
+                }
               }
             }
-          }
+          };
+          if (autoDoc) autoDoc.transact(doAutoAssign); else doAutoAssign();
         } catch {
           // Auto-assign is best-effort
         }
@@ -345,7 +353,7 @@ export default function SubmitRequest({ currentWorkspace, isOwner }) {
   }, [selectedItem, qtyNum, qtyValidation, urgent, notes, showNewAddress, newAddress,
     saveNewAddress, newAddressLabel, submitting, currentWorkspace, workspaceId,
     inventorySystemId, userIdentity, yInventoryRequests, yInventoryAuditLog, yInventoryNotifications, showToast, cart,
-    currentSystem, ctx, collaborators, isOwner, yPendingAddresses]);
+    currentSystem, ctx, collaborators, isOwner, yPendingAddresses, selectedAddressId, savedAddresses]);
 
   return (
     <div className="submit-request">

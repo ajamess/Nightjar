@@ -413,9 +413,8 @@ describe('P2P Protocol: Encryption', () => {
       expect(result === null || typeof result === 'string').toBe(true);
     });
 
-    test('returns original data if no key provided', async () => {
-      const result = await encryptData('test data', null);
-      expect(result).toBe('test data');
+    test('throws when no key provided', async () => {
+      await expect(encryptData('test data', null)).rejects.toThrow('Encryption key is required');
     });
   });
 
@@ -430,9 +429,8 @@ describe('P2P Protocol: Encryption', () => {
       expect(result).toBeDefined();
     });
 
-    test('returns original data if no key provided', async () => {
-      const result = await decryptData('encrypted-base64', null);
-      expect(result).toBe('encrypted-base64');
+    test('throws when no key provided', async () => {
+      await expect(decryptData('encrypted-base64', null)).rejects.toThrow('Decryption key is required');
     });
   });
 });

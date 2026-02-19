@@ -260,8 +260,14 @@ export function FileTransferProvider({
     return dbRef.current;
   }, [workspaceId]);
 
-  // Reset DB ref and clear pending requests when workspace changes
+  // Reset DB ref, pending requests, and accumulated stats when workspace changes
   useEffect(() => {
+    // Reset stats on workspace entry
+    setTransferStats({ chunksServed: 0, chunksFetched: 0, bytesServed: 0, bytesFetched: 0 });
+    setSeedingStats({ chunksSeeded: 0, bytesSeeded: 0, seedingActive: false, lastSeedRun: null, underReplicatedCount: 0 });
+    setBandwidthHistory([]);
+    bytesThisInterval.current = { sent: 0, received: 0 };
+
     return () => {
       // Close previous IndexedDB connection
       if (dbRef.current) {
@@ -330,10 +336,15 @@ export function FileTransferProvider({
       if (pending) {
         clearTimeout(pending.timer);
         pendingRequests.current.delete(message.requestId);
-        pending.resolve({
-          encrypted: base64ToUint8(message.encrypted),
-          nonce: base64ToUint8(message.nonce),
-        });
+        try {
+          const decoded = {
+            encrypted: base64ToUint8(message.encrypted),
+            nonce: base64ToUint8(message.nonce),
+          };
+          pending.resolve(decoded);
+        } catch (decodeErr) {
+          pending.reject(decodeErr);
+        }
       }
     };
 
@@ -514,6 +525,8 @@ export function FileTransferProvider({
           timestamp: Date.now(),
         });
       } catch (sendErr) {
+        const pending = pendingRequests.current.get(requestId);
+        if (pending?.timer) clearTimeout(pending.timer);
         pendingRequests.current.delete(requestId);
         console.warn(`[FileTransfer] Failed to send chunk request to ${targetPeer}:`, sendErr);
         continue;
