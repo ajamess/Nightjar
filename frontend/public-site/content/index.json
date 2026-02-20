@@ -121,6 +121,30 @@
       "order": 15,
       "file": "troubleshooting.json",
       "summary": "Common issues, sync problems, forgotten PINs, performance tips, and factory reset."
+    },
+    {
+      "id": "self-hosting",
+      "title": "Self-Hosting Guide",
+      "icon": "🐳",
+      "order": 16,
+      "file": "self-hosting.json",
+      "summary": "Deploy Nightjar with Docker — private, host, or relay mode with full setup instructions."
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture Deep Dive",
+      "icon": "🏗️",
+      "order": 17,
+      "file": "architecture.json",
+      "summary": "Visual architecture diagrams — system overview, encryption, P2P networking, and deployment."
+    },
+    {
+      "id": "changelog",
+      "title": "Changelog",
+      "icon": "📋",
+      "order": 18,
+      "file": "changelog.json",
+      "summary": "Release history loaded from GitHub — version numbers, dates, and change summaries."
     }
   ]
 }

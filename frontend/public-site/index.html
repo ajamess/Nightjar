@@ -9,8 +9,34 @@
   <link rel="icon" href="/nightjar-64.png" type="image/png">
   <meta property="og:title" content="Nightjar — Secure P2P Collaboration">
   <meta property="og:description" content="Private, peer-to-peer collaborative workspaces. No accounts, no cloud — your data stays yours.">
-  <meta property="og:image" content="/nightjar-logo.png">
+  <meta property="og:image" content="https://night-jar.co/nightjar-og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://night-jar.co">
+  <meta property="og:site_name" content="Nightjar">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Nightjar — Secure P2P Collaboration">
+  <meta name="twitter:description" content="Private, peer-to-peer collaborative workspaces. No accounts, no cloud — your data stays yours.">
+  <meta name="twitter:image" content="https://night-jar.co/nightjar-og.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Nightjar",
+    "applicationCategory": "CollaborationApplication",
+    "operatingSystem": "Windows, macOS, Linux",
+    "url": "https://night-jar.co",
+    "downloadUrl": "https://github.com/NiyaNagi/Nightjar/releases/latest",
+    "softwareVersion": "1.7.10",
+    "description": "Private, peer-to-peer collaborative workspaces. End-to-end encrypted documents, spreadsheets, kanban boards, chat, inventory, and file storage. No accounts, no cloud.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Organization", "name": "NiyaNagi", "url": "https://github.com/NiyaNagi" },
+    "screenshot": "https://night-jar.co/nightjar-og.png",
+    "featureList": ["End-to-end encryption", "Peer-to-peer sync", "Rich text editor", "Spreadsheets", "Kanban boards", "Encrypted chat", "File storage", "Inventory management", "Tor support", "No accounts required"],
+    "license": "https://github.com/NiyaNagi/Nightjar/blob/main/LICENSE"
+  }
+  </script>
   <style>
     :root {
       --bg: #0f1117;
@@ -82,6 +108,48 @@
     .hero { text-align: center; padding: 80px 0 64px; }
     .hero-logo { width: 80px; height: 80px; border-radius: 20px; margin-bottom: 24px; }
     .hero h1 { font-size: 3.2rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 16px; }
+
+    /* ── Hero Mascot Bubble ── */
+    .hero-mascot {
+      display: flex; flex-direction: column; align-items: center;
+      cursor: pointer; user-select: none; margin-bottom: 24px;
+    }
+    .hero-mascot:focus { outline: none; }
+    .hero-mascot .hero-logo { margin-bottom: 0; transition: transform 0.15s ease; }
+    .hero-mascot:hover .hero-logo { transform: scale(1.04); }
+    .mascot-bubble {
+      position: relative; max-width: 300px; min-width: 160px;
+      padding: 12px 20px; margin-bottom: 14px;
+      background: var(--bg-card); border: 2px solid var(--text);
+      border-radius: 16px; text-align: center; cursor: pointer;
+      order: -1; /* bubble above bird */
+      animation: bubbleAppear 0.25s ease-out;
+      transition: background 0.15s;
+    }
+    .mascot-bubble:hover { background: var(--bg-card-hover); }
+    /* Arrow pointing down from bubble to bird */
+    .mascot-bubble::after {
+      content: ''; position: absolute; top: 100%; left: 50%;
+      transform: translateX(-50%); width: 0; height: 0;
+      border-left: 12px solid transparent; border-right: 12px solid transparent;
+      border-top: 14px solid var(--text);
+    }
+    .mascot-bubble::before {
+      content: ''; position: absolute; top: 100%; left: 50%;
+      transform: translateX(-50%); width: 0; height: 0;
+      border-left: 10px solid transparent; border-right: 10px solid transparent;
+      border-top: 12px solid var(--bg-card);
+      z-index: 1; margin-top: -2px;
+    }
+    .mascot-saying {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 1rem; font-style: italic;
+      color: var(--text); line-height: 1.4; display: block;
+    }
+    @keyframes bubbleAppear {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
     .hero h1 span {
       background: linear-gradient(135deg, var(--accent), #a78bfa, #c084fc);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
@@ -249,23 +317,162 @@
     footer a:hover { color: var(--text-bright); }
     .footer-links { display: flex; justify-content: center; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
 
+    /* ── Scroll offset for anchor links ── */
+    section[id], h2[id], h3[id] { scroll-margin-top: 80px; }
+
+    /* ── Hamburger ── */
+    .hamburger {
+      display: none; background: none; border: none; cursor: pointer;
+      width: 40px; height: 40px; padding: 6px;
+      flex-direction: column; justify-content: center; align-items: center; gap: 5px;
+    }
+    .hamburger span {
+      display: block; width: 22px; height: 2px; background: var(--text);
+      border-radius: 2px; transition: all 0.3s ease;
+    }
+    .hamburger.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .hamburger.active span:nth-child(2) { opacity: 0; }
+    .hamburger.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+    .mobile-menu {
+      display: none; position: fixed; top: 57px; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 17, 23, 0.97); backdrop-filter: blur(16px);
+      z-index: 99; padding: 24px;
+      flex-direction: column; gap: 8px; overflow-y: auto;
+    }
+    .mobile-menu.open { display: flex; }
+    .mobile-menu a {
+      display: block; padding: 14px 20px; border-radius: 12px;
+      font-size: 1.05rem; color: var(--text); transition: background 0.15s;
+    }
+    .mobile-menu a:hover { background: var(--bg-card); color: var(--text-bright); }
+
+    /* ── Stars badge ── */
+    .stars-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 999px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      font-size: 0.85rem; color: var(--text-dim);
+      margin-bottom: 20px; transition: border-color 0.2s;
+    }
+    .stars-badge:hover { border-color: var(--accent); color: var(--text-bright); }
+    .stars-badge svg { width: 16px; height: 16px; fill: var(--amber); }
+    .stars-badge .count { font-weight: 600; color: var(--text-bright); }
+
+    /* ── Animated hero background ── */
+    .hero { position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; top: -50%; left: -50%; right: -50%; bottom: -50%;
+      background: radial-gradient(ellipse at 20% 50%, rgba(108, 99, 255, 0.08) 0%, transparent 50%),
+                  radial-gradient(ellipse at 80% 20%, rgba(167, 139, 250, 0.06) 0%, transparent 50%),
+                  radial-gradient(ellipse at 50% 80%, rgba(192, 132, 252, 0.04) 0%, transparent 50%);
+      animation: heroGlow 12s ease-in-out infinite alternate;
+      z-index: 0; pointer-events: none;
+    }
+    .hero .container { position: relative; z-index: 1; }
+    @keyframes heroGlow {
+      0% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(2%, -3%) scale(1.05); }
+      66% { transform: translate(-2%, 2%) scale(0.98); }
+      100% { transform: translate(1%, -1%) scale(1.02); }
+    }
+
+    /* ── Use-case cards ── */
+    .usecases-section { padding: 80px 0; }
+    .usecases-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;
+    }
+    .usecase-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 28px; position: relative;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .usecase-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .usecase-card .persona {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+    }
+    .usecase-card .avatar {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; background: var(--accent-subtle); border: 1px solid var(--border);
+    }
+    .usecase-card .persona-info .name { font-weight: 600; font-size: 0.95rem; color: var(--text-bright); }
+    .usecase-card .persona-info .role { font-size: 0.82rem; color: var(--text-dim); }
+    .usecase-card .quote {
+      font-size: 0.92rem; color: var(--text); line-height: 1.65;
+      font-style: italic; padding-left: 16px; border-left: 3px solid var(--accent);
+    }
+
+    /* ── FAQ accordion ── */
+    .faq-section { padding: 80px 0; }
+    .faq-list { max-width: 760px; margin: 0 auto; }
+    .faq-item {
+      border: 1px solid var(--border); border-radius: 12px;
+      margin-bottom: 12px; overflow: hidden; transition: border-color 0.2s;
+    }
+    .faq-item:hover { border-color: var(--border-light); }
+    .faq-question {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 22px; cursor: pointer;
+      background: var(--bg-card); border: none; color: var(--text-bright);
+      font-size: 0.95rem; font-weight: 500; text-align: left; width: 100%;
+      font-family: inherit; line-height: 1.5;
+    }
+    .faq-question:hover { background: var(--bg-card-hover); }
+    .faq-chevron {
+      width: 20px; height: 20px; flex-shrink: 0; margin-left: 16px;
+      transition: transform 0.3s ease; color: var(--text-dim);
+    }
+    .faq-item.open .faq-chevron { transform: rotate(180deg); }
+    .faq-answer {
+      max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
+    }
+    .faq-answer-inner {
+      padding: 0 22px 20px; font-size: 0.92rem; color: var(--text-dim); line-height: 1.7;
+    }
+    .faq-item.open .faq-answer { max-height: 500px; }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
-      .hero h1 { font-size: 2.2rem; }
-      .hero-sub { font-size: 1.05rem; }
+      .hero { padding: 48px 0 40px; }
+      .hero h1 { font-size: 2rem; }
+      .hero-sub { font-size: 1rem; }
       .downloads { flex-direction: column; align-items: center; }
       .nav-links { display: none; }
+      .hamburger { display: flex; }
       .features-grid { grid-template-columns: 1fr; }
       .steps { flex-direction: column; align-items: center; }
-      .comparison-table { font-size: 0.82rem; }
-      .comparison-table th, .comparison-table td { padding: 10px 12px; }
+      .comparison-table { font-size: 0.8rem; }
+      .comparison-table th, .comparison-table td { padding: 8px 10px; }
+      .comparison-table th:first-child, .comparison-table td:first-child { min-width: 120px; }
+      .security-grid { grid-template-columns: 1fr; }
+      .usecases-grid { grid-template-columns: 1fr; }
+      .faq-question { font-size: 0.9rem; padding: 14px 18px; }
+      .hero-links { flex-direction: column; align-items: center; }
+      .slideshow { aspect-ratio: 4/3; }
+      section { padding: 48px 0; }
+      .how-section, .security-section { padding: 48px 0; }
+      .section-header h2 { font-size: 1.6rem; }
+      .section-header { margin-bottom: 32px; }
+      .mascot-bubble { max-width: 240px; padding: 10px 16px; }
+      .mascot-saying { font-size: 0.9rem; }
+    }
+    @media (max-width: 480px) {
+      .hero h1 { font-size: 1.65rem; }
+      .container { padding: 0 16px; }
+      .btn { padding: 12px 22px; font-size: 0.9rem; }
+      .comparison-table th, .comparison-table td { padding: 6px 8px; font-size: 0.75rem; }
+      .mascot-bubble { max-width: 200px; min-width: 140px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mascot-bubble { animation: none !important; transition: none !important; }
+      .hero-mascot .hero-logo { transition: none !important; }
     }
   </style>
 </head>
 <body>
 
   <!-- Sticky Nav -->
-  <nav class="navbar">
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
     <div class="container">
       <a href="/" class="nav-brand">
         <img src="/nightjar-logo.png" alt="Nightjar">
@@ -277,18 +484,40 @@
         <a href="#comparison">Compare</a>
         <a href="#security">Security</a>
         <a href="/docs/">Docs</a>
+        <a href="/docs/self-hosting.html">Self-Hosting</a>
         <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener" class="nav-btn">
           <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" fill="currentColor"/></svg>
           GitHub
         </a>
       </div>
+      <button class="hamburger" id="hamburger-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
     </div>
   </nav>
+  <div class="mobile-menu" id="mobile-menu" role="navigation" aria-label="Mobile navigation">
+    <a href="#features" onclick="closeMobileMenu()">Features</a>
+    <a href="#demo" onclick="closeMobileMenu()">Demo</a>
+    <a href="#comparison" onclick="closeMobileMenu()">Compare</a>
+    <a href="#security" onclick="closeMobileMenu()">Security</a>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/self-hosting.html">Self-Hosting</a>
+    <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">GitHub</a>
+  </div>
 
   <!-- Hero -->
   <section class="hero" id="hero">
     <div class="container">
-      <img class="hero-logo" src="/nightjar-logo.png" alt="Nightjar logo">
+      <div class="hero-mascot" id="hero-mascot" role="button" tabindex="0" aria-label="Nightjar mascot. Click for a new saying.">
+        <img class="hero-logo" src="/nightjar-logo.png" alt="Nightjar logo">
+        <div class="mascot-bubble" id="mascot-bubble">
+          <span class="mascot-saying" id="mascot-saying">Privacy matters!</span>
+        </div>
+      </div>
+      <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener" class="stars-badge" id="stars-badge" style="display:none">
+        <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        <span class="count" id="stars-count">0</span> <span>stars on GitHub</span>
+      </a>
       <h1><span>Nightjar</span></h1>
       <p class="hero-sub">
         Private, peer-to-peer collaborative workspaces.<br>
@@ -307,6 +536,10 @@
         <a href="https://github.com/NiyaNagi/Nightjar/releases/latest" target="_blank" rel="noopener" class="btn btn-secondary" data-platform="linux">
           <svg viewBox="0 0 24 24"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.368 1.884 1.43.585.047 1.042-.245 1.247-.713.348-.794-.04-1.596-.36-2.094-.239-.37-.51-.598-.658-.822-.024-.049-.224-.249-.29-.363-.13-.222-.201-.368-.251-.502l-.015-.045a12.56 12.56 0 00-.152-.462c-.112-.32-.165-.602-.143-.879a3.364 3.364 0 01.478-1.457c.273-.413.644-.69 1.066-1.003.06-.045.118-.088.175-.133a56.534 56.534 0 00.61-.492c.237-.194.337-.353.337-.53 0-.148-.074-.308-.17-.427a13.21 13.21 0 00-.274-.327c-.269-.317-.54-.56-.74-.748a.743.743 0 00-.05-.043c.35-.804.66-1.733.606-2.756-.059-1.063-.451-1.994-1.056-2.667-.388-.43-.844-.727-1.327-.885.226-.474.346-1.063.278-1.761-.08-.985-.563-1.698-1.131-2.205a3.66 3.66 0 00-1.038-.7C14.105.025 13.298 0 12.504 0z"/></svg>
           Linux
+        </a>
+        <a href="https://ghcr.io/niyanagi/nightjar" target="_blank" rel="noopener" class="btn btn-secondary" title="Docker image for self-hosting">
+          <svg viewBox="0 0 24 24"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.186.186 0 00-.187.186v1.887c0 .102.083.185.187.185zm-2.954-5.43h2.118a.186.186 0 00.187-.185V3.576a.186.186 0 00-.187-.186h-2.118a.186.186 0 00-.187.186v1.887c0 .102.084.185.187.185zm0 2.716h2.118a.187.187 0 00.187-.186V6.29a.186.186 0 00-.187-.186h-2.118a.186.186 0 00-.187.186v1.887c0 .102.084.186.187.186zm-2.93 0h2.12a.186.186 0 00.186-.186V6.29a.186.186 0 00-.186-.186H8.1a.186.186 0 00-.185.186v1.887c0 .102.083.186.185.186zm-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.186.186 0 00-.185-.186H5.136a.186.186 0 00-.186.186v1.887c0 .102.084.186.186.186zm5.893 2.715h2.118a.186.186 0 00.187-.185V9.006a.186.186 0 00-.187-.186h-2.118a.187.187 0 00-.187.186v1.887c0 .102.084.185.187.185zm-2.93 0h2.12a.185.185 0 00.185-.185V9.006a.185.185 0 00-.185-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185zm-2.964 0h2.119a.186.186 0 00.185-.185V9.006a.186.186 0 00-.185-.186H5.136a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185zm-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.186v1.887c0 .102.083.185.185.185zM23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288z" fill="currentColor"/></svg>
+          Docker
         </a>
         <a href="#" class="btn btn-secondary btn-disabled" title="Coming soon">
           <svg viewBox="0 0 24 24"><path d="M17.523 15.341a.76.76 0 00-.76.76v2.312a.76.76 0 01-.762.76H8a.76.76 0 01-.762-.76V15.34a.76.76 0 00-.761-.76.76.76 0 00-.762.76v2.312A2.286 2.286 0 008 19.935h8a2.286 2.286 0 002.285-2.282V15.34a.76.76 0 00-.762-.76zm-4.762-8.82L15.2 9.36a.762.762 0 001.076-1.078l-3.477-3.477a.762.762 0 00-1.078 0L8.244 8.282A.762.762 0 009.32 9.36l2.44-2.44v8.16a.762.762 0 001.523 0V6.92z"/></svg>
@@ -470,6 +703,78 @@
     </div>
   </section>
 
+  <!-- Use Cases -->
+  <section class="usecases-section" id="usecases">
+    <div class="container">
+      <div class="section-header">
+        <h2>Who Uses Nightjar?</h2>
+        <p>Built for anyone who values privacy without sacrificing productivity.</p>
+      </div>
+      <div class="usecases-grid">
+        <div class="usecase-card">
+          <div class="persona">
+            <div class="avatar">🏢</div>
+            <div class="persona-info">
+              <div class="name">Small Teams</div>
+              <div class="role">Startups &amp; agencies</div>
+            </div>
+          </div>
+          <div class="quote">Replace Google Docs with a private workspace. Collaborate on proposals, track projects with kanban boards, and keep client data off third-party servers.</div>
+        </div>
+        <div class="usecase-card">
+          <div class="persona">
+            <div class="avatar">📰</div>
+            <div class="persona-info">
+              <div class="name">Journalists</div>
+              <div class="role">Investigative teams</div>
+            </div>
+          </div>
+          <div class="quote">Share sensitive documents with sources over Tor. No accounts mean no subpoena targets. End-to-end encryption keeps editorial content out of the wrong hands.</div>
+        </div>
+        <div class="usecase-card">
+          <div class="persona">
+            <div class="avatar">🔬</div>
+            <div class="persona-info">
+              <div class="name">Researchers</div>
+              <div class="role">Labs &amp; institutions</div>
+            </div>
+          </div>
+          <div class="quote">Collaborate on papers and data sets without institutional IT approvals. Self-host for compliance, use spreadsheets for data collection, and keep pre-publication work private.</div>
+        </div>
+        <div class="usecase-card">
+          <div class="persona">
+            <div class="avatar">🛡️</div>
+            <div class="persona-info">
+              <div class="name">Privacy Advocates</div>
+              <div class="role">Activists &amp; NGOs</div>
+            </div>
+          </div>
+          <div class="quote">Organize campaigns with zero metadata exposure. Peer-to-peer architecture means no central server to compromise, seize, or pressure for data disclosure.</div>
+        </div>
+        <div class="usecase-card">
+          <div class="persona">
+            <div class="avatar">💻</div>
+            <div class="persona-info">
+              <div class="name">Open Source Teams</div>
+              <div class="role">Distributed developers</div>
+            </div>
+          </div>
+          <div class="quote">Coordinate across time zones with real-time docs and chat. Track inventory for hardware projects, manage sprints on kanban boards — all without SaaS lock-in.</div>
+        </div>
+        <div class="usecase-card">
+          <div class="persona">
+            <div class="avatar">🏠</div>
+            <div class="persona-info">
+              <div class="name">Personal Use</div>
+              <div class="role">Notes, planning &amp; family</div>
+            </div>
+          </div>
+          <div class="quote">Your private notebook with no cloud sync, no ads, no AI training on your data. Share a workspace with family to plan events, track a home inventory, or collaborate on recipes.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Competitor Comparison -->
   <section class="comparison-section" id="comparison">
     <div class="container">
@@ -478,32 +783,32 @@
         <p>Security-first collaboration without compromises.</p>
       </div>
       <div class="comparison-table-wrap">
-        <table class="comparison-table">
+        <table class="comparison-table" role="table">
           <thead>
             <tr>
-              <th>Feature</th>
-              <th class="highlight-col">Nightjar</th>
-              <th>Google Docs</th>
-              <th>Notion</th>
-              <th>Standard Notes</th>
-              <th>Obsidian</th>
+              <th scope="col">Feature</th>
+              <th scope="col" class="highlight-col">Nightjar</th>
+              <th scope="col">Google Docs</th>
+              <th scope="col">Notion</th>
+              <th scope="col">Standard Notes</th>
+              <th scope="col">Obsidian</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td>End-to-end encryption</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td></tr>
-            <tr><td>No account required</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td></tr>
-            <tr><td>Peer-to-peer sync</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
-            <tr><td>Real-time collaboration</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="partial">⚡ Plugin</span></td></tr>
-            <tr><td>Rich text documents</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-            <tr><td>Spreadsheets</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="partial">⚡ Basic</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
-            <tr><td>Kanban boards</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="partial">⚡ Plugin</span></td></tr>
-            <tr><td>File storage</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="partial">⚡ Limited</span></td><td><span class="check">✓</span></td></tr>
-            <tr><td>Inventory management</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="partial">⚡ Templates</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
-            <tr><td>Built-in chat</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="partial">⚡ Comments</span></td><td><span class="partial">⚡ Comments</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
-            <tr><td>Zero telemetry</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-            <tr><td>Open source</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td><td><span class="partial">⚡ Partial</span></td></tr>
-            <tr><td>Local-first storage</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-            <tr><td>Tor support</td><td class="highlight-col"><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="partial">⚡ Manual</span></td><td><span class="cross">✗</span></td></tr>
+            <tr><td>End-to-end encryption</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td></tr>
+            <tr><td>No account required</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="check" aria-label="Yes">✓</span></td></tr>
+            <tr><td>Peer-to-peer sync</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td></tr>
+            <tr><td>Real-time collaboration</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="partial" aria-label="Partial">⚡ Plugin</span></td></tr>
+            <tr><td>Rich text documents</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td></tr>
+            <tr><td>Spreadsheets</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="partial" aria-label="Partial">⚡ Basic</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td></tr>
+            <tr><td>Kanban boards</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="partial" aria-label="Partial">⚡ Plugin</span></td></tr>
+            <tr><td>File storage</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="partial" aria-label="Partial">⚡ Limited</span></td><td><span class="check" aria-label="Yes">✓</span></td></tr>
+            <tr><td>Inventory management</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="partial" aria-label="Partial">⚡ Templates</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td></tr>
+            <tr><td>Built-in chat</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="partial" aria-label="Partial">⚡ Comments</span></td><td><span class="partial" aria-label="Partial">⚡ Comments</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td></tr>
+            <tr><td>Zero telemetry</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td></tr>
+            <tr><td>Open source</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="partial" aria-label="Partial">⚡ Partial</span></td></tr>
+            <tr><td>Local-first storage</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="check" aria-label="Yes">✓</span></td><td><span class="check" aria-label="Yes">✓</span></td></tr>
+            <tr><td>Tor support</td><td class="highlight-col"><span class="check" aria-label="Yes">✓</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="cross" aria-label="No">✗</span></td><td><span class="partial" aria-label="Partial">⚡ Manual</span></td><td><span class="cross" aria-label="No">✗</span></td></tr>
             <tr><td>Pricing</td><td class="highlight-col"><strong>Free</strong></td><td>Free / Paid</td><td>Free / Paid</td><td>Free / Paid</td><td>Free / Paid</td></tr>
           </tbody>
         </table>
@@ -553,6 +858,81 @@
     </div>
   </section>
 
+  <!-- FAQ -->
+  <section class="faq-section" id="faq">
+    <div class="container">
+      <div class="section-header">
+        <h2>Frequently Asked Questions</h2>
+        <p>Quick answers to common questions about Nightjar.</p>
+      </div>
+      <div class="faq-list">
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            Is Nightjar really free?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            Yes, Nightjar is completely free and open source under the MIT license. There are no premium tiers, no usage limits, and no paid features. You can self-host it, modify it, and distribute it freely.
+          </div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            Can I use Nightjar without installing anything?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            Yes! The web app at night-jar.co/toot works in any modern browser. For the full experience with P2P mesh networking, Tor support, and local encrypted storage, use the desktop app.
+          </div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            What happens if the relay server goes down?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            Nightjar uses a decentralized relay mesh. If one relay goes offline, clients automatically reconnect through other available relays. Desktop users can also connect directly via Hyperswarm DHT or mDNS on a local network, bypassing relays entirely.
+          </div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            Can the relay server see my data?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            No. All data is encrypted on your device before it leaves. Relay servers only see opaque encrypted blobs. They cannot read, modify, or analyze any content. Encryption keys are embedded in invite link URL fragments which are never sent to servers.
+          </div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            How do I recover my identity if I lose my device?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            When you first set up Nightjar, you're given a 12-word BIP39 recovery phrase. This phrase deterministically regenerates your Ed25519 keypair on any device. Store it safely — it's the only way to recover your identity.
+          </div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            Can I self-host Nightjar?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            Absolutely! Pull the Docker image from ghcr.io/niyanagi/nightjar:latest and run it with docker-compose. You can configure host, relay, or private mode. See the <a href="/docs/self-hosting.html">Self-Hosting Guide</a> for full instructions.
+          </div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" aria-expanded="false">
+            What encryption does Nightjar use?
+            <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer"><div class="faq-answer-inner">
+            Documents and messages use XSalsa20-Poly1305 (NaCl secretbox) with 256-bit keys and random nonces. Identities are Ed25519 keypairs derived from BIP39 mnemonics via PBKDF2-SHA512. Workspace keys use Argon2id key derivation. All data is padded to 4KB blocks to resist traffic analysis.
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Tech Stack -->
   <section class="tech-section" id="tech">
     <div class="container">
@@ -578,12 +958,14 @@
   </section>
 
   <!-- Footer -->
-  <footer>
+  <footer role="contentinfo">
     <div class="container">
       <div class="footer-links">
         <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/NiyaNagi/Nightjar/releases" target="_blank" rel="noopener">Releases</a>
         <a href="/docs/">Documentation</a>
+        <a href="/docs/architecture.html">Architecture</a>
+        <a href="/docs/self-hosting.html">Self-Hosting</a>
         <a href="/toot/">Web App</a>
         <a href="https://github.com/NiyaNagi/Nightjar/issues" target="_blank" rel="noopener">Report Issue</a>
       </div>
@@ -592,7 +974,64 @@
   </footer>
 
   <script>
-    // Dynamic download resolution
+    // ── Hamburger menu ──
+    const hamburgerBtn = document.getElementById('hamburger-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    function closeMobileMenu() {
+      mobileMenu.classList.remove('open');
+      hamburgerBtn.classList.remove('active');
+      hamburgerBtn.setAttribute('aria-expanded', 'false');
+      document.body.style.overflow = '';
+    }
+    hamburgerBtn.addEventListener('click', () => {
+      const isOpen = mobileMenu.classList.toggle('open');
+      hamburgerBtn.classList.toggle('active');
+      hamburgerBtn.setAttribute('aria-expanded', isOpen);
+      document.body.style.overflow = isOpen ? 'hidden' : '';
+    });
+
+    // ── FAQ accordion ──
+    document.querySelectorAll('.faq-question').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = btn.parentElement;
+        const wasOpen = item.classList.contains('open');
+        // Close all
+        document.querySelectorAll('.faq-item.open').forEach(el => {
+          el.classList.remove('open');
+          el.querySelector('.faq-question').setAttribute('aria-expanded', 'false');
+        });
+        // Toggle clicked
+        if (!wasOpen) {
+          item.classList.add('open');
+          btn.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+
+    // ── Platform auto-detection ──
+    function detectPlatform() {
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.includes('win')) return 'windows';
+      if (ua.includes('mac')) return 'macos';
+      if (ua.includes('linux') || ua.includes('x11')) return 'linux';
+      return 'windows';
+    }
+    (function highlightPlatform() {
+      const platform = detectPlatform();
+      document.querySelectorAll('.downloads .btn').forEach(btn => {
+        const p = btn.getAttribute('data-platform');
+        if (!p) return;
+        if (p === platform) {
+          btn.classList.remove('btn-secondary');
+          btn.classList.add('btn-primary');
+        } else {
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-secondary');
+        }
+      });
+    })();
+
+    // ── GitHub stars + dynamic download URLs ──
     (async function () {
       const REPO = 'NiyaNagi/Nightjar';
       const FALLBACK = `https://github.com/${REPO}/releases/latest`;
@@ -615,9 +1054,107 @@
           btn.href = asset ? asset.browser_download_url : FALLBACK;
         }
       } catch {}
+
+      // Fetch stars
+      try {
+        const repoRes = await fetch(`https://api.github.com/repos/${REPO}`);
+        if (!repoRes.ok) return;
+        const repoData = await repoRes.json();
+        const count = repoData.stargazers_count;
+        if (count != null) {
+          const badge = document.getElementById('stars-badge');
+          const countEl = document.getElementById('stars-count');
+          if (badge && countEl) {
+            countEl.textContent = count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
+            badge.style.display = 'inline-flex';
+          }
+        }
+      } catch {}
     })();
 
-    // Slideshow
+    // ── Mascot Chat Bubble ──
+    const mascotSayings = [
+      "Your keys, your data!", "End-to-end encrypted!", "Not even I can read it!",
+      "Zero-knowledge? More like full wisdom!", "Privacy is not a crime!",
+      "Encrypted by default!", "No backdoors here!", "Tor-tally anonymous!",
+      "I encrypt, therefore I am", "Your data stayed local!",
+      "What happens in P2P, stays in P2P", "No cloud, no problem",
+      "Decentralized and loving it", "Ed25519 says hi!",
+      "12 words to freedom!", "Trust no server!",
+      "Zero logs, zero worries", "Peer-to-peer or nothing!",
+      "Private by architecture", "Trust the math, not the company",
+      "Open source, open heart", "Audit the code yourself!",
+      "Fork me on GitHub!", "Your documents, your rules",
+      "No telemetry here!", "Local-first philosophy",
+      "Collaborating at the speed of CRDT!", "Yjs makes merges magical",
+      "Real-time, real secure", "Kanban: because sticky notes get lost",
+      "Spreadsheets but make it encrypted", "Chat: now with more E2E",
+      "Also try Obsidian!", "100% more peer-to-peer!",
+      "Now with extra encryption!", "Such privacy!", "Much encryption!",
+      "This is the way", "May the fork be with you",
+      "Hello there! General Encrypti!", "Hakuna Ma-data!",
+      "To encrypt or not to encrypt? Encrypt.",
+      "Modern problems require P2P solutions",
+      "Is that a bird? It's Nightjar!", "Birds can type confirmed!",
+      "Digitally nocturnal!", "Crepuscular computing!",
+      "Flying under the radar!", "Secretly syncing!",
+      "Camouflaged but collaborative!", "npm install privacy",
+      "git push --force? More like peer push --gentle",
+      "It works on my machine!", "LGTM! Merging now",
+    ];
+    let mascotIndex = Math.floor(Math.random() * mascotSayings.length);
+    let mascotTimer = null;
+
+    function nextMascotSaying() {
+      mascotIndex = (mascotIndex + 1) % mascotSayings.length;
+      const el = document.getElementById('mascot-saying');
+      const bubble = document.getElementById('mascot-bubble');
+      if (el) {
+        el.textContent = mascotSayings[mascotIndex];
+        // Re-trigger animation
+        bubble.style.animation = 'none';
+        bubble.offsetHeight; // force reflow
+        bubble.style.animation = '';
+      }
+    }
+
+    function startMascotRotation() {
+      if (mascotTimer) clearInterval(mascotTimer);
+      mascotTimer = setInterval(nextMascotSaying, 5000);
+    }
+
+    (function initMascot() {
+      const el = document.getElementById('mascot-saying');
+      if (el) el.textContent = mascotSayings[mascotIndex];
+
+      const mascot = document.getElementById('hero-mascot');
+      if (mascot) {
+        mascot.addEventListener('click', () => {
+          nextMascotSaying();
+          startMascotRotation(); // reset timer on click
+        });
+        mascot.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            nextMascotSaying();
+            startMascotRotation();
+          }
+        });
+      }
+
+      const bubble = document.getElementById('mascot-bubble');
+      if (bubble) {
+        bubble.addEventListener('click', (e) => {
+          e.stopPropagation();
+          nextMascotSaying();
+          startMascotRotation();
+        });
+      }
+
+      startMascotRotation();
+    })();
+
+    // ── Slideshow ──
     let slides = [];
     let currentSlide = 0;
     let autoplay = true;
@@ -630,6 +1167,19 @@
         const manifest = await res.json();
         slides = (manifest.screenshots || []).filter(s => s.filename);
         if (!slides.length) return;
+
+        // Preload all images before showing slideshow
+        const preloadPromises = slides.map(s => new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(false);
+          img.src = `/screenshots/${s.filename}`;
+        }));
+        const results = await Promise.all(preloadPromises);
+        // Filter out any slides whose images failed to load
+        slides = slides.filter((_, i) => results[i]);
+        if (!slides.length) return;
+
         document.getElementById('slideshow-placeholder').style.display = 'none';
         document.getElementById('slideshow-img').style.display = 'block';
         document.getElementById('slideshow-caption').style.display = 'flex';
@@ -653,6 +1203,13 @@
       const img = document.getElementById('slideshow-img');
       img.src = `/screenshots/${slide.filename}`;
       img.alt = slide.title;
+      // Handle individual image load errors gracefully
+      img.onerror = () => {
+        if (slides.length > 1) {
+          slides.splice(idx, 1);
+          showSlide(idx % slides.length);
+        }
+      };
       document.getElementById('slide-title').textContent = slide.title;
       document.getElementById('slide-desc').textContent = slide.description;
       document.getElementById('slide-counter').textContent = `${idx + 1} / ${slides.length}`;

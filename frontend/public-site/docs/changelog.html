@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog — Nightjar Docs</title>
+  <meta name="description" content="Nightjar release history and changelog">
+  <link rel="icon" href="/nightjar-64.png" type="image/png">
+  <link rel="stylesheet" href="docs.css">
+  <style>
+    .release { margin-bottom: 32px; padding: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; }
+    .release:hover { border-color: var(--accent); }
+    .release-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .release-tag { font-size: 1.2rem; font-weight: 700; color: var(--accent-light); text-decoration: none; }
+    .release-tag:hover { color: var(--text-bright); }
+    .release-date { font-size: 0.85rem; color: var(--text-dim); }
+    .release-badge { padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .release-badge.latest { background: rgba(52, 211, 153, 0.15); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.3); }
+    .release-badge.pre { background: rgba(251, 191, 36, 0.15); color: var(--amber); border: 1px solid rgba(251, 191, 36, 0.3); }
+    .release-body { font-size: 0.92rem; color: var(--text); line-height: 1.7; }
+    .release-body h1, .release-body h2, .release-body h3 { color: var(--text-bright); margin: 16px 0 8px; }
+    .release-body h1 { font-size: 1.1rem; }
+    .release-body h2 { font-size: 1.05rem; border: none; padding: 0; }
+    .release-body h3 { font-size: 1rem; }
+    .release-body ul { margin: 8px 0 8px 20px; }
+    .release-body li { margin-bottom: 4px; }
+    .release-body code { background: var(--bg-alt); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+    .release-body a { color: var(--accent-light); }
+    .releases-loading { text-align: center; padding: 40px; color: var(--text-dim); }
+    .load-more { display: block; margin: 24px auto; padding: 12px 32px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.9rem; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+    .load-more:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+  </style>
+</head>
+<body>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <a href="/" class="topbar-brand">
+      <img src="/nightjar-logo.png" alt="Nightjar">
+      Nightjar Docs
+    </a>
+    <div class="topbar-breadcrumb" id="breadcrumb">
+      <a href="/docs/">Docs</a><span class="sep">›</span><span id="breadcrumb-title">Changelog</span>
+    </div>
+    <div class="topbar-links">
+      <a href="/">Home</a>
+      <a href="/docs/">All Docs</a>
+      <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+
+  <div class="docs-layout">
+    <nav class="docs-sidebar" id="sidebar"></nav>
+    <main class="docs-content" id="content">
+      <h1>📋 Changelog</h1>
+      <p>Release history for Nightjar, loaded from GitHub.</p>
+      <div id="releases">
+        <div class="releases-loading">Loading releases…</div>
+      </div>
+    </main>
+  </div>
+  <button class="mobile-sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+
+  <div class="docs-footer">
+    Nightjar · <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">Open Source</a> · Built by <a href="https://github.com/NiyaNagi" target="_blank" rel="noopener">NiyaNagi</a>
+  </div>
+
+  <script>
+    const CONTENT_BASE = '/content';
+    const REPO = 'NiyaNagi/Nightjar';
+    let page = 1;
+
+    async function init() {
+      // Load sidebar
+      let sections = [];
+      try {
+        const idxRes = await fetch(`${CONTENT_BASE}/index.json`);
+        if (idxRes.ok) {
+          const idx = await idxRes.json();
+          sections = idx.sections || [];
+        }
+      } catch {}
+
+      const sidebar = document.getElementById('sidebar');
+      sidebar.innerHTML = '<div class="sidebar-search"><svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search docs…" id="sidebar-search" aria-label="Search documentation"></div><h3>Documentation</h3><ul id="sidebar-list">' +
+        sections.map(s => {
+          const active = s.id === 'changelog' ? ' class="active"' : '';
+          const label = s.title.replace(/^[^\s]+\s/, '');
+          return `<li data-title="${label.toLowerCase()}" data-summary="${(s.summary || '').toLowerCase()}"><a href="${s.id}.html"${active}><span class="icon">${s.icon}</span>${label}</a></li>`;
+        }).join('') + '</ul>';
+
+      const searchInput = document.getElementById('sidebar-search');
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        document.querySelectorAll('#sidebar-list li').forEach(li => {
+          const match = !q || li.dataset.title.includes(q) || li.dataset.summary.includes(q);
+          li.style.display = match ? '' : 'none';
+        });
+      });
+
+      const sidebarToggle = document.getElementById('sidebar-toggle');
+      if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', () => {
+          const isOpen = sidebar.classList.toggle('open');
+          sidebarToggle.textContent = isOpen ? '✕' : '☰';
+        });
+      }
+
+      await loadReleases();
+    }
+
+    function markdownToHTML(md) {
+      if (!md) return '';
+      return md
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/^\- (.+)$/gm, '<li>$1</li>')
+        .replace(/^\* (.+)$/gm, '<li>$1</li>')
+        .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+        .replace(/\n\n/g, '<br><br>')
+        .replace(/\n(?!<)/g, '<br>');
+    }
+
+    async function loadReleases() {
+      const container = document.getElementById('releases');
+      try {
+        const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}`);
+        if (!res.ok) {
+          container.innerHTML = '<p style="color:var(--text-dim)">Could not load releases. <a href="https://github.com/' + REPO + '/releases" target="_blank">View on GitHub →</a></p>';
+          return;
+        }
+        const releases = await res.json();
+        if (page === 1) container.innerHTML = '';
+
+        releases.forEach((rel, i) => {
+          const date = new Date(rel.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+          const badge = (i === 0 && page === 1) ? '<span class="release-badge latest">Latest</span>' :
+                        rel.prerelease ? '<span class="release-badge pre">Pre-release</span>' : '';
+          const div = document.createElement('div');
+          div.className = 'release';
+          div.innerHTML = `
+            <div class="release-header">
+              <a class="release-tag" href="${rel.html_url}" target="_blank" rel="noopener">${rel.tag_name}</a>
+              <span class="release-date">${date}</span>
+              ${badge}
+            </div>
+            <div class="release-body">${markdownToHTML(rel.body)}</div>
+          `;
+          container.appendChild(div);
+        });
+
+        if (releases.length === 10) {
+          const btn = document.createElement('button');
+          btn.className = 'load-more';
+          btn.textContent = 'Load older releases';
+          btn.onclick = () => { page++; btn.remove(); loadReleases(); };
+          container.appendChild(btn);
+        }
+      } catch {
+        container.innerHTML = '<p style="color:var(--text-dim)">Failed to load releases. <a href="https://github.com/' + REPO + '/releases" target="_blank">View on GitHub →</a></p>';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

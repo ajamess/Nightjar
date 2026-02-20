@@ -1,0 +1,126 @@
+{
+  "id": "self-hosting",
+  "title": "🐳 Self-Hosting Guide",
+  "icon": "🐳",
+  "content": [
+    { "type": "heading", "text": "Overview" },
+    { "type": "paragraph", "text": "Nightjar can be self-hosted using Docker. The official Docker image includes the web frontend, WebSocket signaling server, and optional document persistence — all in a single container. You can run it in three modes depending on your needs." },
+    { "type": "list", "items": [
+      "Host Mode — Full persistence + mesh relay participation. Your server stores encrypted workspace data and helps route connections for the wider Nightjar network.",
+      "Relay Mode — Lightweight signaling only. No data is stored. The server just helps peers find each other and routes encrypted WebSocket connections.",
+      "Private Mode — Full persistence, no mesh. Your server is isolated from the public relay network. Ideal for teams and private deployments."
+    ]},
+    { "type": "tip", "text": "The same Docker image is used for all three modes — only the environment variables change at runtime." },
+
+    { "type": "heading", "text": "Prerequisites" },
+    { "type": "list", "items": [
+      "A Linux server (Ubuntu 22.04+ recommended) or any machine with Docker installed",
+      "Docker Engine 20.10+ and Docker Compose v2+",
+      "A domain name with DNS pointed to your server (for SSL/HTTPS)",
+      "Ports 80 and 443 open for web traffic (or a reverse proxy like nginx/Caddy)"
+    ]},
+
+    { "type": "heading", "text": "Quick Start" },
+    { "type": "paragraph", "text": "The fastest way to get Nightjar running. This pulls the pre-built image from GitHub Container Registry and starts a private instance on port 3000." },
+    { "type": "steps", "items": [
+      "Install Docker if you haven't already.",
+      "Create a directory for your Nightjar deployment.",
+      "Create a docker-compose.yml file (see below).",
+      "Run docker compose up -d to start the server.",
+      "Visit http://your-server:3000 to access Nightjar."
+    ]},
+    { "type": "code", "lang": "bash", "text": "# Install Docker (Ubuntu/Debian)\ncurl -fsSL https://get.docker.com | sh\nsudo usermod -aG docker $USER\n\n# Log out and back in, then verify\ndocker --version\ndocker compose version" },
+
+    { "type": "heading", "text": "Step 1: Create Project Directory" },
+    { "type": "code", "lang": "bash", "text": "mkdir -p ~/nightjar && cd ~/nightjar" },
+
+    { "type": "heading", "text": "Step 2: Create docker-compose.yml" },
+    { "type": "paragraph", "text": "Choose one of the following configurations based on your deployment mode." },
+
+    { "type": "heading", "text": "Private Mode (Recommended for Teams)" },
+    { "type": "paragraph", "text": "A fully self-contained instance. Your data stays on your server, and the instance doesn't participate in the public relay mesh. Perfect for small teams and private use." },
+    { "type": "code", "lang": "yaml", "text": "# docker-compose.yml — Private Mode\nservices:\n  nightjar:\n    image: ghcr.io/niyanagi/nightjar:latest\n    container_name: nightjar\n    restart: unless-stopped\n    ports:\n      - \"3000:3000\"\n    volumes:\n      - nightjar-data:/app/server/unified/data\n    environment:\n      - PORT=3000\n      - NODE_ENV=production\n      - NIGHTJAR_MODE=private\n    healthcheck:\n      test: [\"CMD\", \"wget\", \"-q\", \"--spider\", \"http://localhost:3000/health\"]\n      interval: 30s\n      timeout: 10s\n      retries: 3\n\nvolumes:\n  nightjar-data:\n    driver: local", "caption": "Save this as docker-compose.yml in your project directory." },
+
+    { "type": "heading", "text": "Host Mode (Persistence + Mesh)" },
+    { "type": "paragraph", "text": "Stores workspace data and participates in the Nightjar relay mesh. Other Nightjar users can discover your server as a relay node, but they can only see encrypted blobs — never plaintext content." },
+    { "type": "code", "lang": "yaml", "text": "# docker-compose.yml — Host Mode\nservices:\n  nightjar:\n    image: ghcr.io/niyanagi/nightjar:latest\n    container_name: nightjar\n    restart: unless-stopped\n    ports:\n      - \"3000:3000\"\n    volumes:\n      - nightjar-data:/app/server/unified/data\n    environment:\n      - PORT=3000\n      - NODE_ENV=production\n      - NIGHTJAR_MODE=host\n      # Required: your server's public WebSocket URL\n      - PUBLIC_URL=wss://your-domain.com\n    healthcheck:\n      test: [\"CMD\", \"wget\", \"-q\", \"--spider\", \"http://localhost:3000/health\"]\n      interval: 30s\n      timeout: 10s\n      retries: 3\n\nvolumes:\n  nightjar-data:\n    driver: local", "caption": "Replace wss://your-domain.com with your actual domain." },
+
+    { "type": "heading", "text": "Relay Mode (Signaling Only)" },
+    { "type": "paragraph", "text": "A lightweight relay node that helps peers find each other. No workspace data is stored. Useful for contributing relay capacity to the Nightjar network." },
+    { "type": "code", "lang": "yaml", "text": "# docker-compose.yml — Relay Mode\nservices:\n  nightjar:\n    image: ghcr.io/niyanagi/nightjar:latest\n    container_name: nightjar-relay\n    restart: unless-stopped\n    ports:\n      - \"3000:3000\"\n    environment:\n      - PORT=3000\n      - NODE_ENV=production\n      - NIGHTJAR_MODE=relay\n      # Required: your server's public WebSocket URL\n      - PUBLIC_URL=wss://relay.your-domain.com\n    healthcheck:\n      test: [\"CMD\", \"wget\", \"-q\", \"--spider\", \"http://localhost:3000/health\"]\n      interval: 30s\n      timeout: 10s\n      retries: 3", "caption": "No volume needed — relay mode doesn't store any data." },
+
+    { "type": "heading", "text": "Step 3: Start the Server" },
+    { "type": "code", "lang": "bash", "text": "# Pull the latest image and start\ndocker compose up -d\n\n# Check the logs\ndocker compose logs -f\n\n# Verify it's running\ncurl http://localhost:3000/health" },
+    { "type": "paragraph", "text": "You should see a JSON response from the health endpoint. The web app is now accessible at http://your-server:3000." },
+
+    { "type": "heading", "text": "Step 4: Set Up SSL with Nginx (Recommended)" },
+    { "type": "paragraph", "text": "For production deployments, you should put Nightjar behind a reverse proxy with SSL. Here's a complete nginx configuration with Let's Encrypt." },
+    { "type": "code", "lang": "bash", "text": "# Install nginx and certbot\nsudo apt install -y nginx certbot python3-certbot-nginx\n\n# Get SSL certificate\nsudo certbot --nginx -d your-domain.com" },
+    { "type": "paragraph", "text": "Create the nginx site configuration:" },
+    { "type": "code", "lang": "nginx", "text": "# /etc/nginx/sites-available/nightjar\nserver {\n    listen 443 ssl http2;\n    server_name your-domain.com;\n\n    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;\n\n    # WebSocket support\n    location / {\n        proxy_pass http://127.0.0.1:3000;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection \"upgrade\";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_read_timeout 86400;\n    }\n}\n\n# Redirect HTTP to HTTPS\nserver {\n    listen 80;\n    server_name your-domain.com;\n    return 301 https://$host$request_uri;\n}", "caption": "Replace your-domain.com with your actual domain name." },
+    { "type": "code", "lang": "bash", "text": "# Enable the site and reload nginx\nsudo ln -sf /etc/nginx/sites-available/nightjar /etc/nginx/sites-enabled/\nsudo nginx -t\nsudo systemctl reload nginx" },
+
+    { "type": "heading", "text": "Step 4 (Alternative): Set Up SSL with Caddy" },
+    { "type": "paragraph", "text": "Caddy automatically provisions SSL certificates. This is the simplest option if you don't already have nginx installed." },
+    { "type": "code", "lang": "bash", "text": "# Install Caddy\nsudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl\ncurl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg\ncurl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list\nsudo apt update && sudo apt install caddy" },
+    { "type": "code", "lang": "text", "text": "# /etc/caddy/Caddyfile\nyour-domain.com {\n    reverse_proxy localhost:3000\n}", "caption": "Caddy handles SSL certificates automatically. Just replace your-domain.com." },
+    { "type": "code", "lang": "bash", "text": "sudo systemctl restart caddy" },
+
+    { "type": "heading", "text": "Sub-Path Deployments" },
+    { "type": "paragraph", "text": "You can serve Nightjar from a sub-path like /app or /nightjar instead of the root. Set the BASE_PATH environment variable." },
+    { "type": "code", "lang": "yaml", "text": "# docker-compose.yml excerpt\nenvironment:\n  - PORT=3000\n  - NODE_ENV=production\n  - NIGHTJAR_MODE=private\n  - BASE_PATH=/app", "caption": "Users would access Nightjar at https://your-domain.com/app" },
+    { "type": "paragraph", "text": "Update your reverse proxy to forward the sub-path:" },
+    { "type": "code", "lang": "nginx", "text": "# nginx sub-path config\nlocation /app/ {\n    proxy_pass http://127.0.0.1:3000/app/;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    proxy_set_header Host $host;\n    proxy_set_header X-Real-IP $remote_addr;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_read_timeout 86400;\n}" },
+
+    { "type": "heading", "text": "Environment Variables Reference" },
+    { "type": "paragraph", "text": "Complete list of all environment variables supported by the Docker image:" },
+    { "type": "list", "items": [
+      "PORT — Server port inside the container (default: 3000)",
+      "NIGHTJAR_MODE — Server mode: host, relay, or private (default: host)",
+      "PUBLIC_URL — Your server's public WebSocket URL, e.g. wss://your-domain.com. Required for host and relay modes to be discoverable on the mesh.",
+      "BASE_PATH — Sub-path prefix for reverse-proxy deployments, e.g. /app (default: empty, serves from root)",
+      "ENCRYPTED_PERSISTENCE — Set to true to encrypt Yjs document state at rest in the SQLite database (default: false). Clients must deliver workspace keys before connecting.",
+      "MAX_ROOM_PEERS — Maximum concurrent WebSocket connections per workspace room (default: 100)",
+      "NO_PERSISTENCE — Set to 1 or true to explicitly disable document persistence. Relay mode sets this automatically.",
+      "NODE_ENV — Set to production for production deployments",
+      "DB_PATH — SQLite database file path inside the container (default: /app/server/unified/data/nightjar.db)"
+    ]},
+
+    { "type": "heading", "text": "Updating" },
+    { "type": "paragraph", "text": "To update to the latest version of Nightjar:" },
+    { "type": "code", "lang": "bash", "text": "# Pull the latest image\ndocker compose pull\n\n# Restart with the new image\ndocker compose up -d\n\n# Verify the update\ndocker compose logs --tail 20" },
+    { "type": "tip", "text": "Your workspace data is stored in a Docker volume and persists across updates. You can safely pull and restart without losing any data." },
+
+    { "type": "heading", "text": "Backups" },
+    { "type": "paragraph", "text": "To back up your Nightjar data, copy the SQLite database from the Docker volume:" },
+    { "type": "code", "lang": "bash", "text": "# Find the volume location\ndocker volume inspect nightjar-data\n\n# Copy the database file\ndocker compose exec nightjar cp /app/server/unified/data/nightjar.db /tmp/backup.db\ndocker compose cp nightjar:/tmp/backup.db ./nightjar-backup-$(date +%Y%m%d).db\n\n# Or back up the entire volume\ndocker run --rm -v nightjar-data:/data -v $(pwd):/backup alpine \\\n  tar czf /backup/nightjar-data-$(date +%Y%m%d).tar.gz -C /data ." },
+
+    { "type": "heading", "text": "Multi-Service Deployment" },
+    { "type": "paragraph", "text": "For advanced deployments, you can run multiple Nightjar services on the same machine — for example, a public relay alongside a private instance. This is how night-jar.co is configured." },
+    { "type": "code", "lang": "yaml", "text": "# docker-compose.yml — Multi-Service\nservices:\n  # Public relay (no storage)\n  nightjar-relay:\n    image: ghcr.io/niyanagi/nightjar:latest\n    container_name: nightjar-relay\n    restart: unless-stopped\n    ports:\n      - \"127.0.0.1:3001:3000\"\n    environment:\n      - PORT=3000\n      - NODE_ENV=production\n      - NIGHTJAR_MODE=relay\n      - PUBLIC_URL=wss://your-domain.com\n\n  # Private instance (with storage)\n  nightjar-private:\n    image: ghcr.io/niyanagi/nightjar:latest\n    container_name: nightjar-private\n    restart: unless-stopped\n    ports:\n      - \"127.0.0.1:3002:3000\"\n    volumes:\n      - nightjar-private-data:/app/server/unified/data\n    environment:\n      - PORT=3000\n      - NODE_ENV=production\n      - NIGHTJAR_MODE=private\n      - BASE_PATH=/app\n\nvolumes:\n  nightjar-private-data:\n    driver: local", "caption": "Use nginx or Caddy to route traffic to the appropriate service based on URL path." },
+
+    { "type": "heading", "text": "Building from Source" },
+    { "type": "paragraph", "text": "If you prefer to build the Docker image yourself instead of using the pre-built GHCR image:" },
+    { "type": "code", "lang": "bash", "text": "# Clone the repository\ngit clone https://github.com/NiyaNagi/Nightjar.git\ncd Nightjar\n\n# Build the Docker image\ndocker build -f server/unified/Dockerfile -t nightjar:local .\n\n# Use the local image in your docker-compose.yml\n# Replace \"image: ghcr.io/niyanagi/nightjar:latest\" with:\n# image: nightjar:local" },
+
+    { "type": "heading", "text": "Troubleshooting" },
+    { "type": "list", "items": [
+      "Container won't start — Check docker compose logs for error messages. Ensure port 3000 isn't already in use.",
+      "WebSocket connections fail — Make sure your reverse proxy is configured for WebSocket upgrades (Upgrade and Connection headers). The proxy_read_timeout should be high (86400s) to prevent idle disconnections.",
+      "Health check fails — The health endpoint is at /health (or /<BASE_PATH>/health for sub-path deployments). Ensure the container has finished starting up.",
+      "Native module errors — The image uses node:20-slim (Debian) for native module compatibility. If building from source, don't use Alpine.",
+      "Permission denied on data directory — The container runs as a non-root nightjar user. Ensure the mounted volume has appropriate permissions.",
+      "SSL/HTTPS not working — Verify DNS points to your server, port 443 is open, and certbot/Caddy has successfully issued certificates."
+    ]},
+
+    { "type": "heading", "text": "Connecting Clients" },
+    { "type": "paragraph", "text": "Once your server is running, connect to it from the Nightjar desktop or web app:" },
+    { "type": "steps", "items": [
+      "Open Nightjar (desktop app or web at your server URL).",
+      "Go to Settings → Server and enter your server URL (e.g. https://your-domain.com or wss://your-domain.com).",
+      "Create or join a workspace. All data is end-to-end encrypted — the server only sees encrypted blobs.",
+      "Share workspace invite links. The encryption key is embedded in the URL fragment and never sent to the server."
+    ]},
+    { "type": "tip", "text": "The web app is included in the Docker image and served automatically. Users can access it directly at your server URL without installing anything." }
+  ]
+}

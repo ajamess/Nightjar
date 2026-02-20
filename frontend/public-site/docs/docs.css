@@ -180,6 +180,131 @@ a:hover { color: var(--text-bright); }
   border-top: 1px solid var(--border);
 }
 
+/* ── Code block ── */
+.code-block {
+  position: relative;
+  margin: 16px 0 20px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.code-block-lang {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.code-block-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.code-block-copy:hover {
+  color: var(--text-bright);
+  border-color: var(--accent);
+}
+.code-block pre {
+  margin: 0;
+  padding: 16px 20px;
+  background: var(--bg-alt);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  -webkit-overflow-scrolling: touch;
+}
+.code-block code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  color: var(--text);
+  white-space: pre;
+}
+.code-block-caption {
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Search bar ── */
+.sidebar-search {
+  padding: 0 16px 16px;
+}
+.sidebar-search input {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.sidebar-search input:focus { border-color: var(--accent); }
+.sidebar-search input::placeholder { color: var(--text-dim); }
+.sidebar-search { position: relative; }
+.sidebar-search .search-icon {
+  position: absolute; left: 28px; top: 9px;
+  width: 14px; height: 14px; color: var(--text-dim); pointer-events: none;
+}
+
+/* ── Mobile sidebar toggle ── */
+.mobile-sidebar-toggle {
+  display: none;
+  position: fixed; bottom: 20px; right: 20px; z-index: 90;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--accent); color: #fff; border: none;
+  font-size: 1.2rem; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(108, 99, 255, 0.4);
+  align-items: center; justify-content: center;
+  transition: transform 0.2s;
+}
+.mobile-sidebar-toggle:hover { transform: scale(1.1); }
+
+/* ── Mermaid diagram block ── */
+.mermaid-block {
+  margin: 20px 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.mermaid-block-header {
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.mermaid-block .mermaid {
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  background: #1a1d27;
+}
+.mermaid-block .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* ── Hub page cards ── */
 .docs-hub { max-width: 900px; padding: 40px 48px 80px; flex: 1; }
 .docs-hub h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-bright); }
@@ -233,7 +358,22 @@ a:hover { color: var(--text-bright); }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .docs-sidebar { display: none; }
+  .docs-sidebar {
+    display: none;
+    position: fixed; top: 57px; left: 0; right: 0; bottom: 0;
+    width: 100%; z-index: 80;
+    background: var(--bg-alt);
+  }
+  .docs-sidebar.open { display: block; }
+  .mobile-sidebar-toggle { display: flex; }
   .docs-content, .docs-hub { padding: 24px 20px 60px; }
   .docs-content h1, .docs-hub h1 { font-size: 1.6rem; }
+  .docs-content h2 { font-size: 1.25rem; }
+  .hub-grid { grid-template-columns: 1fr; }
+  .docs-nav { flex-direction: column; }
+  .docs-nav a { max-width: 100%; }
+  .topbar-links { display: none; }
+  .topbar { padding: 12px 16px; }
+  .code-block pre { font-size: 0.78rem; padding: 12px 14px; }
+  .mermaid-block .mermaid { padding: 16px; }
 }

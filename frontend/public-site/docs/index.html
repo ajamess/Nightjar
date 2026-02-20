@@ -34,6 +34,7 @@
       <div class="hub-grid" id="hub-grid"></div>
     </main>
   </div>
+  <button class="mobile-sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
 
   <div class="docs-footer">
     Nightjar · <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">Open Source</a> · Built by <a href="https://github.com/NiyaNagi" target="_blank" rel="noopener">NiyaNagi</a>
@@ -49,12 +50,37 @@
         const index = await res.json();
         const sections = index.sections || [];
 
-        // Build sidebar
+        // Build sidebar with search
         const sidebar = document.getElementById('sidebar');
-        const navHTML = '<h3>Documentation</h3><ul>' +
-          sections.map(s => `<li><a href="${s.id}.html"><span class="icon">${s.icon}</span>${s.title.replace(/^[^\s]+\s/, '')}</a></li>`).join('') +
+        const navHTML = '<div class="sidebar-search"><svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search docs…" id="sidebar-search" aria-label="Search documentation"></div><h3>Documentation</h3><ul id="sidebar-list">' +
+          sections.map(s => `<li data-title="${s.title.replace(/^[^\s]+\s/, '').toLowerCase()}" data-summary="${(s.summary || '').toLowerCase()}"><a href="${s.id}.html"><span class="icon">${s.icon}</span>${s.title.replace(/^[^\s]+\s/, '')}</a></li>`).join('') +
           '</ul>';
         sidebar.innerHTML = navHTML;
+
+        // Search filter
+        const searchInput = document.getElementById('sidebar-search');
+        searchInput.addEventListener('input', () => {
+          const q = searchInput.value.toLowerCase().trim();
+          document.querySelectorAll('#sidebar-list li').forEach(li => {
+            const match = !q || li.dataset.title.includes(q) || li.dataset.summary.includes(q);
+            li.style.display = match ? '' : 'none';
+          });
+          // Also filter hub cards
+          document.querySelectorAll('.hub-card').forEach(card => {
+            const title = card.querySelector('h3').textContent.toLowerCase();
+            const desc = card.querySelector('p').textContent.toLowerCase();
+            card.style.display = (!q || title.includes(q) || desc.includes(q)) ? '' : 'none';
+          });
+        });
+
+        // Mobile sidebar toggle
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        if (sidebarToggle) {
+          sidebarToggle.addEventListener('click', () => {
+            const isOpen = sidebar.classList.toggle('open');
+            sidebarToggle.textContent = isOpen ? '✕' : '☰';
+          });
+        }
 
         // Build hub grid
         const grid = document.getElementById('hub-grid');

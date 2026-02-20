@@ -1,0 +1,13 @@
+{
+  "title": "📋 Changelog",
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "Release history for Nightjar. Each release includes the version number, release date, and summary of changes. For full details, visit the GitHub Releases page."
+    },
+    {
+      "type": "tip",
+      "text": "This page loads the latest releases automatically from the GitHub API. If releases don't appear, check your internet connection or visit github.com/NiyaNagi/Nightjar/releases directly."
+    }
+  ]
+}

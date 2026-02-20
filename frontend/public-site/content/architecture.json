@@ -1,0 +1,196 @@
+{
+  "title": "🏗️ Architecture Deep Dive",
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "Nightjar is a local-first, peer-to-peer collaboration platform with end-to-end encryption. This page provides a visual overview of the system architecture, security model, and networking layers based on the actual codebase."
+    },
+    {
+      "type": "heading",
+      "text": "System Architecture Overview"
+    },
+    {
+      "type": "paragraph",
+      "text": "Nightjar runs on three platforms — Electron desktop, web browser, and mobile (Capacitor). Each platform connects through a layered architecture of React UI, Yjs CRDT sync, and encrypted P2P networking."
+    },
+    {
+      "type": "mermaid",
+      "caption": "High-Level System Architecture",
+      "text": "graph TB\n    subgraph Clients[\"Client Platforms\"]\n        E[\"🖥️ Electron Desktop\\nWindows / macOS / Linux\"]\n        W[\"🌐 Web Browser\\nChrome / Firefox / Safari\"]\n        M[\"📱 Mobile\\nCapacitor (Android)\"]\n    end\n\n    subgraph AppLayer[\"Application Layer\"]\n        UI[\"React 18 UI\\nTipTap Editor · Fortune Sheet\\nKanban · Inventory · Chat · Files\"]\n        CRDT[\"Yjs CRDT Engine\\nReal-time conflict-free sync\"]\n        Crypto[\"Encryption Layer\\nXSalsa20-Poly1305 (NaCl secretbox)\"]\n    end\n\n    subgraph Network[\"Networking Layer\"]\n        P2P[\"P2P Service\\n4 Transport Protocols\"]\n        WS[\"WebSocket\\nRelay fallback\"]\n        SC[\"Sidecar Process\\nNode.js · Ports 8080/8081\"]\n    end\n\n    subgraph Servers[\"Server Infrastructure\"]\n        Host[\"Host Mode\\nFull persistence + mesh\"]\n        Relay[\"Relay Mode\\nSignaling only · no storage\"]\n        Private[\"Private Mode\\nIsolated · air-gapped\"]\n    end\n\n    E & W & M --> UI\n    UI --> CRDT\n    CRDT --> Crypto\n    Crypto --> P2P\n    Crypto --> WS\n    E --> SC\n    SC --> P2P\n    P2P & WS --> Host & Relay & Private"
+    },
+    {
+      "type": "heading",
+      "text": "Encryption & Key Hierarchy"
+    },
+    {
+      "type": "paragraph",
+      "text": "All data is encrypted before it leaves your device. The key hierarchy ensures workspace isolation and supports both identity-based and password-based cryptographic operations."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Encryption Key Hierarchy",
+      "text": "graph TD\n    BIP[\"🔑 BIP39 Mnemonic\\n12 words · 128-bit entropy\"] --> PBKDF[\"PBKDF2-SHA512\\nKey derivation\"]\n    PBKDF --> ED[\"Ed25519 Keypair\\nSigning & identity\"]\n    PBKDF --> CV[\"Curve25519 Keypair\\nEncryption contexts\"]\n\n    WP[\"🔒 Workspace Password\\nUser-chosen or generated\"] --> ARGON[\"Argon2id\\n64MB · 4 iterations\"]\n    ARGON --> WK[\"256-bit Workspace Key\"]\n    WK --> FK[\"Folder Keys\\nDerived per-folder\"]\n    FK --> DK[\"Document Keys\\nDerived per-document\"]\n\n    DK --> NACL[\"NaCl secretbox\\nXSalsa20-Poly1305\"]\n    NACL --> ENC[\"Encrypted Data\\n+ 192-bit random nonce\\n+ 4KB block padding\"]"
+    },
+    {
+      "type": "heading",
+      "text": "P2P Transport Layer"
+    },
+    {
+      "type": "paragraph",
+      "text": "Nightjar supports four transport mechanisms with automatic selection based on platform capability and network conditions. The PeerManager orchestrates all transports through a unified interface."
+    },
+    {
+      "type": "mermaid",
+      "caption": "P2P Transport Selection",
+      "text": "graph LR\n    PM[\"PeerManager\\nOrchestrator\"] --> MDNS[\"mDNS\\nBonjour/Avahi\\nLAN only\"]\n    PM --> HS[\"Hyperswarm\\nDHT-based discovery\\nDesktop + Server\"]\n    PM --> WRTC[\"WebRTC\\nDirect peer connection\\nAll platforms\"]\n    PM --> WST[\"WebSocket\\nRelay fallback\\nAll platforms\"]\n\n    MDNS -->|Priority 1| LAN[\"Local Network\\nZero-config\"]\n    HS -->|Priority 2| DHT[\"Distributed Hash Table\\nGlobal discovery\"]\n    WRTC -->|Priority 3| DIRECT[\"Direct Connection\\nNAT traversal\"]\n    WST -->|Priority 4| FALLBACK[\"Relay Server\\nAlways available\"]"
+    },
+    {
+      "type": "heading",
+      "text": "Relay Mesh Network"
+    },
+    {
+      "type": "paragraph",
+      "text": "All public server nodes (host and relay mode) join a Hyperswarm DHT mesh using the topic SHA256('nightjar-mesh-v1'). This creates a decentralized relay network with automatic peer discovery and failover."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Relay Mesh Topology",
+      "text": "graph TB\n    subgraph Mesh[\"Relay Mesh Network\"]\n        R1[\"🌍 relay.night-jar.co\\nDefault bootstrap relay\"]\n        R2[\"🌏 Self-hosted Relay A\\nDocker · relay mode\"]\n        R3[\"🌎 Self-hosted Relay B\\nDocker · relay mode\"]\n        H1[\"🖥️ Host Server\\nPersistence + mesh\"]\n    end\n\n    R1 <-->|Hyperswarm DHT| R2\n    R1 <-->|Hyperswarm DHT| R3\n    R2 <-->|Hyperswarm DHT| H1\n    R3 <-->|Hyperswarm DHT| H1\n    R1 <-->|Hyperswarm DHT| H1\n\n    C1[\"Client A\"] -->|WebSocket| R1\n    C2[\"Client B\"] -->|WebSocket| R2\n    C3[\"Client C\"] -->|Hyperswarm| H1\n    C1 <-.->|Direct P2P after discovery| C2\n    C2 <-.->|Direct P2P after discovery| C3"
+    },
+    {
+      "type": "heading",
+      "text": "Connection Flow"
+    },
+    {
+      "type": "paragraph",
+      "text": "When a user joins a workspace via a share link, a multi-step bootstrap process establishes the most efficient connection path."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Workspace Join Sequence",
+      "text": "sequenceDiagram\n    participant U as User\n    participant App as Nightjar Client\n    participant R as Relay Server\n    participant DHT as Hyperswarm DHT\n    participant P as Peer\n\n    U->>App: Click share link\n    Note over App: Parse: workspace ID,<br/>encryption key (from #fragment),<br/>relay nodes\n    App->>R: WebSocket connect to embedded relay\n    R-->>App: Connection established\n    App->>R: Join workspace topic (SHA256 hash)\n    R-->>App: Peer list for topic\n    App->>DHT: Query workspace topic hash\n    DHT-->>App: Additional peer addresses\n    App->>P: Direct connection (WebRTC/Hyperswarm)\n    App->>P: Exchange Ed25519 signed identity\n    P-->>App: Identity verified\n    App->>P: Begin encrypted Yjs CRDT sync\n    Note over App,P: Real-time collaboration active"
+    },
+    {
+      "type": "heading",
+      "text": "Server Modes"
+    },
+    {
+      "type": "paragraph",
+      "text": "The unified server supports three operating modes configured via the NIGHTJAR_MODE environment variable. Each mode is optimized for different deployment scenarios."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Server Operating Modes",
+      "text": "graph TB\n    subgraph Host[\"Host Mode (default)\"]\n        H_WEB[\"Express Static Server\\nReact frontend\"]\n        H_WS[\"y-websocket\\nYjs document sync\"]\n        H_SIG[\"WebSocket Signaling\\nRoom-based discovery\"]\n        H_DB[(\"SQLite\\nworkspaces · encrypted_docs\\nyjs_docs · invites\")]\n        H_MESH[\"Hyperswarm Mesh\\nPublic relay network\"]\n        H_WEB --> H_WS --> H_DB\n        H_WEB --> H_SIG\n        H_SIG --> H_MESH\n    end\n\n    subgraph RelayMode[\"Relay Mode\"]\n        R_WEB[\"Express Static Server\"]\n        R_SIG[\"WebSocket Signaling\"]\n        R_MESH[\"Hyperswarm Mesh\"]\n        R_WEB --> R_SIG --> R_MESH\n        R_NOTE[\"No storage\\nSignaling only\"]\n    end\n\n    subgraph PrivateMode[\"Private Mode\"]\n        P_WEB[\"Express Static Server\"]\n        P_WS[\"y-websocket\"]\n        P_DB[(\"SQLite\")]\n        P_WEB --> P_WS --> P_DB\n        P_NOTE[\"No mesh\\nAir-gapped\"]\n    end"
+    },
+    {
+      "type": "heading",
+      "text": "Encrypted Persistence Flow"
+    },
+    {
+      "type": "paragraph",
+      "text": "When ENCRYPTED_PERSISTENCE=true, the server encrypts all Yjs document state at rest in SQLite. Clients deliver encryption keys via HTTP POST before establishing WebSocket connections. Keys are held in memory only and never persisted to disk."
+    },
+    {
+      "type": "mermaid",
+      "caption": "At-Rest Encryption Sequence",
+      "text": "sequenceDiagram\n    participant C as Client\n    participant S as Server\n    participant DB as SQLite\n\n    C->>S: POST /api/deliver-key<br/>{room, key (base64)}\n    Note over S: Store key in memory Map<br/>Never written to disk\n    S-->>C: 200 OK\n    C->>S: WebSocket connect (y-websocket)\n    S->>DB: Read encrypted Yjs state\n    Note over S: Decrypt with in-memory key<br/>NaCl secretbox\n    S-->>C: Sync decrypted Yjs updates\n    Note over C,S: Collaborative editing...\n    C->>S: Yjs update (new content)\n    Note over S: Encrypt update with key<br/>XSalsa20-Poly1305 + 4KB padding\n    S->>DB: Store encrypted blob"
+    },
+    {
+      "type": "heading",
+      "text": "Data Storage Architecture"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each platform uses an appropriate storage backend, but all data is encrypted at the application layer before storage. The server follows a zero-knowledge model — it only stores opaque encrypted blobs."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Storage Layer by Platform",
+      "text": "graph LR\n    subgraph Desktop[\"Electron Desktop\"]\n        D_APP[\"Application\"] --> D_SC[\"Sidecar\"]\n        D_SC --> D_LDB[(\"LevelDB\\nEncrypted Yjs updates\\nPer-document namespaced\")]\n    end\n\n    subgraph Browser[\"Web Browser\"]\n        B_APP[\"Application\"] --> B_IDB[(\"IndexedDB\\ny-indexeddb or\\nEncryptedIndexeddbPersistence\")]\n    end\n\n    subgraph Server[\"Server (SQLite)\"]\n        S_APP[\"Unified Server\"] --> S_DB[(\"SQLite\")]\n        S_DB --- T1[\"workspaces\\nMetadata\"]\n        S_DB --- T2[\"encrypted_docs\\nOpaque blobs\"]\n        S_DB --- T3[\"yjs_docs\\nYjs state\"]\n        S_DB --- T4[\"encrypted_updates\\nIncremental (max 50)\"]\n        S_DB --- T5[\"invites\\nTime-limited tokens\"]\n    end"
+    },
+    {
+      "type": "heading",
+      "text": "Share Link Security"
+    },
+    {
+      "type": "paragraph",
+      "text": "Share links embed the workspace encryption key in the URL fragment (#), which is never sent to servers per the HTTP specification. Links are Ed25519-signed to prevent tampering and support time-limited expiry."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "text": "nightjar://w/{workspaceId}#key={base64key}&perm={owner|editor|viewer}&exp={timestamp}&sig={ed25519sig}\n\n├── Protocol: nightjar://\n├── Workspace ID: Public identifier (sent to server)\n└── Fragment (#): NEVER sent to servers\n    ├── key: Base64-encoded 256-bit workspace key\n    ├── perm: Permission level for the recipient\n    ├── exp: Maximum 24-hour expiry timestamp\n    └── sig: Ed25519 signature (prevents tampering)",
+      "caption": "Share link anatomy — the encryption key in the fragment is never transmitted to any server"
+    },
+    {
+      "type": "heading",
+      "text": "Identity System"
+    },
+    {
+      "type": "paragraph",
+      "text": "Nightjar uses BIP39 mnemonics (12 words, 128-bit entropy) to generate deterministic Ed25519 keypairs. This means your identity can be recovered on any device with just your recovery phrase — no accounts, no servers."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Identity Generation Flow",
+      "text": "graph TD\n    M[\"12-Word BIP39 Mnemonic\\n128-bit entropy\"] --> S[\"PBKDF2-SHA512\\n512-bit seed\"]\n    S --> K[\"First 32 bytes\\nEd25519 Private Key\"]\n    K --> PUB[\"Ed25519 Public Key\\nYour identity\"]\n    K --> CV[\"ed2curve conversion\\nCurve25519 keypair\"]\n    PUB --> ID[\"Display Name + Public Key\\nShared with collaborators\"]\n    K --> SIGN[\"Sign messages\\nVerify identity\"]\n    CV --> ENC[\"Encrypt/decrypt\\nInventory addresses\"]"
+    },
+    {
+      "type": "heading",
+      "text": "Security Hardening"
+    },
+    {
+      "type": "paragraph",
+      "text": "Beyond encryption, Nightjar implements defense-in-depth measures across the entire stack."
+    },
+    {
+      "type": "list",
+      "items": [
+        "Rate limiting: 5 attempts per 60 seconds with 5-minute lockout",
+        "Prototype pollution prevention: Strict key allowlists on all JSON inputs",
+        "CSS injection blocking: Color value sanitization",
+        "Path traversal prevention: Strict path validation",
+        "SSRF protection: URL validation on all outbound requests",
+        "Timing-safe cryptographic comparisons",
+        "Secure memory wipe: Encryption keys zeroed after use",
+        "File permissions: 0o600 on private key files",
+        "Max document limit: 500 Y.Doc instances per sidecar",
+        "Max message size: 10MB per WebSocket frame, 50MB max content",
+        "Traffic analysis resistance: 4KB block padding on all encrypted data",
+        "Non-root Docker container: Runs as unprivileged 'nightjar' user"
+      ]
+    },
+    {
+      "type": "heading",
+      "text": "Docker Deployment Architecture"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Docker image uses a multi-stage build: Stage 1 builds the React frontend with Vite, Stage 2 runs the Node.js server with native module support. The image supports sub-path deployments via BASE_PATH."
+    },
+    {
+      "type": "mermaid",
+      "caption": "Docker Build Pipeline",
+      "text": "graph LR\n    subgraph Stage1[\"Build Stage\"]\n        S1[\"node:20-alpine\"] --> NPM[\"npm install\"]\n        NPM --> VITE[\"Vite build\\n--base='./'\"]\n        VITE --> DIST[\"dist/ output\"]\n    end\n\n    subgraph Stage2[\"Production Stage\"]\n        S2[\"node:20-slim\"] --> DEPS[\"Server dependencies\\n+ native modules\"]\n        DIST --> COPY[\"Copy frontend build\"]\n        DEPS --> RUN[\"Non-root 'nightjar' user\"]\n        COPY --> RUN\n        RUN --> SERVER[\"node index.js\\nExpress + y-websocket + SQLite\"]\n    end\n\n    SERVER --> |NIGHTJAR_MODE=host| HOST[\"Full persistence\"]\n    SERVER --> |NIGHTJAR_MODE=relay| RELAY[\"Signaling only\"]\n    SERVER --> |NIGHTJAR_MODE=private| PRIV[\"Isolated instance\"]"
+    },
+    {
+      "type": "heading",
+      "text": "Technology Stack"
+    },
+    {
+      "type": "list",
+      "items": [
+        "Frontend: React 18, Vite 5, TipTap 2.4, Fortune Sheet, react-beautiful-dnd",
+        "CRDT: Yjs with y-websocket, y-indexeddb, custom encrypted persistence",
+        "Encryption: TweetNaCl (XSalsa20-Poly1305), BIP39, PBKDF2-SHA512, Argon2id",
+        "Networking: Hyperswarm DHT, WebRTC, WebSocket, mDNS, libp2p",
+        "Desktop: Electron 30 with Node.js sidecar process",
+        "Server: Express, better-sqlite3, y-websocket, Hyperswarm",
+        "Storage: LevelDB (desktop), IndexedDB (browser), SQLite (server)",
+        "Privacy: Tor integration (bundled), onion service support",
+        "Deployment: Docker (node:20-slim), multi-stage builds, GitHub Actions CI/CD"
+      ]
+    }
+  ]
+}
