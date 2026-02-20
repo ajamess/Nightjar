@@ -25,7 +25,7 @@ import { nanoid } from 'nanoid';
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'fs';
 import { createRequire } from 'module';
 import { MeshParticipant } from './mesh.mjs';
 import { SERVER_MODES } from './mesh-constants.mjs';
@@ -46,6 +46,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const STATIC_PATH = process.env.STATIC_PATH || join(__dirname, '../../frontend/dist');
 const DB_PATH = process.env.DB_PATH || join(__dirname, 'data/nahma.db');
+
+// Log static path resolution for debugging asset-serving issues
+console.log(`[Config] STATIC_PATH = ${STATIC_PATH}`);
+if (existsSync(STATIC_PATH)) {
+  const assetsDir = join(STATIC_PATH, 'assets');
+  if (existsSync(assetsDir)) {
+    const assetFiles = readdirSync(assetsDir);
+    console.log(`[Config] ${assetsDir} contains ${assetFiles.length} files: ${assetFiles.slice(0, 10).join(', ')}${assetFiles.length > 10 ? '...' : ''}`);
+  } else {
+    console.warn(`[Config] WARNING: ${assetsDir} does not exist — CSS/JS will 404`);
+  }
+} else {
+  console.warn(`[Config] WARNING: STATIC_PATH ${STATIC_PATH} does not exist`);
+}
+
 const MAX_PEERS_PER_ROOM = parseInt(process.env.MAX_PEERS_PER_ROOM || '100');
 const RATE_LIMIT_WINDOW = 1000;
 const RATE_LIMIT_MAX = 50;
@@ -2054,8 +2069,31 @@ if (existsSync(indexHtmlPath)) {
   console.warn(`[SPA] index.html not found at ${indexHtmlPath} — SPA fallback will fail`);
 }
 
-// SPA fallback
+// Guard: return 404 for asset requests that express.static couldn't find
+// (prevents the SPA fallback from returning HTML with text/html MIME type
+// for genuinely missing .js, .css, .png etc. files)
+const ASSET_EXTENSIONS = new Set([
+  'js', 'css', 'map', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico',
+  'woff', 'woff2', 'ttf', 'eot', 'webp', 'avif', 'mp4', 'webm', 'json'
+]);
+app.use(BASE_PATH + '/assets', (req, res, next) => {
+  // If we get here, express.static already failed to find the file.
+  // Return 404 instead of falling through to the SPA handler.
+  const ext = req.path.split('.').pop()?.toLowerCase();
+  if (ext && ASSET_EXTENSIONS.has(ext)) {
+    console.warn(`[Static] 404 asset not found: ${req.originalUrl}`);
+    return res.status(404).type('text').send('Not found');
+  }
+  next();
+});
+
+// SPA fallback — only serves navigation requests (HTML pages), not assets
 app.get(BASE_PATH + '/*', (req, res) => {
+  // Prevent caching of the injected HTML so Cloudflare/browsers always
+  // fetch the latest version with correct asset hashes
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   if (injectedIndexHtml) {
     res.type('html').send(injectedIndexHtml);
   } else {
