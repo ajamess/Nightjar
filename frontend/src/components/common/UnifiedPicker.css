@@ -266,6 +266,36 @@
   box-shadow: 0 0 0 2px var(--accent-color, #6366f1);
 }
 
+/* ---- category nav wrapper with arrows ---- */
+.unified-picker__cat-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.unified-picker__cat-arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 22px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary, #a1a1aa);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.unified-picker__cat-arrow:hover {
+  color: var(--text-primary, #111827);
+  background: var(--hover-bg, #f3f4f6);
+}
+
 /* ---- category tabs (pill-style with icon + label) ---- */
 .unified-picker__cat-tabs {
   display: flex;
@@ -274,8 +304,9 @@
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  margin-bottom: 4px;
   padding-bottom: 2px;
+  flex: 1;
+  min-width: 0;
 }
 .unified-picker__cat-tabs::-webkit-scrollbar {
   display: none;
@@ -340,7 +371,7 @@
 /* ---- emoji grid (8-col in pane) ---- */
 .unified-picker__emoji-grid {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 1px;
 }
 

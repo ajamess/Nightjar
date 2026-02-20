@@ -92,6 +92,8 @@ function UnifiedPicker({
   const [recentEmojis, setRecentEmojis] = useState(loadRecentEmojis);
   const [customColor, setCustomColor] = useState(color || '#6366f1');
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
 
   // ---- refs ----
   const triggerRef = useRef(null);
@@ -226,6 +228,18 @@ function UnifiedPicker({
     if (!disabled) setIsOpen((o) => !o);
   }, [disabled]);
 
+  // ---- category tab arrow helpers ----
+  const updateCatArrows = useCallback(() => {
+    const el = categoryTabsRef.current;
+    if (!el) return;
+    setShowLeftArrow(el.scrollLeft > 2);
+    setShowRightArrow(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }, []);
+
+  const scrollCatTabs = useCallback((dir) => {
+    categoryTabsRef.current?.scrollBy({ left: dir * 120, behavior: 'smooth' });
+  }, []);
+
   // ---- memoised search results ----
   const filteredEmojis = useMemo(() => {
     if (!debouncedSearch) return null;
@@ -254,6 +268,19 @@ function UnifiedPicker({
       active.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'smooth' });
     }
   }, [activeCategory]);
+
+  // ---- update category arrow visibility on scroll / open ----
+  useEffect(() => {
+    const el = categoryTabsRef.current;
+    if (!el || !isOpen) return;
+    // Initial check (delayed slightly so layout settles)
+    const raf = requestAnimationFrame(updateCatArrows);
+    el.addEventListener('scroll', updateCatArrows, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('scroll', updateCatArrows);
+    };
+  }, [isOpen, updateCatArrows, debouncedSearch]);
 
   // ---- emojis for active category ----
   const activeCategoryEmojis = useMemo(
@@ -323,22 +350,46 @@ function UnifiedPicker({
                 )}
               </div>
 
-              {/* category tabs (hidden during search) */}
+              {/* category tabs with arrow navigation (hidden during search) */}
               {!debouncedSearch && (
-                <div className="unified-picker__cat-tabs" ref={categoryTabsRef} data-testid="unified-picker-category-tabs">
-                  {EMOJI_CATEGORIES.map((catKey) => (
+                <div className="unified-picker__cat-nav">
+                  {showLeftArrow && (
                     <button
-                      key={catKey}
                       type="button"
-                      className={`unified-picker__cat-tab ${catKey === activeCategory ? 'unified-picker__cat-tab--active' : ''}`}
-                      onClick={() => setActiveCategory(catKey)}
-                      title={EMOJI_DATA[catKey].label}
-                      data-testid={`unified-picker-cat-${catKey}`}
+                      className="unified-picker__cat-arrow unified-picker__cat-arrow--left"
+                      onClick={() => scrollCatTabs(-1)}
+                      aria-label="Scroll categories left"
+                      tabIndex={-1}
                     >
-                      <span className="unified-picker__cat-tab-icon">{EMOJI_DATA[catKey].icon}</span>
-                      <span className="unified-picker__cat-tab-label">{catKey.charAt(0).toUpperCase() + catKey.slice(1)}</span>
+                      ‹
                     </button>
-                  ))}
+                  )}
+                  <div className="unified-picker__cat-tabs" ref={categoryTabsRef} data-testid="unified-picker-category-tabs">
+                    {EMOJI_CATEGORIES.map((catKey) => (
+                      <button
+                        key={catKey}
+                        type="button"
+                        className={`unified-picker__cat-tab ${catKey === activeCategory ? 'unified-picker__cat-tab--active' : ''}`}
+                        onClick={() => setActiveCategory(catKey)}
+                        title={EMOJI_DATA[catKey].label}
+                        data-testid={`unified-picker-cat-${catKey}`}
+                      >
+                        <span className="unified-picker__cat-tab-icon">{EMOJI_DATA[catKey].icon}</span>
+                        <span className="unified-picker__cat-tab-label">{catKey.charAt(0).toUpperCase() + catKey.slice(1)}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {showRightArrow && (
+                    <button
+                      type="button"
+                      className="unified-picker__cat-arrow unified-picker__cat-arrow--right"
+                      onClick={() => scrollCatTabs(1)}
+                      aria-label="Scroll categories right"
+                      tabIndex={-1}
+                    >
+                      ›
+                    </button>
+                  )}
                 </div>
               )}
             </div>
