@@ -244,9 +244,81 @@ git push origin main --tags
    gh release edit v{version} --notes-file docs/release-notes/RELEASE_NOTES_v{version}.md
    ```
 
+## Release Notes — Where They Must Appear
+
+**Every release MUST have descriptive notes published in ALL FOUR of these places:**
+
+### 1. README.md Changelog
+Add an entry to the `## Changelog` section near the top of the list (newest first):
+```markdown
+### v{VERSION} - {Short Title}
+- **{Type}**: {Description of each change}
+```
+
+### 2. GitHub Release Tag
+Create or update the GitHub release via CLI:
+```bash
+gh release create v{VERSION} --title "v{VERSION} — {Title}" --notes-file RELEASE_NOTES_v{VERSION}.md
+# OR if CI already created a stub release:
+gh release edit v{VERSION} --notes-file RELEASE_NOTES_v{VERSION}.md
+```
+
+### 3. Public Site Documentation (changelog.json)
+Update `frontend/public-site/content/changelog.json` with the new version entry so the night-jar.co documentation site reflects the latest changes.
+
+### 4. Commit Message
+The release commit itself must have a descriptive message summarizing ALL changes:
+```
+release: v{VERSION} — {short summary of all changes}
+```
+
+### 5. RELEASE_NOTES_v{VERSION}.md File
+Save a full release notes markdown file to the repo root (see format below).
+
+## Release Notes — How to Gather Changes
+
+**CRITICAL**: Release notes must include ALL changes between the last release tag and the current one. Never write release notes from memory — always check the git history.
+
+**Step 1 — Find the previous release tag:**
+```bash
+git tag --sort=-v:refname | head -5
+```
+
+**Step 2 — Get the full commit log since that tag:**
+```bash
+git log v{PREVIOUS}..HEAD --oneline
+git log v{PREVIOUS}..HEAD --stat    # for file-level detail
+git diff v{PREVIOUS}..HEAD --stat   # for insertions/deletions count
+```
+
+**Step 3 — Read each commit and include every change.** Do not skip commits. Group them into logical sections (features, bug fixes, cleanup, docs, tests).
+
+## Release Notes — Review and Update Documentation Pages
+
+**Every release, review the public site documentation pages** (`frontend/public-site/content/*.json`) and update any that are affected by the changes in this release.
+
+For example:
+- New feature in the editor → update `editor.json`, `documents.json`
+- Sharing changes → update `sharing.json`, `collaboration.json`
+- Kanban improvements → update `kanban.json`
+- Inventory changes → update `inventory.json`
+- Security changes → update `security-model.json`
+- Networking/P2P changes → update `networking.json`
+- Workspace changes → update `workspaces.json`
+- New keyboard shortcuts → update `shortcuts.json`
+- Self-hosting changes → update `self-hosting.json`
+- Architecture changes → update `architecture.json`
+- Getting started flow changes → update `getting-started.json`
+
+**Always update `changelog.json`** with the new version entry.
+
+If no documentation pages are affected, explicitly state so. Never silently skip this step.
+
 ## GitHub Release Notes Format
 
 **ALWAYS** generate full release notes in the following format when pushing a new release tag. The CI/CD `build.yml` uses `softprops/action-gh-release` with `generate_release_notes: true`, which only produces a bare "Full Changelog" link. You MUST update the release body with comprehensive notes using `gh release edit`.
+
+**Reference**: See [v1.7.18](https://github.com/NiyaNagi/Nightjar/releases/tag/v1.7.18) for the canonical example of proper release notes format.
 
 Reference: see v1.7.11, v1.7.12, v1.7.13 releases for examples.
 
