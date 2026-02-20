@@ -1,5 +1,5 @@
 {
-  "generated": "2026-02-20T06:20:31.502Z",
+  "generated": "2026-02-20T07:27:05.771Z",
   "resolution": "1920x1080",
   "format": "webp",
   "quality": 85,
@@ -10,7 +10,7 @@
       "description": "Your encrypted home base — folders, documents, and quick actions at a glance",
       "category": "workspaces",
       "filename": "workspace-overview.webp",
-      "sizeKB": 46,
+      "sizeKB": 40,
       "width": 1920,
       "height": 1080
     },
@@ -20,7 +20,7 @@
       "description": "Collaborative real-time editing with formatting, headings, lists, and code blocks",
       "category": "documents",
       "filename": "text-editor.webp",
-      "sizeKB": 91,
+      "sizeKB": 71,
       "width": 1920,
       "height": 1080
     },
@@ -30,7 +30,7 @@
       "description": "Full-featured spreadsheet with formulas, formatting, and real-time collaboration",
       "category": "documents",
       "filename": "spreadsheet.webp",
-      "sizeKB": 69,
+      "sizeKB": 61,
       "width": 1920,
       "height": 1080
     },
@@ -40,7 +40,7 @@
       "description": "Visual task management with drag-and-drop cards, tags, and assignees",
       "category": "documents",
       "filename": "kanban-board.webp",
-      "sizeKB": 74,
+      "sizeKB": 44,
       "width": 1920,
       "height": 1080
     },
@@ -50,7 +50,7 @@
       "description": "End-to-end encrypted team messaging — right inside your workspace",
       "category": "collaboration",
       "filename": "chat-panel.webp",
-      "sizeKB": 81,
+      "sizeKB": 53,
       "width": 1920,
       "height": 1080
     },
@@ -60,7 +60,7 @@
       "description": "Track products, stock levels, and locations with real-time search and filters",
       "category": "inventory",
       "filename": "inventory-list.webp",
-      "sizeKB": 71,
+      "sizeKB": 67,
       "width": 1920,
       "height": 1080
     },
@@ -70,7 +70,7 @@
       "description": "Share your workspace via encrypted invite links or scannable QR codes",
       "category": "sharing",
       "filename": "sharing-panel.webp",
-      "sizeKB": 34,
+      "sizeKB": 66,
       "width": 1920,
       "height": 1080
     },
@@ -80,7 +80,7 @@
       "description": "Comprehensive documentation and keyboard shortcuts — always one keystroke away",
       "category": "navigation",
       "filename": "help-page.webp",
-      "sizeKB": 60,
+      "sizeKB": 57,
       "width": 1920,
       "height": 1080
     }
@@ -89,6 +89,6 @@
     "total": 8,
     "captured": 8,
     "failed": 0,
-    "totalSizeKB": 526
+    "totalSizeKB": 459
   }
 }
