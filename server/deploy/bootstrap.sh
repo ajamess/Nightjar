@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # Run on a fresh Ubuntu 22.04+ VPS as root (or with sudo):
-#   curl -sL https://raw.githubusercontent.com/nicsteenwyk/Nightjar/main/server/deploy/bootstrap.sh | bash
+#   curl -sL https://raw.githubusercontent.com/NiyaNagi/Nightjar/main/server/deploy/bootstrap.sh | bash
 #
 # What it does:
 #   1. Installs Docker, Docker Compose, Nginx
@@ -89,7 +89,7 @@ if [ -d "$REPO_DIR/.git" ]; then
   cd "$REPO_DIR" && git pull --ff-only
 else
   log "Cloning Nightjar to $REPO_DIR..."
-  git clone https://github.com/nicsteenwyk/Nightjar.git "$REPO_DIR"
+  git clone https://github.com/NiyaNagi/Nightjar.git "$REPO_DIR"
 fi
 chown -R $DEPLOY_USER:$DEPLOY_USER "$REPO_DIR"
 

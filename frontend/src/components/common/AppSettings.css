@@ -449,8 +449,10 @@
 .app-settings__about-links {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 24px;
   margin-bottom: 32px;
+  flex-wrap: wrap;
 }
 
 .app-settings__about-links a {
@@ -461,6 +463,26 @@
 
 .app-settings__about-links a:hover {
   text-decoration: underline;
+}
+
+.app-settings__about-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--bg-tertiary, #1f2937);
+  border: 1px solid var(--border-color, #374151);
+  transition: background 0.15s ease;
+}
+
+.app-settings__about-btn:hover {
+  background: var(--bg-hover, #374151);
+  text-decoration: none !important;
+}
+
+.app-settings__about-btn svg {
+  flex-shrink: 0;
 }
 
 .app-settings__about-credits {
