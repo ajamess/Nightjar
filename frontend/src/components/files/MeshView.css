@@ -238,3 +238,34 @@
   padding-top: 8px;
   border-top: 1px solid var(--border-color, #313244);
 }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .mesh-view {
+    padding: 12px;
+  }
+  .mesh-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mesh-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .mesh-card {
+    padding: 10px;
+  }
+  .mesh-card-value {
+    font-size: 18px;
+  }
+  .mesh-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mesh-table {
+    min-width: 420px;
+  }
+  .mesh-time-range {
+    flex-wrap: wrap;
+  }
+}

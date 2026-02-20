@@ -178,3 +178,19 @@
     color: #fcd34d;
   }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .kicked-modal {
+    width: calc(100vw - 24px);
+    max-width: 420px;
+    padding: 20px 16px;
+  }
+  .kicked-modal__actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .kicked-modal__actions button {
+    width: 100%;
+  }
+}

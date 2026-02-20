@@ -200,3 +200,25 @@
 .approval-queue .btn-secondary:hover {
   background: var(--hover-bg);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .approval-queue {
+    padding: 12px;
+  }
+  .aq-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .aq-filters {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .aq-card-actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .aq-card-actions button {
+    width: 100%;
+  }
+}

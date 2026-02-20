@@ -106,3 +106,41 @@
     outline: 2px solid var(--accent-color, #6366f1);
     outline-offset: 2px;
 }
+
+/* ========== Touch targets ========== */
+@media (pointer: coarse) {
+    .tool-btn {
+        min-width: 44px;
+        height: 44px;
+    }
+
+    .toolbar-collapse-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+/* ========== Mobile Responsive ========== */
+@media (max-width: 768px) {
+    .toolbar {
+        padding: 6px 8px;
+        gap: 4px;
+    }
+
+    .tool-divider {
+        margin: 0 4px;
+    }
+}
+
+@media (max-width: 480px) {
+    .toolbar {
+        padding: 4px 6px;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .toolbar-content {
+        flex-wrap: nowrap;
+    }
+}

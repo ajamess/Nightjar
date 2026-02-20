@@ -97,3 +97,21 @@
 .ush-legend-step {
   flex: 1;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .us-heatmap {
+    padding: 8px;
+  }
+  .ush-svg-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ush-legend {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ush-legend-bar {
+    width: 100%;
+  }
+}

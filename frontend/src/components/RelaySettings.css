@@ -408,3 +408,39 @@
 .status-group {
   padding-bottom: 20px;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .relay-settings-modal {
+    width: 100%;
+    max-width: calc(100vw - 16px);
+    max-height: 90vh;
+    border-radius: 10px;
+  }
+  .relay-settings-content {
+    padding: 14px 12px;
+  }
+  .status-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .setting-row .setting-control {
+    width: 100%;
+  }
+  .upnp-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .relay-settings-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .relay-settings-footer button {
+    width: 100%;
+  }
+}

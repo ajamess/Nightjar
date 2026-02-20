@@ -457,3 +457,30 @@
     --text-tertiary: #6b7280;
   }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .workspace-switcher {
+    padding: 6px 8px;
+  }
+  .workspace-switcher__trigger {
+    font-size: 0.85rem;
+    padding: 6px 8px;
+  }
+  .workspace-switcher__dropdown {
+    width: calc(100vw - 24px);
+    max-width: 320px;
+  }
+  .workspace-switcher__confirm-dialog {
+    width: calc(100vw - 24px);
+    max-width: 360px;
+    padding: 20px 16px;
+  }
+  .workspace-switcher__confirm-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .workspace-switcher__confirm-actions button {
+    width: 100%;
+  }
+}

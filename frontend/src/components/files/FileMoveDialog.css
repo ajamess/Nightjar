@@ -125,3 +125,22 @@
 .move-dialog-submit:hover {
   background: #7ba7f0;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .move-dialog {
+    width: calc(100vw - 24px);
+    max-width: 400px;
+  }
+  .move-dialog-body {
+    padding: 12px;
+  }
+  .move-dialog-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .move-dialog-footer button {
+    width: 100%;
+  }
+}

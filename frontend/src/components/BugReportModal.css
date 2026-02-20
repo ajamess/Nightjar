@@ -302,3 +302,30 @@
   justify-content: center;
   gap: 4px;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .bug-report-modal {
+    width: 100%;
+    max-width: calc(100vw - 16px);
+    max-height: 90vh;
+  }
+  .bug-report-modal__body {
+    padding: 14px 12px;
+  }
+  .bug-report-modal__footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .bug-report-modal__footer button {
+    width: 100%;
+  }
+  .bug-report-success__actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .bug-report-success__actions button {
+    width: 100%;
+  }
+}

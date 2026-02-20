@@ -353,3 +353,27 @@
   outline: none;
   border-color: var(--accent-color);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .ar-modal {
+    width: calc(100vw - 16px);
+    max-width: 480px;
+    max-height: 90vh;
+  }
+  .ar-body {
+    padding: 14px 12px;
+  }
+  .ar-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .ar-footer button {
+    width: 100%;
+  }
+  .ar-step-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+}

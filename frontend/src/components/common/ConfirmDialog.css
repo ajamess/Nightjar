@@ -132,3 +132,19 @@
 [data-theme="light"] .confirm-dialog__btn--cancel:hover {
     background: #4b5563;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .confirm-dialog {
+    width: calc(100vw - 24px);
+    max-width: 400px;
+    padding: 20px 16px;
+  }
+  .confirm-dialog__actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .confirm-dialog__actions button {
+    width: 100%;
+  }
+}

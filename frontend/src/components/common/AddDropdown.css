@@ -310,3 +310,27 @@
     color: var(--text-primary, #111827);
   }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .add-dropdown__menu {
+    min-width: unset;
+    width: calc(100vw - 24px);
+    max-width: 320px;
+    right: 0;
+  }
+  .add-dropdown__creator-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .add-dropdown__creator-row > * {
+    width: 100%;
+  }
+  .add-dropdown__creator-actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .add-dropdown__creator-actions button {
+    width: 100%;
+  }
+}

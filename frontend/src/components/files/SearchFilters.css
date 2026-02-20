@@ -162,3 +162,21 @@
   border-color: var(--accent-color, #89b4fa);
   color: var(--bg-primary, #11111b);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .fs-filter-panel {
+    min-width: unset;
+    width: calc(100vw - 24px);
+    max-width: 320px;
+    left: 0;
+    right: 0;
+  }
+  .fs-filter-btn-group {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .fs-filter-chips {
+    gap: 4px;
+  }
+}

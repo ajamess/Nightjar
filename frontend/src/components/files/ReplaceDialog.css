@@ -86,3 +86,22 @@
 .replace-dialog-btn--cancel:hover {
   background: #3b3b52;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .replace-dialog {
+    width: calc(100vw - 24px);
+    max-width: 380px;
+  }
+  .replace-dialog-body {
+    padding: 12px;
+  }
+  .replace-dialog-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .replace-dialog-footer button {
+    width: 100%;
+  }
+}

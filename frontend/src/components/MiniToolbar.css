@@ -41,3 +41,13 @@
     background: var(--border-color);
     margin: 0 4px;
 }
+
+/* ========== Touch targets ========== */
+@media (pointer: coarse) {
+    .mini-tool-btn {
+        min-width: 36px;
+        min-height: 36px;
+        padding: 6px 8px;
+        font-size: 0.85rem;
+    }
+}

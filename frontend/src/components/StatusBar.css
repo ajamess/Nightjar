@@ -983,3 +983,110 @@
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
+
+/* ========== Touch targets ========== */
+@media (pointer: coarse) {
+    .tor-toggle,
+    .relay-settings-btn,
+    .sync-status-btn,
+    .sync-chip,
+    .mesh-status,
+    .btn-history {
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+
+    .collaborator-avatar {
+        min-height: 32px;
+        min-width: 32px;
+    }
+
+    .tor-menu-item,
+    .network-action-btn {
+        min-height: 44px;
+        padding: 12px 16px;
+    }
+
+    .peer-counts .retry-sync-btn {
+        width: 28px;
+        height: 28px;
+    }
+
+    .sync-action-btn {
+        min-height: 44px;
+    }
+}
+
+/* ========== Mobile Responsive ========== */
+@media (max-width: 768px) {
+    .status-bar-bottom {
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        gap: 8px;
+        flex-wrap: wrap;
+        min-height: 36px;
+    }
+
+    .status-section {
+        gap: 8px;
+    }
+
+    /* Hide less important items on tablet */
+    .ip-display {
+        display: none;
+    }
+
+    .mesh-label,
+    .tor-label,
+    .relay-label,
+    .sync-label {
+        display: none;
+    }
+
+    /* Constrain popovers to viewport */
+    .tor-menu,
+    .sync-details-menu,
+    .network-popover,
+    .collaborators-dropdown {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        top: auto;
+        bottom: calc(var(--status-bar-height, 28px) + 12px);
+        margin-bottom: 0;
+        max-width: calc(100vw - 16px);
+    }
+}
+
+@media (max-width: 480px) {
+    .status-bar-bottom {
+        padding: 4px 6px;
+        font-size: 0.7rem;
+    }
+
+    .status-section {
+        gap: 4px;
+    }
+
+    /* Hide peer counts text on phone, keep dots */
+    .peer-counts .online-count span,
+    .peer-counts .total-count span {
+        display: none;
+    }
+
+    .sync-chip-badge {
+        display: none;
+    }
+
+    .btn-history span {
+        display: none;
+    }
+
+    /* Collaborator avatars compact on phone */
+    .collaborator-avatar {
+        height: 22px;
+        min-width: 22px;
+        font-size: 0.65rem;
+        margin-left: -6px;
+    }
+}

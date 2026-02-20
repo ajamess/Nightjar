@@ -90,3 +90,20 @@
 .ps-table td {
   color: var(--text-secondary);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .producer-stats {
+    padding: 12px;
+  }
+  .ps-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ps-table {
+    min-width: 400px;
+  }
+  .ps-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

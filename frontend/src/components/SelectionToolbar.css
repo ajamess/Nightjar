@@ -356,3 +356,25 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .selection-toolbar {
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: calc(100vw - 24px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .link-input {
+    width: 140px;
+    min-width: 0;
+  }
+  .toolbar-btn {
+    padding: 4px 6px;
+    font-size: 0.8rem;
+  }
+  .toolbar-separator {
+    margin: 0 2px;
+  }
+}

@@ -218,3 +218,59 @@
 .tab-bar-btn--dnd.active:hover {
     background: rgba(239, 68, 68, 0.3);
 }
+
+/* ========== Touch targets ========== */
+@media (pointer: coarse) {
+    .tab {
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+
+    .tab-close {
+        min-width: 32px;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.7;
+    }
+
+    .tab-bar-btn {
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+}
+
+/* ========== Mobile Responsive ========== */
+@media (max-width: 768px) {
+    .tab-bar-actions {
+        padding: 0 8px;
+        gap: 4px;
+    }
+
+    .tab-bar-actions .profile-panel {
+        width: min(300px, calc(100vw - 24px));
+        right: -8px;
+    }
+
+    .tab {
+        min-width: 80px;
+        max-width: 160px;
+    }
+}
+
+@media (max-width: 480px) {
+    .tab-bar-actions .tab-bar-btn .btn-label {
+        display: none;
+    }
+
+    .tab {
+        min-width: 60px;
+        max-width: 120px;
+        padding: 8px 10px;
+    }
+
+    .tab-name {
+        font-size: 0.8rem;
+    }
+}

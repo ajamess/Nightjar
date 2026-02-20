@@ -269,3 +269,55 @@
 .ProseMirror s {
     text-decoration: line-through;
 }
+
+/* ========== Mobile Responsive ========== */
+@media (max-width: 768px) {
+    .editor-content-wrapper {
+        padding: 12px;
+    }
+
+    .editor-content {
+        padding: 0 4px;
+    }
+
+    .ProseMirror {
+        padding: 16px;
+        font-size: var(--editor-font-size, 15px);
+    }
+
+    .ProseMirror h1 {
+        font-size: 1.6rem;
+    }
+
+    .ProseMirror h2 {
+        font-size: 1.3rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .editor-content-wrapper {
+        padding: 8px;
+    }
+
+    .editor-content {
+        padding: 0;
+    }
+
+    .ProseMirror {
+        padding: 12px;
+        border-radius: 4px;
+    }
+
+    .ProseMirror pre {
+        padding: 10px;
+        font-size: 0.8rem;
+    }
+
+    .ProseMirror table {
+        font-size: 0.85rem;
+    }
+
+    .ProseMirror th, .ProseMirror td {
+        padding: 6px 8px;
+    }
+}

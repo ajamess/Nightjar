@@ -381,3 +381,19 @@
 .sheet-presence-dot:hover .sheet-presence-name {
     display: inline;
 }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .sheet-readonly-banner {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .sheet-container .fortune-toolbar {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+  }
+  .sheet-container .fortune-name-box {
+    min-width: 40px !important;
+  }
+}

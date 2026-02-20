@@ -495,3 +495,52 @@
     color: #9ca3af;
   }
 }
+
+/* ========== Mobile Responsive ========== */
+@media (max-width: 768px) {
+  .create-workspace {
+    max-width: calc(100vw - 32px);
+  }
+
+  .create-workspace__icon-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  .create-workspace__content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .create-workspace-overlay {
+    padding: 12px;
+  }
+
+  .create-workspace {
+    max-width: none;
+    border-radius: 10px;
+  }
+
+  .create-workspace__icon-grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .create-workspace__header {
+    padding: 12px 16px;
+  }
+
+  .create-workspace__tab {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .create-workspace__input,
+  .create-workspace__textarea {
+    font-size: 16px; /* prevents iOS zoom */
+  }
+
+  .create-workspace__submit {
+    width: 100%;
+  }
+}

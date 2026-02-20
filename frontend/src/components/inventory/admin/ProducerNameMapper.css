@@ -139,3 +139,21 @@
   color: var(--text-muted);
   font-size: 0.78rem;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .producer-name-mapper {
+    padding: 12px;
+  }
+  .pnm-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pnm-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .pnm-actions button {
+    width: 100%;
+  }
+}

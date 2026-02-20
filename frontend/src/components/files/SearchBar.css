@@ -119,3 +119,17 @@
   color: var(--text-tertiary, #6c7086);
   flex-shrink: 0;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .fs-search-bar {
+    max-width: 100%;
+  }
+  .fs-search-input {
+    font-size: 14px;
+  }
+  .fs-search-results {
+    width: calc(100vw - 24px);
+    max-width: 360px;
+  }
+}

@@ -605,3 +605,54 @@
 .kanban-board::-webkit-scrollbar-thumb:hover {
     background: var(--text-tertiary);
 }
+
+/* ========== Mobile Responsive ========== */
+@media (max-width: 768px) {
+    .kanban-header {
+        padding: 12px 16px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .kanban-header h2 {
+        font-size: 1.1rem;
+    }
+
+    .kanban-board {
+        gap: 12px;
+        padding: 12px;
+        scroll-snap-type: x mandatory;
+    }
+
+    .kanban-column {
+        min-width: 260px;
+        max-width: 260px;
+        scroll-snap-align: start;
+    }
+}
+
+@media (max-width: 480px) {
+    .kanban-header {
+        padding: 10px 12px;
+    }
+
+    .kanban-board {
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .kanban-column {
+        min-width: calc(100vw - 32px);
+        max-width: calc(100vw - 32px);
+        scroll-snap-align: center;
+    }
+
+    .btn-add-column {
+        padding: 10px 14px;
+        font-size: 0.8rem;
+    }
+
+    .kanban-card {
+        padding: 10px;
+    }
+}

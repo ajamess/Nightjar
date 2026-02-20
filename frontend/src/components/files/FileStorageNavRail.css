@@ -126,3 +126,26 @@
 .file-storage-nav-rail::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary, #a6adc8);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .file-storage-nav-rail {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color, #313244);
+    padding: 6px 8px;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .file-storage-nav-rail::-webkit-scrollbar { display: none; }
+  .file-storage-nav-rail__item {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+}

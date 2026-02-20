@@ -153,3 +153,21 @@
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .audit-log {
+    padding: 12px;
+  }
+  .al-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .al-table {
+    min-width: 500px;
+  }
+  .al-filters {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}

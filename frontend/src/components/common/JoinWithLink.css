@@ -322,3 +322,26 @@
     background: var(--bg-secondary, #f9fafb);
   }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .join-modal {
+    width: 100%;
+    max-width: calc(100vw - 16px);
+    margin: 12px;
+  }
+  .join-modal__content {
+    padding: 16px;
+  }
+  .join-modal__header {
+    padding: 14px 16px;
+  }
+  .join-modal__footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+  }
+  .join-modal__footer button {
+    width: 100%;
+  }
+}

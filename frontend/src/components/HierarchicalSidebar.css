@@ -794,4 +794,63 @@
   .tree-item {
     min-height: 44px;
   }
+
+  .tree-item__toggle {
+    width: 28px;
+    height: 28px;
+  }
+
+  .tree-item__edit,
+  .tree-item__delete {
+    opacity: 1;
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hierarchical-sidebar__action-btn {
+    min-height: 44px;
+    padding: 8px 4px;
+  }
+
+  .hierarchical-sidebar__settings-btn,
+  .hierarchical-sidebar__help-btn,
+  .hierarchical-sidebar__collapse-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hierarchical-sidebar__help-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* ========== Mobile Responsive — Slide-in overlay ========== */
+@media (max-width: 768px) {
+  .hierarchical-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: var(--z-overlay, 500);
+    width: 280px;
+    min-width: 280px;
+    transform: translateX(0);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* When collapsed on mobile, slide completely off-screen */
+  .hierarchical-sidebar--collapsed {
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
 }

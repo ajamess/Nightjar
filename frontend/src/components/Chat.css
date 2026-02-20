@@ -956,3 +956,107 @@
 .group-name-actions .btn-create:hover {
     background: var(--accent-hover);
 }
+
+/* ========== Touch targets ========== */
+@media (pointer: coarse) {
+    .btn-minimize,
+    .btn-mark-read,
+    .close-search {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .chat-tab {
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+
+    .chat-tab .tab-close {
+        min-width: 32px;
+        min-height: 32px;
+        padding: 8px;
+    }
+
+    .btn-send {
+        width: 48px;
+        height: 48px;
+    }
+
+    .mention-item,
+    .user-search-item {
+        min-height: 44px;
+        padding: 12px 14px;
+    }
+}
+
+/* ========== Mobile Responsive — full-screen chat ========== */
+@media (max-width: 768px) {
+    .chat-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 0;
+        max-width: none;
+        max-height: none;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .chat-header {
+        border-radius: 0;
+        cursor: default;
+    }
+
+    .chat-input-container {
+        border-radius: 0;
+        padding-bottom: calc(12px + var(--safe-area-inset-bottom, 0px));
+    }
+
+    /* Disable drag/resize on mobile */
+    .resize-handle {
+        display: none;
+    }
+
+    .chat-container.dragging,
+    .chat-header:active {
+        cursor: default;
+    }
+
+    .chat-minimized {
+        bottom: calc(50px + var(--safe-area-inset-bottom, 0px));
+        right: 12px;
+    }
+
+    /* User search full-width on mobile */
+    .user-search-panel {
+        width: 95%;
+        max-width: none;
+    }
+
+    /* Group name modal full-width */
+    .group-name-content {
+        width: 95%;
+        max-width: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .chat-header h3 {
+        font-size: 0.85rem;
+    }
+
+    .chat-message {
+        max-width: 92%;
+    }
+
+    .message-content {
+        font-size: 0.85rem;
+        padding: 6px 10px;
+    }
+
+    .chat-input {
+        font-size: 16px; /* prevents iOS zoom on focus */
+    }
+}

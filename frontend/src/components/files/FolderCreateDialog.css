@@ -167,3 +167,22 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .folder-create-dialog {
+    width: calc(100vw - 24px);
+    max-width: 420px;
+  }
+  .folder-create-body {
+    padding: 16px 14px;
+  }
+  .folder-create-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+  .folder-create-footer button {
+    width: 100%;
+  }
+}

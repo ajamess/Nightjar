@@ -325,3 +325,22 @@
     0%, 100% { opacity: 0.7; }
     50% { opacity: 1; }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .presence-indicator {
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .peers-list-panel {
+    width: calc(100vw - 24px);
+    max-width: 320px;
+    max-height: 60vh;
+  }
+  .peer-item {
+    padding: 8px 10px;
+  }
+  .online-count {
+    font-size: 0.75rem;
+  }
+}

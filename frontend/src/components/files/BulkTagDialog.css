@@ -180,3 +180,23 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .bulk-tag-dialog {
+    min-width: unset;
+    width: calc(100vw - 24px);
+    max-width: 480px;
+  }
+  .bulk-tag-body {
+    padding: 12px;
+  }
+  .bulk-tag-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .bulk-tag-footer button {
+    width: 100%;
+  }
+}

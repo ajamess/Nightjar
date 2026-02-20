@@ -83,3 +83,21 @@
   background: rgba(137, 180, 250, 0.25);
   border-color: var(--accent-color, #89b4fa);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .confirm-dialog {
+    min-width: unset;
+    width: calc(100vw - 32px);
+    max-width: 440px;
+    padding: 16px;
+  }
+  .confirm-dialog-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .confirm-dialog-btn {
+    width: 100%;
+    text-align: center;
+  }
+}

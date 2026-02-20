@@ -1235,3 +1235,72 @@
   color: #4f46e5;
   line-height: 1.4;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .workspace-settings__panel {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+  }
+  .workspace-settings__content {
+    padding: 14px 12px;
+  }
+  .workspace-settings__field--row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .workspace-settings__share-controls-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .workspace-settings__share-btn-group {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .workspace-settings__share-btn-group button {
+    flex: 1;
+    min-width: 0;
+  }
+  .workspace-settings__share-menu {
+    min-width: unset;
+    width: 100%;
+  }
+  .workspace-settings__select--expiry {
+    min-width: unset;
+    width: 100%;
+  }
+  .workspace-settings__collaborator {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .workspace-settings__server-input-group,
+  .workspace-settings__relay-input-group {
+    flex-direction: column;
+  }
+  .workspace-settings__server-input-group input,
+  .workspace-settings__relay-input-group input {
+    width: 100%;
+  }
+  .workspace-settings__delete-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .workspace-settings__delete-actions button {
+    width: 100%;
+  }
+  .workspace-settings__pending-demotion-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .workspace-settings__section-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .workspace-settings__tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .workspace-settings__tabs::-webkit-scrollbar { display: none; }
+}

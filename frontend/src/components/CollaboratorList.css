@@ -228,3 +228,21 @@
     border-color: var(--bg-primary, #1f2937);
   }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .collaborator-list__item {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .collaborator-list__item-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.7rem;
+  }
+  .online-collaborators {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}

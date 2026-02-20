@@ -96,3 +96,20 @@
 .ci-save:hover {
   filter: brightness(1.15);
 }
+
+/* ── Mobile ── */
+@media (max-width: 480px) {
+  .capacity-input {
+    min-width: unset;
+    width: 100%;
+    padding: 12px;
+  }
+  .ci-fields {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ci-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

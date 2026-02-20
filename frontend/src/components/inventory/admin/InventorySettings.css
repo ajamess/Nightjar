@@ -169,3 +169,22 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .inventory-settings {
+    padding: 12px;
+  }
+  .is-setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .is-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .is-actions button {
+    width: 100%;
+  }
+}

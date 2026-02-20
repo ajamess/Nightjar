@@ -501,3 +501,35 @@
 .comments-list::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .comments-panel {
+    width: 100vw;
+    max-width: 100vw;
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    border-left: none;
+  }
+  .comments-header {
+    padding: 12px;
+  }
+  .new-comment-input-row {
+    flex-wrap: wrap;
+  }
+  .new-comment-input-row textarea {
+    width: 100%;
+  }
+  .comment-header {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .reply-input-row {
+    flex-wrap: wrap;
+  }
+  .comment-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}

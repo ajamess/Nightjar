@@ -624,3 +624,36 @@
 .settings-actions .danger-btn:hover {
     background: rgba(239, 68, 68, 0.1);
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .changelog-panel {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+  }
+  .changelog-header {
+    padding: 14px 12px;
+  }
+  .changelog-entries {
+    padding: 12px;
+  }
+  .entry-header {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .settings-modal {
+    width: 100%;
+    max-width: calc(100vw - 24px);
+  }
+  .confirm-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .confirm-actions button {
+    width: 100%;
+  }
+  .timeline-slider-container {
+    flex-wrap: wrap;
+  }
+}

@@ -267,3 +267,26 @@
     color: #fca5a5;
   }
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .sync-progress-modal {
+    width: calc(100vw - 24px);
+    max-width: 420px;
+    padding: 20px 16px;
+  }
+  .sync-progress-modal__stats {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .sync-progress-modal__stat {
+    min-width: 80px;
+  }
+  .sync-progress-modal__actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sync-progress-modal__actions button {
+    width: 100%;
+  }
+}

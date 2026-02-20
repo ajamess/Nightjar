@@ -110,3 +110,19 @@
 .user-flyout__action-icon {
     font-size: 1.1rem;
 }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .user-flyout {
+    min-width: unset;
+    width: calc(100vw - 32px);
+    max-width: 260px;
+  }
+  .user-flyout__header {
+    padding: 10px 12px;
+  }
+  .user-flyout__action {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+}
