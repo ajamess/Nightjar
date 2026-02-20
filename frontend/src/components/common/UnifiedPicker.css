@@ -104,16 +104,6 @@
   flex-direction: column;
 }
 
-.unified-picker__popover--inline {
-  position: static;
-  width: 100%;
-  max-height: none;
-  box-shadow: none;
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: 12px;
-  animation: none;
-}
-
 @keyframes unified-picker-slide-in {
   from {
     opacity: 0;
@@ -536,16 +526,6 @@
 .unified-picker__hex-input:focus {
   border-color: var(--accent-color, #6366f1);
   box-shadow: 0 0 0 2px var(--accent-alpha, rgba(99, 102, 241, 0.15));
-}
-
-/* =========================================================================
-   COMPACT MODE (panel always visible, no trigger)
-   ========================================================================= */
-.unified-picker--compact {
-  display: block;
-}
-.unified-picker--compact .unified-picker__popover {
-  max-height: 380px;
 }
 
 /* ========== Touch targets ========== */

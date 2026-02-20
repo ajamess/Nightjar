@@ -72,10 +72,6 @@ describe('UnifiedPicker Component', () => {
       expect(screen.getByTestId('unified-picker-trigger')).toBeDisabled();
     });
 
-    test('renders inline popover in compact mode', () => {
-      render(<UnifiedPicker compact />);
-      expect(screen.getByTestId('unified-picker-popover')).toBeInTheDocument();
-    });
   });
 
   describe('Interactions', () => {
@@ -276,18 +272,30 @@ describe('UnifiedPicker Component', () => {
   });
 
   describe('Mode Prop', () => {
-    test('mode="icon" hides color section', () => {
-      render(<UnifiedPicker compact mode="icon" />);
+    test('mode="icon" hides color section', async () => {
+      render(<UnifiedPicker mode="icon" />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
       expect(screen.queryByTestId('unified-picker-color-section')).not.toBeInTheDocument();
     });
 
-    test('mode="color" hides emoji section', () => {
-      render(<UnifiedPicker compact mode="color" />);
+    test('mode="color" hides emoji section', async () => {
+      render(<UnifiedPicker mode="color" />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
       expect(screen.queryByTestId('unified-picker-emoji-scroll')).not.toBeInTheDocument();
     });
 
-    test('mode="both" shows both sections', () => {
-      render(<UnifiedPicker compact mode="both" />);
+    test('mode="both" shows both sections', async () => {
+      render(<UnifiedPicker mode="both" />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
       expect(screen.getByTestId('unified-picker-emoji-scroll')).toBeInTheDocument();
       expect(screen.getByTestId('unified-picker-color-section')).toBeInTheDocument();
     });

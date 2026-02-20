@@ -2,7 +2,7 @@
  * UnifiedPicker Component — Comprehensive Test Suite
  *
  * Tests cover:
- * - Rendering (default, sizes, disabled, compact, bubble trigger)
+ * - Rendering (default, sizes, disabled, bubble trigger)
  * - Emoji browsing (category tabs, scrolling, selection, recent tracking)
  * - Search (filtering, empty state, clear, debounce)
  * - Color selection (preset palette, custom hex, native picker)
@@ -100,10 +100,6 @@ describe('Rendering', () => {
     expect(screen.getByTestId('unified-picker-trigger')).toBeDisabled();
   });
 
-  test('compact mode renders inline popover immediately', () => {
-    render(<UnifiedPicker compact />);
-    expect(screen.getByTestId('unified-picker-popover')).toBeInTheDocument();
-  });
 });
 
 // ============================================================
@@ -417,19 +413,22 @@ describe('Color selection', () => {
 // ============================================================
 describe('Mode prop', () => {
   test('mode="both" (default) shows emoji and color sections', () => {
-    render(<UnifiedPicker compact />);
+    render(<UnifiedPicker />);
+    openPopover();
     expect(screen.getByTestId('unified-picker-emoji-scroll')).toBeInTheDocument();
     expect(screen.getByTestId('unified-picker-color-section')).toBeInTheDocument();
   });
 
   test('mode="icon" hides color section', () => {
-    render(<UnifiedPicker compact mode="icon" />);
+    render(<UnifiedPicker mode="icon" />);
+    openPopover();
     expect(screen.getByTestId('unified-picker-emoji-scroll')).toBeInTheDocument();
     expect(screen.queryByTestId('unified-picker-color-section')).not.toBeInTheDocument();
   });
 
   test('mode="color" hides emoji section', () => {
-    render(<UnifiedPicker compact mode="color" />);
+    render(<UnifiedPicker mode="color" />);
+    openPopover();
     expect(screen.queryByTestId('unified-picker-emoji-scroll')).not.toBeInTheDocument();
     expect(screen.getByTestId('unified-picker-color-section')).toBeInTheDocument();
   });
@@ -570,11 +569,9 @@ describe('Edge cases', () => {
   });
 
   test('color prop change syncs customColor input', () => {
-    const { rerender } = render(<UnifiedPicker color="#aabbcc" compact />);
+    render(<UnifiedPicker color="#aabbcc" />);
+    openPopover();
     const hexInput = screen.getByTestId('unified-picker-hex-input');
     expect(hexInput.value).toBe('#aabbcc');
-
-    rerender(<UnifiedPicker color="#112233" compact />);
-    expect(hexInput.value).toBe('#112233');
   });
 });

@@ -77,7 +77,6 @@ function UnifiedPicker({
   onColorChange,
   size = 'medium',
   disabled = false,
-  compact = false,
   showStrip,             // deprecated — ignored (kept for backward compat)
   showColorPreview,      // deprecated — ignored
   mode = 'both',
@@ -111,7 +110,7 @@ function UnifiedPicker({
 
   // ---- position the portal popover near the trigger ----
   useEffect(() => {
-    if (!isOpen || !triggerRef.current || compact) return;
+    if (!isOpen || !triggerRef.current) return;
 
     const updatePos = () => {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -149,7 +148,7 @@ function UnifiedPicker({
       window.removeEventListener('resize', updatePos);
       window.removeEventListener('scroll', updatePos, true);
     };
-  }, [isOpen, compact]);
+  }, [isOpen]);
 
   // ---- click-outside to close (checks both trigger and portal popover) ----
   useEffect(() => {
@@ -296,29 +295,27 @@ function UnifiedPicker({
   const showColors = mode === 'both' || mode === 'color';
 
   // ===========================================================================
-  // POPOVER CONTENT (used by both portal and inline compact mode)
+  // POPOVER CONTENT (rendered into portal)
   // ===========================================================================
   const popoverContent = (
     <div
       ref={popoverRef}
-      className={`unified-picker__popover ${compact ? 'unified-picker__popover--inline' : ''}`}
-      style={!compact ? { top: popoverPos.top, left: popoverPos.left } : undefined}
+      className="unified-picker__popover"
+      style={{ top: popoverPos.top, left: popoverPos.left }}
       role="dialog"
       aria-label="Pick icon and color"
       data-testid="unified-picker-popover"
     >
       {/* Close button */}
-      {!compact && (
-        <button
-          type="button"
-          className="unified-picker__close"
-          onClick={() => setIsOpen(false)}
-          aria-label="Close picker"
-          data-testid="unified-picker-close"
-        >
-          ✕
-        </button>
-      )}
+      <button
+        type="button"
+        className="unified-picker__close"
+        onClick={() => setIsOpen(false)}
+        aria-label="Close picker"
+        data-testid="unified-picker-close"
+      >
+        ✕
+      </button>
       <div className="unified-picker__panes">
         {/* ====== EMOJI PANE (left, wider) ====== */}
         {showIcons && (
@@ -515,33 +512,27 @@ function UnifiedPicker({
   // ===========================================================================
   return (
     <div
-      className={`unified-picker ${sizeClass} ${compact ? 'unified-picker--compact' : ''} ${disabled ? 'unified-picker--disabled' : ''}`}
+      className={`unified-picker ${sizeClass} ${disabled ? 'unified-picker--disabled' : ''}`}
       data-testid="unified-picker"
     >
       {/* ---- PREVIEW BUBBLE TRIGGER ---- */}
-      {!compact && (
-        <button
-          ref={triggerRef}
-          type="button"
-          className="unified-picker__bubble"
-          style={{ backgroundColor: color }}
-          onClick={togglePopover}
-          disabled={disabled}
-          aria-expanded={isOpen}
-          aria-haspopup="dialog"
-          title="Change icon and color"
-          data-testid="unified-picker-trigger"
-        >
-          <span className="unified-picker__bubble-icon">{icon}</span>
-        </button>
-      )}
+      <button
+        ref={triggerRef}
+        type="button"
+        className="unified-picker__bubble"
+        style={{ backgroundColor: color }}
+        onClick={togglePopover}
+        disabled={disabled}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        title="Change icon and color"
+        data-testid="unified-picker-trigger"
+      >
+        <span className="unified-picker__bubble-icon">{icon}</span>
+      </button>
 
       {/* ---- POPOVER ---- */}
-      {(isOpen || compact) && (
-        compact
-          ? popoverContent
-          : createPortal(popoverContent, document.body)
-      )}
+      {isOpen && createPortal(popoverContent, document.body)}
     </div>
   );
 }

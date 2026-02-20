@@ -241,7 +241,7 @@ export default function CreateDocumentDialog({
               color={color}
               onIconChange={setIcon}
               onColorChange={setColor}
-              compact
+              size="medium"
             />
           </div>
           
