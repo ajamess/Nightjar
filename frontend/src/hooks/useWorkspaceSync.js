@@ -16,7 +16,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { isElectron } from '../hooks/useEnvironment';
-import { getYjsWebSocketUrl } from '../utils/websocket';
+import { getYjsWebSocketUrl, deliverKeyToServer } from '../utils/websocket';
 import { getStoredKeyChain } from '../utils/keyDerivation';
 import { toString as uint8ArrayToString } from 'uint8arrays';
 import { META_WS_PORT, WS_RECONNECT_MAX_DELAY, TIMEOUT_LONG, AWARENESS_HEARTBEAT_MS } from '../config/constants';
@@ -223,6 +223,26 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
         }
       } else {
         console.warn(`[WorkspaceSync] No keychain found for workspace ${workspaceId}`);
+      }
+    }
+
+    // In web mode (non-Electron), deliver encryption key to server via HTTP POST
+    // This must happen BEFORE the WebSocket provider is created so the server
+    // has the key ready when bindState runs during the first sync
+    if (!isElectron() || serverUrl) {
+      const keyChain = getStoredKeyChain(workspaceId);
+      if (keyChain?.workspaceKey) {
+        const keyBase64 = uint8ArrayToString(keyChain.workspaceKey, 'base64');
+        // Fire-and-forget — don't block provider creation
+        // The server's deferred-load mechanism handles the race if key arrives late
+        deliverKeyToServer(roomName, keyBase64, serverUrl).catch(e => {
+          console.warn('[WorkspaceSync] Failed to deliver key to server:', e);
+        });
+        // Also deliver for the workspace-folders room
+        deliverKeyToServer(`workspace-folders:${workspaceId}`, keyBase64, serverUrl).catch(e => {
+          console.warn('[WorkspaceSync] Failed to deliver folders key to server:', e);
+        });
+        console.log(`[WorkspaceSync] Delivering workspace keys to server for ${workspaceId} (web mode)`);
       }
     }
     

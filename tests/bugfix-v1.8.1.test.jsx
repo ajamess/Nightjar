@@ -56,9 +56,10 @@ describe('Vite Config – loadEnv PAT injection', () => {
 
     // The define block should inject process.env.VITE_GITHUB_PAT
     expect(source).toContain("'process.env.VITE_GITHUB_PAT'");
-    // SECURITY: PAT should only be injected in development mode
-    expect(source).toContain("mode === 'development'");
+    // PAT is injected in all modes (CI provides it at build time for Electron)
     expect(source).toContain('env.VITE_GITHUB_PAT');
+    // Should NOT be gated on development mode — CI builds need it too
+    expect(source).not.toContain("mode === 'development'");
   });
 });
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
+import { EncryptedIndexeddbPersistence } from './utils/EncryptedIndexeddbPersistence';
 import nacl from 'tweetnacl';
 import { fromString as uint8ArrayFromString, toString as uint8ArrayToString } from 'uint8arrays';
 
@@ -49,8 +50,8 @@ import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { useToast } from './contexts/ToastContext';
 import { createCollaboratorTracker } from './utils/collaboratorTracking';
 import { useEnvironment, isElectron, isCapacitor, getPlatform } from './hooks/useEnvironment';
-import { getYjsWebSocketUrl } from './utils/websocket';
-import { parseShareLink, clearUrlFragment } from './utils/sharing';
+import { getYjsWebSocketUrl, deliverKeyToServer } from './utils/websocket';
+import { parseShareLink, clearUrlFragment, isJoinUrl, joinUrlToNightjarLink } from './utils/sharing';
 import { META_WS_PORT, CONTENT_DOC_TYPES } from './config/constants';
 import { handleShareLink, isNightjarShareLink } from './utils/linkHandler';
 
@@ -1056,7 +1057,39 @@ function App() {
 
     // --- Share Link Handling ---
     // Handle workspace share links in URL by redirecting to join dialog with rich consent UI
+    // Supports both:
+    //   1. URL fragment: https://host/#p:pass&perm:e&...  (legacy web deploy)
+    //   2. Join path:    https://host/join/w/payload#fragment  (clickable HTTPS share links)
     useEffect(() => {
+        // Check for clickable HTTPS join URL first (e.g., /join/w/abc123#fragment)
+        const joinIdx = window.location.pathname.indexOf('/join/');
+        if (joinIdx !== -1) {
+            const joinPath = window.location.pathname.slice(joinIdx);
+            const fragment = window.location.hash || '';
+            // Reconstruct the full join URL to convert to nightjar:// format
+            const fullJoinUrl = window.location.origin + joinPath + fragment;
+            const nightjarLink = joinUrlToNightjarLink(fullJoinUrl);
+
+            console.log('[ShareLink] Detected clickable join URL in path:', joinPath);
+
+            // Store the converted nightjar:// link for the join dialog
+            sessionStorage.setItem('pendingShareLink', nightjarLink);
+
+            // Clear the URL for security — replace with clean path
+            try {
+                const cleanPath = window.location.pathname.slice(0, joinIdx) || '/';
+                window.history.replaceState(null, '', cleanPath);
+            } catch (e) {
+                clearUrlFragment(true);
+            }
+
+            // Open the join workspace dialog
+            setCreateWorkspaceMode('join');
+            setShowCreateWorkspaceDialog(true);
+            showToast('Share link detected - please review the invitation details', 'info');
+            return;
+        }
+
         // Clear any stale pending share link from previous session first
         // Only process if there's actually a fragment in the current URL
         const fragment = window.location.hash.slice(1);
@@ -1116,6 +1149,16 @@ function App() {
         const ydoc = new Y.Doc();
         const wsUrl = getWsUrl(workspaceServerUrl);
         console.log(`[App] Creating document ${docId} with wsUrl: ${wsUrl}`);
+
+        // In web mode, deliver encryption key for this document room to the server
+        // before creating the WebSocket provider (so server can decrypt persisted state)
+        if (!isElectronMode && sessionKey) {
+            const keyBase64 = uint8ArrayToString(sessionKey, 'base64');
+            deliverKeyToServer(docId, keyBase64, workspaceServerUrl).catch(e => {
+                console.warn(`[App] Failed to deliver key for document ${docId}:`, e);
+            });
+        }
+
         const provider = new WebsocketProvider(wsUrl, docId, ydoc);
         
         // CRITICAL: Immediately set awareness with user identity to prevent P2P race condition
@@ -1139,10 +1182,11 @@ function App() {
         });
         
         // Add local IndexedDB persistence in web mode (offline-first)
+        // Use encrypted persistence when a session key is available
         let indexeddbProvider = null;
         if (!isElectronMode) {
             const dbName = `nahma-doc-${docId}`;
-            indexeddbProvider = new IndexeddbPersistence(dbName, ydoc);
+            indexeddbProvider = new EncryptedIndexeddbPersistence(dbName, ydoc, sessionKey);
             indexeddbProvider.on('synced', () => {
                 console.log(`[App] Document ${docId.slice(0, 8)}... loaded from IndexedDB`);
             });
@@ -1212,6 +1256,16 @@ function App() {
             // Pass serverUrl for cross-platform sync (Electron joining remote workspace)
             const wsUrl = getWsUrl(workspaceServerUrl);
             console.log(`[App] Opening document ${docId} with wsUrl: ${wsUrl}`);
+
+            // In web mode, deliver encryption key for this document room to the server
+            // before creating the WebSocket provider
+            if (!isElectronMode && sessionKey) {
+                const keyBase64 = uint8ArrayToString(sessionKey, 'base64');
+                deliverKeyToServer(docId, keyBase64, workspaceServerUrl).catch(e => {
+                    console.warn(`[App] Failed to deliver key for document ${docId}:`, e);
+                });
+            }
+
             const provider = new WebsocketProvider(wsUrl, docId, ydoc);
             
             // CRITICAL: Immediately set awareness with user identity to prevent P2P race condition
@@ -1235,10 +1289,11 @@ function App() {
             });
             
             // Add local IndexedDB persistence in web mode (offline-first)
+            // Use encrypted persistence when a session key is available
             let indexeddbProvider = null;
             if (!isElectronMode) {
                 const dbName = `nahma-doc-${docId}`;
-                indexeddbProvider = new IndexeddbPersistence(dbName, ydoc);
+                indexeddbProvider = new EncryptedIndexeddbPersistence(dbName, ydoc, sessionKey);
                 indexeddbProvider.on('synced', () => {
                     console.log(`[App] Document ${docId.slice(0, 8)}... loaded from IndexedDB`);
                 });
@@ -1247,7 +1302,7 @@ function App() {
         }
 
         // Tab was already added via functional updater above
-    }, [workspaceServerUrl, userProfile, userIdentity]);
+    }, [workspaceServerUrl, userProfile, userIdentity, sessionKey]);
 
     // Create an Inventory System — does NOT create a separate Y.Doc
     // Inventory data lives in the workspace-level Y.Doc (see spec §11.2.5)

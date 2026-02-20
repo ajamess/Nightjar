@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { generateShareLink } from '../../utils/sharing';
+import { generateShareLink, generateClickableShareLink, DEFAULT_SHARE_HOST } from '../../utils/sharing';
 import { getBasePath } from '../../utils/websocket';
 import { usePermissions } from '../../contexts/PermissionContext';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback';
@@ -66,6 +66,7 @@ export function EntityShareDialog({
   const [shareLink, setShareLink] = useState('');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
   const [includePassword, setIncludePassword] = useState(true);
+  const [useLegacyFormat, setUseLegacyFormat] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [linkError, setLinkError] = useState('');
   
@@ -75,6 +76,7 @@ export function EntityShareDialog({
     setQrCodeDataUrl('');
     setSelectedPermission('viewer');
     setIncludePassword(true);
+    setUseLegacyFormat(false);
     setIsGenerating(false);
     setLinkError('');
   }, [entityId]);
@@ -109,12 +111,15 @@ export function EntityShareDialog({
       // For web-hosted workspaces, include the server URL so Electron clients can connect
       const serverUrl = !isElectron() ? window.location.origin + getBasePath() : undefined;
       
-      const link = generateShareLink({
+      // Generate clickable HTTPS share link (or legacy nightjar:// if toggled)
+      const link = generateClickableShareLink({
         entityType,
         entityId,
         password: includePassword ? password : undefined,
         permission: selectedPermission,
         serverUrl,
+        shareHost: DEFAULT_SHARE_HOST,
+        useLegacyFormat,
       });
       
       setShareLink(link);
@@ -134,14 +139,14 @@ export function EntityShareDialog({
     } finally {
       setIsGenerating(false);
     }
-  }, [entityType, entityId, selectedPermission, includePassword, password]);
+  }, [entityType, entityId, selectedPermission, includePassword, useLegacyFormat, password]);
   
   // Generate share link when options change
   useEffect(() => {
     if (isOpen && entityId && password) {
       generateLink();
     }
-  }, [isOpen, entityId, selectedPermission, includePassword, password, generateLink]);
+  }, [isOpen, entityId, selectedPermission, includePassword, useLegacyFormat, password, generateLink]);
   
   const handleCopy = async () => {
     await copyToClipboard(shareLink);
@@ -227,6 +232,25 @@ export function EntityShareDialog({
                 >
                   Copy
                 </button>
+              </div>
+            )}
+          </div>
+          
+          {/* Link format toggle (clickable HTTPS vs legacy nightjar://) */}
+          <div className="entity-share__section">
+            <label className="entity-share__toggle">
+              <input
+                type="checkbox"
+                checked={useLegacyFormat}
+                onChange={(e) => setUseLegacyFormat(e.target.checked)}
+              />
+              <span className="entity-share__toggle-text">
+                Use legacy link format (nightjar://)
+              </span>
+            </label>
+            {!useLegacyFormat && (
+              <div className="entity-share__format-note" style={{ fontSize: '0.8rem', color: '#8b949e', marginTop: '4px' }}>
+                🔗 Generates a clickable HTTPS link that opens the app automatically
               </div>
             )}
           </div>

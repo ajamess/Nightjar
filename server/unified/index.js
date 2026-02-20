@@ -29,6 +29,7 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { MeshParticipant } from './mesh.mjs';
 import { SERVER_MODES } from './mesh-constants.mjs';
+import { encryptUpdate, decryptUpdate, keyFromBase64, isValidKey } from './crypto.js';
 
 // Use createRequire to get the same Yjs instance that y-websocket uses
 // This avoids the "Yjs was already imported" warning which breaks CRDT sync
@@ -79,6 +80,34 @@ const DISABLE_PERSISTENCE = process.env.NAHMA_DISABLE_PERSISTENCE === '1' ||
 
 if (DISABLE_PERSISTENCE) {
   console.log('[Config] Persistence DISABLED - running in pure relay mode');
+}
+
+// Encrypted persistence: encrypts Yjs document state at rest in SQLite
+// When enabled, clients must deliver encryption keys via HTTP POST before connecting
+// Feature flag — default OFF. All existing behavior unchanged when off.
+const ENCRYPTED_PERSISTENCE = process.env.ENCRYPTED_PERSISTENCE === '1' ||
+                              process.env.ENCRYPTED_PERSISTENCE === 'true';
+
+if (ENCRYPTED_PERSISTENCE) {
+  console.log('[Config] Encrypted persistence ENABLED - Yjs state will be encrypted at rest');
+}
+
+// In-memory key store for encrypted persistence
+// Maps room name -> Uint8Array encryption key
+// Keys are delivered by clients via POST /api/rooms/:roomName/key before WebSocket connect
+const documentKeys = new Map();
+
+// Track rooms that had encrypted data but no key during bindState (deferred load)
+// These will be loaded when the key arrives
+const pendingKeyLoads = new Set();
+
+/**
+ * Get the encryption key for a document/room
+ * @param {string} roomName - The Yjs room name
+ * @returns {Uint8Array|null} The key, or null if not available
+ */
+function getKeyForDocument(roomName) {
+  return documentKeys.get(roomName) || null;
 }
 
 if (MESH_ENABLED) {
@@ -1100,8 +1129,27 @@ if (!DISABLE_PERSISTENCE) {
       const persistedState = storage.getYjsDoc(docName);
       if (persistedState) {
         try {
-          Y.applyUpdate(ydoc, persistedState, 'persistence-load'); // Mark origin to avoid re-persisting
-          console.log(`[Persistence] Loaded state for room: ${docName.slice(0, 20)}...`);
+          if (ENCRYPTED_PERSISTENCE) {
+            // Encrypted mode: need key to decrypt
+            const key = getKeyForDocument(docName);
+            if (key) {
+              const decrypted = decryptUpdate(new Uint8Array(persistedState), key);
+              if (decrypted) {
+                Y.applyUpdate(ydoc, decrypted, 'persistence-load');
+                console.log(`[Persistence] Loaded encrypted state for room: ${docName.slice(0, 20)}...`);
+              } else {
+                console.warn(`[Persistence] Failed to decrypt state for room: ${docName.slice(0, 20)}... (wrong key?)`);
+              }
+            } else {
+              // No key yet — mark for deferred load when key arrives
+              pendingKeyLoads.add(docName);
+              console.log(`[Persistence] No key for room: ${docName.slice(0, 20)}... — deferring load until key arrives`);
+            }
+          } else {
+            // Unencrypted mode: direct apply (original behavior)
+            Y.applyUpdate(ydoc, persistedState, 'persistence-load');
+            console.log(`[Persistence] Loaded state for room: ${docName.slice(0, 20)}...`);
+          }
         } catch (e) {
           console.error(`[Persistence] Failed to load state for room ${docName}:`, e);
         }
@@ -1122,7 +1170,21 @@ if (!DISABLE_PERSISTENCE) {
         persistenceTimers.set(docName, setTimeout(() => {
           try {
             const state = Y.encodeStateAsUpdate(ydoc);
-            storage.storeYjsDoc(docName, Buffer.from(state));
+            if (ENCRYPTED_PERSISTENCE) {
+              const key = getKeyForDocument(docName);
+              if (key) {
+                const encrypted = encryptUpdate(state, key);
+                if (encrypted) {
+                  storage.storeYjsDoc(docName, Buffer.from(encrypted));
+                } else {
+                  console.error(`[Persistence] Encryption failed for room ${docName} — state NOT persisted`);
+                }
+              } else {
+                console.warn(`[Persistence] No key for room ${docName} — skipping encrypted persist`);
+              }
+            } else {
+              storage.storeYjsDoc(docName, Buffer.from(state));
+            }
           } catch (e) {
             console.error(`[Persistence] Failed to store update for room ${docName}:`, e);
           }
@@ -1140,15 +1202,39 @@ if (!DISABLE_PERSISTENCE) {
       
       try {
         const state = Y.encodeStateAsUpdate(ydoc);
-        storage.storeYjsDoc(docName, Buffer.from(state));
-        console.log(`[Persistence] Final state saved for room: ${docName.slice(0, 20)}...`);
+        if (ENCRYPTED_PERSISTENCE) {
+          const key = getKeyForDocument(docName);
+          if (key) {
+            const encrypted = encryptUpdate(state, key);
+            if (encrypted) {
+              storage.storeYjsDoc(docName, Buffer.from(encrypted));
+              console.log(`[Persistence] Final encrypted state saved for room: ${docName.slice(0, 20)}...`);
+            } else {
+              console.error(`[Persistence] Final encryption failed for room ${docName}`);
+            }
+          } else {
+            console.warn(`[Persistence] No key for final write of room ${docName} — state NOT persisted`);
+          }
+        } else {
+          storage.storeYjsDoc(docName, Buffer.from(state));
+          console.log(`[Persistence] Final state saved for room: ${docName.slice(0, 20)}...`);
+        }
       } catch (e) {
         console.error(`[Persistence] Failed to write final state for room ${docName}:`, e);
+      }
+
+      // Clean up key from memory when doc is destroyed (all clients disconnected)
+      if (ENCRYPTED_PERSISTENCE) {
+        documentKeys.delete(docName);
+        pendingKeyLoads.delete(docName);
       }
     }
   });
 
   console.log('[Persistence] SQLite persistence enabled for y-websocket');
+  if (ENCRYPTED_PERSISTENCE) {
+    console.log('[Persistence] At-rest encryption enabled — clients must deliver keys before connecting');
+  }
 } else {
   console.log('[Persistence] Disabled - server running in pure relay mode');
 }
@@ -1380,6 +1466,93 @@ app.get(BASE_PATH + '/api/workspace/:id/persisted', (req, res) => {
   res.json({ persisted });
 });
 
+// API: Check if encrypted persistence is enabled
+app.get(BASE_PATH + '/api/encrypted-persistence', (req, res) => {
+  res.json({ enabled: ENCRYPTED_PERSISTENCE });
+});
+
+// =============================================================================
+// Encrypted Persistence Key Delivery API
+// =============================================================================
+
+// Rate limiter for key delivery (prevent brute-force key submission)
+const keyDeliveryLimiter = new Map(); // ip -> { count, resetAt }
+const KEY_DELIVERY_RATE_LIMIT = 30; // max per window
+const KEY_DELIVERY_RATE_WINDOW = 60000; // 1 minute
+
+/**
+ * POST /api/rooms/:roomName/key
+ * Delivers an encryption key for a room. Must be called BEFORE WebSocket connect.
+ * Only active when ENCRYPTED_PERSISTENCE=true.
+ * 
+ * Body: { key: "<base64-encoded 32-byte key>" }
+ * Response: { success: true } or { error: "..." }
+ */
+app.post(BASE_PATH + '/api/rooms/:roomName/key', (req, res) => {
+  // Only available when encrypted persistence is enabled
+  if (!ENCRYPTED_PERSISTENCE) {
+    return res.status(404).json({ error: 'Encrypted persistence not enabled' });
+  }
+
+  // Rate limit by IP
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  const now = Date.now();
+  let limiter = keyDeliveryLimiter.get(ip);
+  if (!limiter || now > limiter.resetAt) {
+    limiter = { count: 0, resetAt: now + KEY_DELIVERY_RATE_WINDOW };
+    keyDeliveryLimiter.set(ip, limiter);
+  }
+  limiter.count++;
+  if (limiter.count > KEY_DELIVERY_RATE_LIMIT) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  const { roomName } = req.params;
+  const { key: keyBase64 } = req.body || {};
+
+  if (!roomName || typeof roomName !== 'string' || roomName.length > 512) {
+    return res.status(400).json({ error: 'Invalid room name' });
+  }
+
+  if (!keyBase64 || typeof keyBase64 !== 'string') {
+    return res.status(400).json({ error: 'Missing key' });
+  }
+
+  // Parse and validate the key
+  const key = keyFromBase64(keyBase64);
+  if (!key) {
+    return res.status(400).json({ error: 'Invalid key format (must be valid base64-encoded 32-byte key)' });
+  }
+
+  // Store the key
+  documentKeys.set(roomName, key);
+  console.log(`[EncryptedPersistence] Key registered for room: ${roomName.slice(0, 30)}...`);
+
+  // If this room was waiting for a key (deferred load), trigger the load now
+  if (pendingKeyLoads.has(roomName)) {
+    pendingKeyLoads.delete(roomName);
+    const doc = docs.get(roomName);
+    if (doc && storage) {
+      try {
+        const encryptedState = storage.getYjsDoc(roomName);
+        if (encryptedState) {
+          const decrypted = decryptUpdate(new Uint8Array(encryptedState), key);
+          if (decrypted) {
+            Y.applyUpdate(doc, decrypted, 'persistence-load');
+            console.log(`[EncryptedPersistence] Deferred load completed for room: ${roomName.slice(0, 30)}...`);
+          } else {
+            console.warn(`[EncryptedPersistence] Deferred load failed - decryption returned null for room: ${roomName.slice(0, 30)}...`);
+          }
+        }
+      } catch (e) {
+        console.error(`[EncryptedPersistence] Deferred load error for room ${roomName}:`, e);
+      }
+    }
+  }
+
+  res.json({ success: true });
+});
+
 // =============================================================================
 // Invite API (for unique share links)
 // =============================================================================
@@ -1477,6 +1650,97 @@ app.post(BASE_PATH + '/api/invites/:token/use', (req, res) => {
     console.error('[API] Failed to use invite:', err);
     res.status(500).json({ error: 'Failed to use invite' });
   }
+});
+
+// =============================================================================
+// Clickable Share Link Redirect Shim
+// =============================================================================
+// Handles HTTPS share links in the format:
+//   https://{host}/join/{typeCode}/{base62_payload}#{fragment}
+//
+// The page attempts to open nightjar://{typeCode}/{payload}#{fragment} via
+// deep link (for users with the desktop app installed), and falls back to a
+// friendly download page after a short timeout.
+//
+// SECURITY: The URL #fragment (containing secrets like passwords/keys) is
+// NEVER sent to the server (RFC 3986). It is only available client-side.
+// =============================================================================
+
+const JOIN_REDIRECT_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nightjar – Opening Share Link</title>
+  <meta name="description" content="Nightjar – Privacy-first collaborative editing">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem}
+    .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:2.5rem;max-width:420px;width:100%;text-align:center}
+    .logo{font-size:3rem;margin-bottom:1rem}
+    h1{font-size:1.4rem;margin-bottom:.75rem;color:#e6edf3}
+    p{font-size:.95rem;line-height:1.5;color:#8b949e;margin-bottom:1rem}
+    ol{text-align:left;margin:1rem 0 1.5rem 1.5rem;color:#8b949e;font-size:.9rem;line-height:1.7}
+    .btn{display:inline-block;padding:.65rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:500;text-decoration:none;cursor:pointer;border:none;margin:.35rem}
+    .btn-primary{background:#238636;color:#fff}
+    .btn-primary:hover{background:#2ea043}
+    .btn-secondary{background:transparent;color:#58a6ff;border:1px solid #30363d}
+    .btn-secondary:hover{border-color:#58a6ff}
+    .spinner{width:28px;height:28px;border:3px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .8s linear infinite;margin:1rem auto}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="opening">
+      <div class="logo">🪶</div>
+      <h1>Opening Nightjar…</h1>
+      <p>Attempting to open this share link in the Nightjar desktop app.</p>
+      <div class="spinner"></div>
+    </div>
+    <div id="fallback" class="hidden">
+      <div class="logo">🪶</div>
+      <h1>Nightjar</h1>
+      <p>This is a Nightjar share link. To access the shared content:</p>
+      <ol>
+        <li>Install the Nightjar desktop app</li>
+        <li>Open the app</li>
+        <li>Click this link again (or paste it into the app)</li>
+      </ol>
+      <a href="https://github.com/NiyaNagi/Nightjar/releases" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Download Nightjar</a>
+      <button onclick="tryOpen()" class="btn btn-secondary">Try Opening App Again</button>
+    </div>
+  </div>
+  <script>
+    (function() {
+      var path = window.location.pathname;
+      var joinStr = '/join/';
+      var idx = path.indexOf(joinStr);
+      if (idx === -1) return;
+      // Everything after /join/ maps to the nightjar:// path
+      var remainder = path.slice(idx + joinStr.length);
+      var fragment = window.location.hash || '';
+      var deepLink = 'nightjar://' + remainder + fragment;
+
+      function tryOpen() {
+        window.location.href = deepLink;
+      }
+      window.tryOpen = tryOpen;
+      tryOpen();
+
+      setTimeout(function() {
+        document.getElementById('opening').classList.add('hidden');
+        document.getElementById('fallback').classList.remove('hidden');
+      }, 2000);
+    })();
+  </script>
+</body>
+</html>`;
+
+// Route must be registered BEFORE the SPA fallback catch-all
+app.get((BASE_PATH || '') + '/join/*', (req, res) => {
+  res.type('html').send(JOIN_REDIRECT_HTML);
 });
 
 // Static files (React app)

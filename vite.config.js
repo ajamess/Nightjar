@@ -22,9 +22,9 @@ export default defineConfig(({ mode }) => {
     global: 'globalThis',
     // Inject app version from package.json
     __APP_VERSION__: JSON.stringify(require('./package.json').version),
-    // Inject VITE_GITHUB_PAT for bug report modal (loaded from .env)
-    // SECURITY: Only inject in development — never embed PATs in production bundles
-    'process.env.VITE_GITHUB_PAT': JSON.stringify(mode === 'development' ? (env.VITE_GITHUB_PAT || '') : ''),
+    // Inject VITE_GITHUB_PAT for bug report modal (loaded from .env or CI secrets)
+    // In CI, the PAT is provided via secrets.VITE_GITHUB_PAT at build time
+    'process.env.VITE_GITHUB_PAT': JSON.stringify(env.VITE_GITHUB_PAT || ''),
   },
   optimizeDeps: {
     include: ['yjs', 'y-websocket', 'tweetnacl', 'uint8arrays', '@popperjs/core', '@fortune-sheet/react'],

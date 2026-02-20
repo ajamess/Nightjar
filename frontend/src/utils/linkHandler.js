@@ -11,7 +11,7 @@
  * Reference: docs/WORKSPACE_PERMISSIONS_SPEC.md
  */
 
-import { parseShareLink, isValidShareLink } from './sharing';
+import { parseShareLink, isValidShareLink, isJoinUrl, joinUrlToNightjarLink, parseAnyShareLink } from './sharing';
 import { 
   deriveWorkspaceKey, 
   deriveFolderKey, 
@@ -63,8 +63,8 @@ export async function handleShareLink(link, options) {
   } = options;
 
   try {
-    // 1. Parse the link
-    const parsed = parseShareLink(link);
+    // 1. Parse the link (supports nightjar://, https join URLs, and compressed)
+    const parsed = parseAnyShareLink(link);
     
     if (!parsed) {
       return { 
@@ -227,12 +227,13 @@ export async function handleShareLink(link, options) {
  */
 export async function handleShareLinkWithPassword(link, password, options) {
   try {
-    const parsed = parseShareLink(link);
+    const parsed = parseAnyShareLink(link);
     if (!parsed) {
       return { success: false, error: 'Invalid share link format' };
     }
 
-    // Create new link with password injected
+    // For join URLs, convert to nightjar:// before injecting password
+    // (password injection works on the fragment which is format-agnostic)
     const linkWithPassword = link.includes('#') 
       ? `${link}&p:${encodeURIComponent(password)}`
       : `${link}#p:${encodeURIComponent(password)}`;
@@ -248,22 +249,28 @@ export async function handleShareLinkWithPassword(link, password, options) {
 
 /**
  * Check if a link is a valid Nightjar share link
+ * Supports both nightjar:// protocol links and clickable HTTPS /join/ URLs
  * @param {string} link - Link to check
  * @returns {boolean}
  */
 export function isNightjarShareLink(link) {
   if (!link || typeof link !== 'string') return false;
-  return link.toLowerCase().startsWith('nightjar://');
+  // Classic nightjar:// protocol
+  if (link.toLowerCase().startsWith('nightjar://')) return true;
+  // Clickable HTTPS join URL
+  if (isJoinUrl(link)) return true;
+  return false;
 }
 
 /**
  * Extract entity info from link without fully processing
+ * Supports nightjar://, join URLs, and compressed links
  * @param {string} link - Share link
  * @returns {Object|null} Entity info
  */
 export function peekShareLink(link) {
   try {
-    const parsed = parseShareLink(link);
+    const parsed = parseAnyShareLink(link);
     if (!parsed) return null;
 
     return {

@@ -145,6 +145,83 @@ export function getApiBaseUrl() {
 }
 
 /**
+ * Deliver an encryption key to the server for a specific room.
+ * Must be called BEFORE creating the WebSocket provider so the server
+ * can decrypt persisted state during bindState.
+ * 
+ * Only sends the key in web mode when the server has encrypted persistence enabled.
+ * In Electron mode, keys are sent to the sidecar via WebSocket (different path).
+ * 
+ * @param {string} roomName - The Yjs room name
+ * @param {string} keyBase64 - Base64-encoded 32-byte encryption key
+ * @param {string|null} serverUrl - Optional remote server URL
+ * @returns {Promise<boolean>} True if key was delivered (or not needed), false on error
+ */
+export async function deliverKeyToServer(roomName, keyBase64, serverUrl = null) {
+    // Skip in Electron mode — keys go to sidecar via WebSocket
+    if (isElectron() && !serverUrl) {
+        return true;
+    }
+    
+    if (!roomName || !keyBase64) {
+        console.warn('[KeyDelivery] Missing roomName or key');
+        return false;
+    }
+
+    try {
+        // Determine the API base URL
+        let apiBase;
+        if (serverUrl) {
+            // Remote server: convert ws(s) URL to http(s)
+            apiBase = serverUrl
+                .replace(/^wss:/i, 'https:')
+                .replace(/^ws:/i, 'http:');
+        } else {
+            apiBase = getApiBaseUrl();
+        }
+
+        // First check if server has encrypted persistence enabled
+        const checkRes = await fetch(`${apiBase}/api/encrypted-persistence`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (!checkRes.ok) {
+            // Server might not support this endpoint (older version) — that's fine
+            console.debug('[KeyDelivery] Server does not support encrypted persistence check');
+            return true;
+        }
+        
+        const { enabled } = await checkRes.json();
+        if (!enabled) {
+            // Encrypted persistence not enabled on this server — no need to send key
+            console.debug('[KeyDelivery] Server does not have encrypted persistence enabled');
+            return true;
+        }
+
+        // Deliver the key
+        const encodedRoom = encodeURIComponent(roomName);
+        const res = await fetch(`${apiBase}/api/rooms/${encodedRoom}/key`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: keyBase64 }),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+            console.error(`[KeyDelivery] Failed to deliver key for ${roomName}: ${err.error}`);
+            return false;
+        }
+
+        console.log(`[KeyDelivery] Key delivered for room: ${roomName.slice(0, 30)}...`);
+        return true;
+    } catch (e) {
+        console.error(`[KeyDelivery] Error delivering key for ${roomName}:`, e);
+        return false;
+    }
+}
+
+/**
  * Alias for backwards compatibility
  */
 export const getWsUrl = getYjsWebSocketUrl;
@@ -156,4 +233,5 @@ export default {
     getWsUrl,
     getWebSocketPolyfill,
     setP2PConfig,
+    deliverKeyToServer,
 };

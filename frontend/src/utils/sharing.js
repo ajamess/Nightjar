@@ -1453,6 +1453,164 @@ export const ICE_SERVERS = [
   }
 ];
 
+// =============================================================================
+// Clickable HTTPS Share Links
+// =============================================================================
+// These functions generate and parse clickable HTTPS share links in the format:
+//   https://{shareHost}/join/{typeCode}/{base62_payload}#{fragment}
+//
+// This is a transparent wrapper around the existing nightjar:// link system.
+// The URL path maps 1:1 to nightjar://{typeCode}/{payload} and the #fragment
+// is identical. Secrets remain in the fragment and are NEVER sent to the server.
+//
+// The old nightjar:// format is fully preserved and can be restored by simply
+// not calling these functions (easy revert).
+// =============================================================================
+
+/**
+ * Default share host derived from the production relay server.
+ * Used when no explicit shareHost is provided.
+ */
+export const DEFAULT_SHARE_HOST = 'https://relay.night-jar.co';
+
+/**
+ * Generate a clickable HTTPS share link.
+ *
+ * This is an ADDITIVE wrapper around generateShareLink(). It generates the
+ * same nightjar:// link internally, then rewrites the protocol/path to HTTPS.
+ * All existing link generation logic is untouched.
+ *
+ * @param {Object} options - Same options as generateShareLink(), plus:
+ * @param {string} [options.shareHost] - HTTPS host for the join URL (default: DEFAULT_SHARE_HOST)
+ * @param {boolean} [options.useLegacyFormat] - If true, returns the nightjar:// link instead (easy revert)
+ * @returns {string} Clickable HTTPS share link (or nightjar:// if useLegacyFormat)
+ */
+export function generateClickableShareLink(options = {}) {
+  const { shareHost = DEFAULT_SHARE_HOST, useLegacyFormat = false, ...linkOptions } = options;
+
+  // Generate the standard nightjar:// link using the existing, untouched function
+  const nightjarLink = generateShareLink(linkOptions);
+
+  // Easy revert: caller can opt out of clickable links
+  if (useLegacyFormat) {
+    return nightjarLink;
+  }
+
+  // Convert nightjar://{typeCode}/{payload}#{fragment}
+  //      → https://{host}/join/{typeCode}/{payload}#{fragment}
+  return nightjarLinkToJoinUrl(nightjarLink, shareHost);
+}
+
+/**
+ * Convert a nightjar:// link to a clickable HTTPS /join/ URL.
+ *
+ * @param {string} nightjarLink - A nightjar:// share link
+ * @param {string} [shareHost] - HTTPS host (default: DEFAULT_SHARE_HOST)
+ * @returns {string} HTTPS join URL
+ */
+export function nightjarLinkToJoinUrl(nightjarLink, shareHost = DEFAULT_SHARE_HOST) {
+  if (!nightjarLink) return nightjarLink;
+
+  // Match nightjar://{path}#{fragment} (case-insensitive protocol)
+  const match = nightjarLink.match(/^nightjar:\/\/(.+)$/i);
+  if (!match) return nightjarLink; // not a nightjar link, return as-is
+
+  // match[1] = "{typeCode}/{payload}#{fragment}" or "{typeCode}/{payload}"
+  const remainder = match[1];
+
+  // Normalise shareHost — strip trailing slash
+  const host = shareHost.replace(/\/+$/, '');
+
+  return `${host}/join/${remainder}`;
+}
+
+/**
+ * Convert a clickable HTTPS /join/ URL back to a nightjar:// link.
+ * This is the inverse of nightjarLinkToJoinUrl().
+ *
+ * @param {string} joinUrl - An HTTPS join URL
+ * @returns {string} nightjar:// link
+ */
+export function joinUrlToNightjarLink(joinUrl) {
+  if (!joinUrl || typeof joinUrl !== 'string') return joinUrl;
+
+  // Match https://host/[basePath]/join/{rest}#{fragment}
+  // The /join/ segment is the anchor — everything after it maps to nightjar://
+  const joinIdx = joinUrl.indexOf('/join/');
+  if (joinIdx === -1) return joinUrl; // not a join URL
+
+  const afterJoin = joinUrl.slice(joinIdx + '/join/'.length);
+  // afterJoin = "{typeCode}/{payload}#{fragment}"
+
+  return `nightjar://${afterJoin}`;
+}
+
+/**
+ * Check whether a URL is a clickable Nightjar join link.
+ *
+ * @param {string} url - URL to test
+ * @returns {boolean}
+ */
+export function isJoinUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  // Match http(s)://host/[...]/join/{typeCode}/{payload}
+  return /^https?:\/\/.+\/join\/[wfd]\/[A-Za-z0-9]+/.test(url);
+}
+
+/**
+ * Parse a clickable HTTPS join URL. Returns the same object as parseShareLink().
+ * Converts the URL back to nightjar:// format and delegates to parseShareLink().
+ *
+ * @param {string} joinUrl - HTTPS join URL
+ * @returns {Object} Parsed link data (same shape as parseShareLink)
+ */
+export function parseJoinUrl(joinUrl) {
+  const nightjarLink = joinUrlToNightjarLink(joinUrl);
+  return parseShareLink(nightjarLink);
+}
+
+/**
+ * Parse any share link format — nightjar://, https join URL, or compressed.
+ * This is a universal entry point that detects the format and delegates.
+ *
+ * @param {string} link - Any supported share link format
+ * @returns {Object} Parsed link data
+ */
+export function parseAnyShareLink(link) {
+  if (!link || typeof link !== 'string') {
+    throw new Error('Invalid share link: empty or not a string');
+  }
+  const trimmed = link.trim();
+
+  // Clickable HTTPS join URL
+  if (isJoinUrl(trimmed)) {
+    return parseJoinUrl(trimmed);
+  }
+
+  // Standard nightjar:// (including compressed)
+  return parseShareLink(trimmed);
+}
+
+/**
+ * Validate any share link format (nightjar://, join URL, or compressed).
+ *
+ * @param {string} link - Link to validate
+ * @returns {boolean}
+ */
+export function isValidAnyShareLink(link) {
+  try {
+    if (!link) return false;
+    const trimmed = link.trim();
+    if (isJoinUrl(trimmed)) {
+      parseJoinUrl(trimmed);
+      return true;
+    }
+    return isValidShareLink(trimmed);
+  } catch {
+    return false;
+  }
+}
+
 // Export constants for use in other modules
 export {
   ENTITY_TYPES,

@@ -11,6 +11,14 @@ import {
   isValidShareLink,
   createNewEntity,
   createNewDocument,
+  generateClickableShareLink,
+  nightjarLinkToJoinUrl,
+  joinUrlToNightjarLink,
+  isJoinUrl,
+  parseJoinUrl,
+  parseAnyShareLink,
+  isValidAnyShareLink,
+  DEFAULT_SHARE_HOST,
 } from '../frontend/src/utils/sharing';
 
 // Setup crypto.subtle for Node.js test environment
@@ -243,6 +251,234 @@ describe('Sharing Utilities', () => {
       
       expect(result.documentId).toBeDefined();
       expect(result.shareLink).toContain('p:legacy-pass');
+    });
+  });
+
+  // =========================================================================
+  // Clickable HTTPS Share Links
+  // =========================================================================
+
+  describe('generateClickableShareLink', () => {
+    test('generates HTTPS join URL by default', () => {
+      const link = generateClickableShareLink({
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'editor',
+        hasPassword: true,
+        password: 'test-pass',
+      });
+
+      expect(link).toMatch(/^https:\/\/relay\.night-jar\.co\/join\/w\//);
+      expect(link).toContain('perm:e');
+      expect(link).toContain('p:test-pass');
+    });
+
+    test('uses custom shareHost', () => {
+      const link = generateClickableShareLink({
+        entityType: 'document',
+        entityId: sampleDocumentId,
+        permission: 'viewer',
+        hasPassword: true,
+        password: 'doc-pass',
+        shareHost: 'https://my-relay.example.com',
+      });
+
+      expect(link).toMatch(/^https:\/\/my-relay\.example\.com\/join\/d\//);
+    });
+
+    test('returns nightjar:// when useLegacyFormat is true', () => {
+      const link = generateClickableShareLink({
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'owner',
+        hasPassword: true,
+        password: 'legacy',
+        useLegacyFormat: true,
+      });
+
+      expect(link).toMatch(/^nightjar:\/\/w\//i);
+      expect(link).not.toContain('https://');
+    });
+
+    test('DEFAULT_SHARE_HOST is set', () => {
+      expect(DEFAULT_SHARE_HOST).toBe('https://relay.night-jar.co');
+    });
+  });
+
+  describe('nightjarLinkToJoinUrl / joinUrlToNightjarLink', () => {
+    test('converts nightjar:// to HTTPS join URL', () => {
+      const nightjarLink = 'nightjar://w/abc123#p:test&perm:e';
+      const joinUrl = nightjarLinkToJoinUrl(nightjarLink);
+
+      expect(joinUrl).toBe('https://relay.night-jar.co/join/w/abc123#p:test&perm:e');
+    });
+
+    test('converts HTTPS join URL back to nightjar://', () => {
+      const joinUrl = 'https://relay.night-jar.co/join/w/abc123#p:test&perm:e';
+      const nightjarLink = joinUrlToNightjarLink(joinUrl);
+
+      expect(nightjarLink).toBe('nightjar://w/abc123#p:test&perm:e');
+    });
+
+    test('round-trip: nightjar → join → nightjar preserves link', () => {
+      const original = generateShareLink({
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'editor',
+        hasPassword: true,
+        password: 'round-trip',
+      });
+
+      const joinUrl = nightjarLinkToJoinUrl(original);
+      const restored = joinUrlToNightjarLink(joinUrl);
+
+      expect(restored).toBe(original);
+    });
+
+    test('round-trip: generate clickable → convert back → parse', () => {
+      const clickableLink = generateClickableShareLink({
+        entityType: 'folder',
+        entityId: sampleFolderId,
+        permission: 'viewer',
+        hasPassword: true,
+        password: 'clickable-test',
+      });
+
+      // Convert back to nightjar://
+      const nightjarLink = joinUrlToNightjarLink(clickableLink);
+      const parsed = parseShareLink(nightjarLink);
+
+      expect(parsed.entityType).toBe('folder');
+      expect(parsed.entityId).toBe(sampleFolderId);
+      expect(parsed.permission).toBe('viewer');
+      expect(parsed.embeddedPassword).toBe('clickable-test');
+    });
+
+    test('handles custom host with trailing slash', () => {
+      const result = nightjarLinkToJoinUrl('nightjar://d/xyz', 'https://example.com/');
+      expect(result).toBe('https://example.com/join/d/xyz');
+    });
+
+    test('handles join URL with base path', () => {
+      const joinUrl = 'https://night-jar.co/toot/join/w/abc123#perm:e';
+      const nightjarLink = joinUrlToNightjarLink(joinUrl);
+      expect(nightjarLink).toBe('nightjar://w/abc123#perm:e');
+    });
+
+    test('returns input unchanged for non-matching strings', () => {
+      expect(nightjarLinkToJoinUrl('http://example.com')).toBe('http://example.com');
+      expect(joinUrlToNightjarLink('nightjar://w/abc')).toBe('nightjar://w/abc');
+      expect(nightjarLinkToJoinUrl(null)).toBe(null);
+      expect(joinUrlToNightjarLink(null)).toBe(null);
+    });
+  });
+
+  describe('isJoinUrl', () => {
+    test('recognizes valid join URLs', () => {
+      expect(isJoinUrl('https://relay.night-jar.co/join/w/abc123')).toBe(true);
+      expect(isJoinUrl('https://relay.night-jar.co/join/f/abc123#perm:e')).toBe(true);
+      expect(isJoinUrl('https://relay.night-jar.co/join/d/abc123#p:pass&perm:v')).toBe(true);
+      expect(isJoinUrl('http://localhost:3000/join/w/abc123')).toBe(true);
+    });
+
+    test('rejects non-join URLs', () => {
+      expect(isJoinUrl('nightjar://w/abc123')).toBe(false);
+      expect(isJoinUrl('https://example.com/other/path')).toBe(false);
+      expect(isJoinUrl('')).toBe(false);
+      expect(isJoinUrl(null)).toBe(false);
+      expect(isJoinUrl(undefined)).toBe(false);
+    });
+  });
+
+  describe('parseJoinUrl', () => {
+    test('parses HTTPS join URL same as nightjar:// link', () => {
+      const options = {
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'editor',
+        hasPassword: true,
+        password: 'parse-test',
+      };
+
+      // Generate both formats
+      const nightjarLink = generateShareLink(options);
+      const joinUrl = nightjarLinkToJoinUrl(nightjarLink);
+
+      // Parse both
+      const fromNightjar = parseShareLink(nightjarLink);
+      const fromJoinUrl = parseJoinUrl(joinUrl);
+
+      // Should produce identical results
+      expect(fromJoinUrl.entityType).toBe(fromNightjar.entityType);
+      expect(fromJoinUrl.entityId).toBe(fromNightjar.entityId);
+      expect(fromJoinUrl.permission).toBe(fromNightjar.permission);
+      expect(fromJoinUrl.embeddedPassword).toBe(fromNightjar.embeddedPassword);
+    });
+  });
+
+  describe('parseAnyShareLink', () => {
+    test('parses nightjar:// links', () => {
+      const link = generateShareLink({
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'owner',
+        hasPassword: true,
+        password: 'any-test',
+      });
+
+      const parsed = parseAnyShareLink(link);
+      expect(parsed.entityType).toBe('workspace');
+      expect(parsed.entityId).toBe(sampleWorkspaceId);
+    });
+
+    test('parses HTTPS join URLs', () => {
+      const clickable = generateClickableShareLink({
+        entityType: 'document',
+        entityId: sampleDocumentId,
+        permission: 'viewer',
+        hasPassword: true,
+        password: 'any-test-2',
+      });
+
+      const parsed = parseAnyShareLink(clickable);
+      expect(parsed.entityType).toBe('document');
+      expect(parsed.entityId).toBe(sampleDocumentId);
+      expect(parsed.permission).toBe('viewer');
+    });
+
+    test('throws on invalid input', () => {
+      expect(() => parseAnyShareLink('')).toThrow();
+      expect(() => parseAnyShareLink(null)).toThrow();
+    });
+  });
+
+  describe('isValidAnyShareLink', () => {
+    test('validates nightjar:// links', () => {
+      const link = generateShareLink({
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'editor',
+        hasPassword: true,
+        password: 'valid-test',
+      });
+      expect(isValidAnyShareLink(link)).toBe(true);
+    });
+
+    test('validates HTTPS join URLs', () => {
+      const clickable = generateClickableShareLink({
+        entityType: 'workspace',
+        entityId: sampleWorkspaceId,
+        permission: 'editor',
+        hasPassword: true,
+        password: 'valid-test-2',
+      });
+      expect(isValidAnyShareLink(clickable)).toBe(true);
+    });
+
+    test('rejects garbage', () => {
+      expect(isValidAnyShareLink('')).toBe(false);
+      expect(isValidAnyShareLink('http://google.com')).toBe(false);
+      expect(isValidAnyShareLink(null)).toBe(false);
     });
   });
 });
