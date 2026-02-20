@@ -3,6 +3,7 @@ import { useWorkspaces } from './WorkspaceContext';
 import { useWorkspaceSyncContext } from './WorkspaceSyncContext';
 import { deriveFolderKey, storeKeyChain, getStoredKeyChain } from '../utils/keyDerivation';
 import { isElectron } from '../hooks/useEnvironment';
+import { logBehavior } from '../utils/logger';
 
 /**
  * Folder structure (updated for workspace support):
@@ -241,6 +242,7 @@ export function FolderProvider({ children }) {
       console.error('Cannot create folder without a workspace');
       return null;
     }
+    logBehavior('folder', 'create_folder', { hasParent: !!parentId });
     
     // Enforce name length limit
     if (name && name.length > 200) {
@@ -307,6 +309,7 @@ export function FolderProvider({ children }) {
   const updateFolder = useCallback((folderId, updates) => {
     const folder = allFoldersRef.current.find(f => f.id === folderId);
     if (!folder || folder.isSystem) return;
+    logBehavior('folder', 'update_folder');
 
     // Sync via appropriate mechanism
     const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
@@ -331,6 +334,7 @@ export function FolderProvider({ children }) {
   // Rename a folder (convenience wrapper around updateFolder)
   const renameFolder = useCallback((folderId, newName) => {
     if (!newName?.trim()) return;
+    logBehavior('folder', 'rename_folder');
     updateFolder(folderId, { name: newName.trim() });
   }, [updateFolder]);
 
@@ -338,6 +342,7 @@ export function FolderProvider({ children }) {
   const deleteFolder = useCallback((folderId, deletedBy = null) => {
     const folder = allFoldersRef.current.find(f => f.id === folderId);
     if (!folder || folder.isSystem) return;
+    logBehavior('folder', 'delete_folder');
 
     // Sync via appropriate mechanism
     const shouldUseLocalMode = isElectronMode && !isRemoteWorkspace && isWorkspaceOwner;
@@ -371,6 +376,7 @@ export function FolderProvider({ children }) {
   
   // Restore a folder from trash
   const restoreFolder = useCallback((folderId) => {
+    logBehavior('folder', 'restore_folder');
     const currentFolders = allFoldersRef.current;
     const folder = currentFolders.find(f => f.id === folderId);
     if (!folder || !folder.deletedAt) return;
@@ -460,6 +466,7 @@ export function FolderProvider({ children }) {
 
   // Move a document to a folder
   const moveDocumentToFolder = useCallback((documentId, folderId) => {
+    logBehavior('folder', 'move_document_to_folder', { toFolder: !!folderId });
     // Resolve virtual folder IDs
     const actualFolderId = folderId && SYSTEM_FOLDER_IDS.includes(folderId.split(':').pop())
       ? null

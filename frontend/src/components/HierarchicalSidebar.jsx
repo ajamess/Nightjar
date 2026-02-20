@@ -21,6 +21,7 @@ import { useWorkspaces } from '../contexts/WorkspaceContext';
 import { useFolders } from '../contexts/FolderContext';
 import { ensureContrastWithWhite, createColorGradient, getTextColorForBackground, getDominantColor } from '../utils/colorUtils';
 import NightjarMascot from './NightjarMascot';
+import { logBehavior } from '../utils/logger';
 import './HierarchicalSidebar.css';
 
 /**
@@ -511,6 +512,7 @@ const HierarchicalSidebar = ({
             variant: 'danger'
         });
         if (confirmed) {
+            logBehavior(type === 'folder' ? 'folder' : 'document', `delete_${type}_confirmed`);
             if (type === 'folder') {
                 onDeleteFolder?.(id);
             } else {
@@ -531,6 +533,7 @@ const HierarchicalSidebar = ({
             setRenameValue('');
             return;
         }
+        logBehavior(renamingItem.type === 'folder' ? 'folder' : 'document', `rename_${renamingItem.type}_submitted`);
         
         if (renamingItem.type === 'folder') {
             onRenameFolder?.(renamingItem.id, renameValue.trim());
@@ -693,6 +696,7 @@ const HierarchicalSidebar = ({
     // Handle item selection
     const handleSelect = useCallback((id, type) => {
         if (type === 'document') {
+            logBehavior('navigation', 'select_document_sidebar');
             onSelectDocument?.(id);
         }
         // Folders don't need special handling - just expand/collapse
@@ -704,6 +708,7 @@ const HierarchicalSidebar = ({
             // Avoid no-op: check if doc is already in the target folder
             const doc = documents.find(d => d.id === documentId);
             if (doc && doc.folderId === folderId) return;
+            logBehavior('document', 'drag_drop_to_folder');
             onMoveDocument(documentId, folderId);
         }
     }, [onMoveDocument, documents]);
@@ -727,11 +732,13 @@ const HierarchicalSidebar = ({
     
     // Workspace handlers
     const handleOpenCreateWorkspace = useCallback(() => {
+        logBehavior('workspace', 'open_create_workspace_dialog');
         setCreateWorkspaceMode('create');
         setShowCreateWorkspace(true);
     }, []);
     
     const handleOpenJoinWorkspace = useCallback(() => {
+        logBehavior('workspace', 'open_join_workspace_dialog');
         setCreateWorkspaceMode('join');
         setShowCreateWorkspace(true);
     }, []);

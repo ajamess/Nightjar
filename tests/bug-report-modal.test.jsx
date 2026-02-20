@@ -54,6 +54,11 @@ const mockGetLogs = jest.fn().mockReturnValue([
 
 jest.mock('../frontend/src/utils/logger', () => ({
   getLogs: () => mockGetLogs(),
+  logBehavior: jest.fn(),
+}));
+
+jest.mock('../frontend/src/utils/websocket', () => ({
+  getBasePath: jest.fn().mockReturnValue(''),
 }));
 
 // Mock html2canvas (lazy-imported via dynamic import())

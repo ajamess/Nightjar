@@ -16,8 +16,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { generateDiagnosticReport, formatDiagnosticReport } from '../utils/diagnostics';
-import { getLogs } from '../utils/logger';
+import { getLogs, logBehavior } from '../utils/logger';
 import { useToast } from '../contexts/ToastContext';
+import { getBasePath } from '../utils/websocket';
 import './BugReportModal.css';
 
 const GITHUB_ISSUES_PAGE = 'https://github.com/NiyaNagi/Nightjar/issues/new?labels=bug';
@@ -154,34 +155,60 @@ function downloadDataUrl(dataUrl, filename) {
 }
 
 /**
- * Create a GitHub issue via the REST API using a Personal Access Token.
+ * Create a GitHub issue via the server-side proxy endpoint.
+ * Falls back to direct GitHub API if a PAT is available client-side.
  * Returns the HTML URL of the created issue on success.
  */
 export async function createGitHubIssue(title, body) {
-  const pat = typeof process !== 'undefined' && process.env?.VITE_GITHUB_PAT;
-  if (!pat) throw new Error('No GitHub PAT configured');
+  // Strategy 1: Use server-side proxy (works in both web and Electron)
+  try {
+    const serverUrl = typeof window !== 'undefined'
+      ? window.location.origin + getBasePath()
+      : '';
+    const proxyResponse = await fetch(`${serverUrl}/api/bug-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body }),
+    });
 
-  const response = await fetch('https://api.github.com/repos/NiyaNagi/Nightjar/issues', {
-    method: 'POST',
-    headers: {
-      'Authorization': `token ${pat}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/vnd.github.v3+json',
-    },
-    body: JSON.stringify({
-      title,
-      body,
-      labels: ['bug'],
-    }),
-  });
+    if (proxyResponse.ok) {
+      const data = await proxyResponse.json();
+      if (data.url) return data.url;
+    }
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`GitHub API error ${response.status}: ${errorData.message || response.statusText}`);
+    // If server says 503 (not configured) or 429 (rate limited), fall through
+    if (proxyResponse.status !== 503 && proxyResponse.status !== 429) {
+      const errData = await proxyResponse.json().catch(() => ({}));
+      console.warn('[BugReport] Server proxy error:', proxyResponse.status, errData.error);
+    }
+  } catch (proxyErr) {
+    // Network error (e.g. Electron offline, server unreachable) — fall through
+    console.warn('[BugReport] Server proxy unavailable:', proxyErr.message);
   }
 
-  const data = await response.json();
-  return data.html_url;
+  // Strategy 2: Direct GitHub API with client-side PAT (CI-injected builds)
+  const pat = typeof process !== 'undefined' && process.env?.VITE_GITHUB_PAT;
+  if (pat) {
+    const response = await fetch('https://api.github.com/repos/NiyaNagi/Nightjar/issues', {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${pat}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({ title, body, labels: ['bug'] }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`GitHub API error ${response.status}: ${errorData.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.html_url;
+  }
+
+  throw new Error('Bug report submission unavailable — no server proxy or PAT configured');
 }
 
 export default function BugReportModal({ isOpen, onClose, context }) {
@@ -296,6 +323,7 @@ export default function BugReportModal({ isOpen, onClose, context }) {
       titleRef.current?.focus();
       return;
     }
+    logBehavior('app', 'submit_bug_report');
 
     setIsSubmitting(true);
 

@@ -21,6 +21,7 @@ import { getBasePath } from '../utils/websocket';
 import { IconColorPicker } from './common';
 import { useConfirmDialog } from './common/ConfirmDialog';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { logBehavior } from '../utils/logger';
 import './WorkspaceSettings.css';
 
 // Expiry options for signed invites
@@ -291,6 +292,7 @@ export default function WorkspaceSettings({
   // Save workspace name/icon/color changes
   const handleSave = async () => {
     if (!canEditWorkspace) return;
+    logBehavior('workspace', 'save_settings');
     
     setIsSaving(true);
     try {
@@ -421,6 +423,7 @@ export default function WorkspaceSettings({
 
   // Copy different share formats
   const handleCopyFormat = async (format) => {
+    logBehavior('invite', 'copy_share_link', { format });
     const link = await createShareLink();
     let textToCopy = link;
     
@@ -468,6 +471,7 @@ export default function WorkspaceSettings({
     const isOnlyMemberLocal = totalMembers <= 1;
     
     if (!isOwner && !isOnlyMemberLocal) return;
+    logBehavior('workspace', 'delete_workspace_confirmed');
     
     try {
       await deleteWorkspace(workspace.id);
@@ -480,6 +484,7 @@ export default function WorkspaceSettings({
   
   // Leave workspace (editors/viewers only, or owners after transferring)
   const handleLeave = async () => {
+    logBehavior('workspace', 'leave_workspace_confirmed');
     await leaveWorkspace(workspace.id);
     onClose?.();
   };
@@ -487,6 +492,7 @@ export default function WorkspaceSettings({
   // Owner leave with ownership transfer
   const handleOwnerLeave = async () => {
     if (!selectedNewOwner || !onTransferOwnership) return;
+    logBehavior('workspace', 'owner_leave_with_transfer');
     
     try {
       // Transfer ownership first
@@ -510,6 +516,7 @@ export default function WorkspaceSettings({
   // Kick a member from workspace (owners only)
   const handleKickMember = async (publicKey) => {
     if (!isOwner || !onKickMember) return;
+    logBehavior('membership', 'kick_member_from_settings');
     
     // Find member name for toast feedback
     const member = Object.values(members).find(m => m.publicKey === publicKey);

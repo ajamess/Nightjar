@@ -48,6 +48,7 @@ import { usePermissions } from './contexts/PermissionContext';
 import { useIdentity } from './contexts/IdentityContext';
 import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { useToast } from './contexts/ToastContext';
+import { logBehavior } from './utils/logger';
 import { createCollaboratorTracker } from './utils/collaboratorTracking';
 import { useEnvironment, isElectron, isCapacitor, getPlatform } from './hooks/useEnvironment';
 import { getYjsWebSocketUrl, deliverKeyToServer } from './utils/websocket';
@@ -386,6 +387,7 @@ function App() {
     // --- Onboarding Handler ---
     const handleOnboardingComplete = useCallback(async (identity, hadLocalData = false) => {
         try {
+            logBehavior('identity', 'onboarding_complete', { hadLocalData });
             console.log('[App] Creating identity from onboarding:', identity.handle);
             
             // Use the new identity manager to create identity with PIN
@@ -453,6 +455,7 @@ function App() {
 
     // --- Lock Screen Handlers ---
     const handleLockScreenUnlock = useCallback((identityData, metadata) => {
+        logBehavior('identity', 'lock_screen_unlocked');
         console.log('[App] Unlocked identity:', metadata?.handle);
         unlockApp();
         
@@ -469,11 +472,13 @@ function App() {
     }, [unlockApp, showToast]);
     
     const handleSwitchIdentity = useCallback(() => {
+        logBehavior('identity', 'switch_identity_initiated');
         setIsLocked(false);
         setShowIdentitySelector(true);
     }, [setIsLocked]);
     
     const handleIdentitySelected = useCallback((identityData, metadata) => {
+        logBehavior('identity', 'identity_selected');
         console.log('[App] Identity selected:', metadata?.handle);
         setShowIdentitySelector(false);
         
@@ -516,6 +521,7 @@ function App() {
     // --- Kick Member Handler with Toast Feedback ---
     const handleKickMember = useCallback((publicKey, memberName = 'member') => {
         if (!syncKickMember) return;
+        logBehavior('membership', 'kick_member');
         
         // Check if member is currently online
         const isOnline = workspaceCollaborators?.some(c => c.publicKey === publicKey);
@@ -534,6 +540,7 @@ function App() {
     // --- Update Member Permission Handler with Toast Feedback ---
     const handleUpdateMemberPermission = useCallback((publicKey, newPermission, memberName = 'member') => {
         if (!syncUpdateMemberPermission) return;
+        logBehavior('permission', 'update_member_permission', { newPermission });
         
         const result = syncUpdateMemberPermission(publicKey, newPermission);
         const label = newPermission.charAt(0).toUpperCase() + newPermission.slice(1);
@@ -550,6 +557,7 @@ function App() {
     // --- Respond to Pending Demotion Handler ---
     const handleRespondToPendingDemotion = useCallback((accept) => {
         if (!syncRespondToPendingDemotion) return;
+        logBehavior('permission', accept ? 'demotion_accepted' : 'demotion_declined');
         
         const result = syncRespondToPendingDemotion(accept);
         if (result) {
@@ -1125,6 +1133,7 @@ function App() {
             showToast('Please create a workspace first', 'error');
             return null;
         }
+        logBehavior('document', 'create_document', { docType, hasFolderId: !!folderId });
         
         // Enforce name length limit
         if (name && name.length > 200) {
@@ -1224,6 +1233,7 @@ function App() {
     }, [currentWorkspaceId, showToast, syncAddDocument, workspaceServerUrl, userProfile, userIdentity]);
 
     const openDocument = useCallback((docId, name, docType = DOC_TYPES.TEXT) => {
+        logBehavior('document', 'open_document', { docType });
         // Use functional updater to avoid stale closure on openTabs
         let alreadyOpen = false;
         setOpenTabs(prev => {
@@ -1312,6 +1322,7 @@ function App() {
             showToast('Please create a workspace first', 'error');
             return null;
         }
+        logBehavior('document', 'create_inventory_system');
         // One-per-workspace guard: if an inventory system already exists, open it instead
         const existingInventory = syncedDocuments.find(
             d => d.type === DOC_TYPES.INVENTORY && d.workspaceId === currentWorkspaceId && !d.deletedAt
@@ -1375,6 +1386,7 @@ function App() {
             showToast('Please create a workspace first', 'error');
             return null;
         }
+        logBehavior('document', 'create_file_storage');
         // One-per-workspace guard: if a file storage system already exists, open it instead
         const existingFileStorage = syncedDocuments.find(
             d => d.type === DOC_TYPES.FILE_STORAGE && d.workspaceId === currentWorkspaceId && !d.deletedAt
@@ -1431,6 +1443,7 @@ function App() {
     }, [currentWorkspaceId, showToast, publicIdentity, syncAddFileStorageSystem, syncAddDocument, syncedDocuments, openDocument]);
 
     const closeDocument = useCallback((docId) => {
+        logBehavior('document', 'close_document');
         setOpenTabs(prev => {
             const tabIndex = prev.findIndex(t => t.id === docId);
             if (tabIndex === -1) return prev;
@@ -1467,6 +1480,7 @@ function App() {
     }, []);
 
     const deleteDocument = useCallback((docId) => {
+        logBehavior('document', 'delete_document');
         closeDocument(docId);
 
         // ALWAYS remove from shared document list so P2P peers see the deletion
@@ -1508,6 +1522,7 @@ function App() {
 
     // Move document to a folder (or to root if folderId is null)
     const handleMoveDocument = useCallback((documentId, folderId) => {
+        logBehavior('document', 'move_document', { toFolder: !!folderId });
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(documentId, { folderId: folderId || null });
         
@@ -1520,6 +1535,7 @@ function App() {
     // Rename document
     const renameDocument = useCallback((docId, newName) => {
         if (!newName?.trim()) return;
+        logBehavior('document', 'rename_document');
         
         // ALWAYS update via Yjs sync for P2P sharing
         syncUpdateDocument(docId, { name: newName.trim() });
@@ -1544,6 +1560,7 @@ function App() {
 
     const copyInviteLink = useCallback(() => {
         if (inviteLink) {
+            logBehavior('invite', 'copy_invite_link');
             navigator.clipboard.writeText(inviteLink);
             showToast('Invite link copied!', 'success');
         }
@@ -1551,6 +1568,7 @@ function App() {
 
     const toggleTor = useCallback(async () => {
         const enabling = !torEnabled;
+        logBehavior('app', enabling ? 'tor_enabled' : 'tor_disabled');
         
         // 1. Actually start/stop Tor via main process (spawns/kills daemon)
         if (window.electronAPI?.tor) {
@@ -1586,6 +1604,7 @@ function App() {
     }, [torEnabled, showToast]);
 
     const toggleFullscreen = useCallback(() => {
+        logBehavior('ui', 'toggle_fullscreen');
         setIsFullscreen(prev => !prev);
     }, []);
 

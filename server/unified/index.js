@@ -1554,6 +1554,99 @@ app.post(BASE_PATH + '/api/rooms/:roomName/key', (req, res) => {
 });
 
 // =============================================================================
+// Bug Report Proxy (creates GitHub issues server-side using PAT)
+// =============================================================================
+
+// Simple in-memory rate limiter: max 5 reports per IP per 10 minutes
+const bugReportRateLimit = new Map();
+const BUG_REPORT_MAX = 5;
+const BUG_REPORT_WINDOW = 10 * 60 * 1000; // 10 minutes
+
+function checkBugReportRateLimit(ip) {
+  const now = Date.now();
+  const entry = bugReportRateLimit.get(ip);
+  if (!entry) {
+    bugReportRateLimit.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (now - entry.windowStart > BUG_REPORT_WINDOW) {
+    bugReportRateLimit.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= BUG_REPORT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
+// Periodically clean up stale rate-limit entries (every 30 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of bugReportRateLimit) {
+    if (now - entry.windowStart > BUG_REPORT_WINDOW * 2) {
+      bugReportRateLimit.delete(ip);
+    }
+  }
+}, 30 * 60 * 1000);
+
+app.post(BASE_PATH + '/api/bug-report', express.json({ limit: '256kb' }), async (req, res) => {
+  try {
+    const GITHUB_PAT = process.env.GITHUB_PAT || process.env.VITE_GITHUB_PAT;
+    if (!GITHUB_PAT) {
+      return res.status(503).json({ error: 'Bug report submission not configured on this server' });
+    }
+
+    // Rate limit by IP
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+    if (!checkBugReportRateLimit(clientIp)) {
+      return res.status(429).json({ error: 'Too many bug reports. Please try again later.' });
+    }
+
+    const { title, body } = req.body;
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'Missing or empty title' });
+    }
+    if (!body || typeof body !== 'string') {
+      return res.status(400).json({ error: 'Missing or empty body' });
+    }
+    // Limit sizes to prevent abuse
+    if (title.length > 500) {
+      return res.status(400).json({ error: 'Title too long (max 500 chars)' });
+    }
+    if (body.length > 65000) {
+      return res.status(400).json({ error: 'Body too long (max 65000 chars)' });
+    }
+
+    const response = await fetch('https://api.github.com/repos/NiyaNagi/Nightjar/issues', {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${GITHUB_PAT}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Nightjar-Bug-Reporter/1.0',
+      },
+      body: JSON.stringify({
+        title: title.trim(),
+        body,
+        labels: ['bug'],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[BugReport] GitHub API error:', response.status, errorData.message);
+      return res.status(502).json({ error: 'Failed to create GitHub issue' });
+    }
+
+    const data = await response.json();
+    console.log(`[BugReport] Created issue #${data.number}: ${data.html_url}`);
+    res.json({ success: true, url: data.html_url, number: data.number });
+  } catch (err) {
+    console.error('[BugReport] Server error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// =============================================================================
 // Invite API (for unique share links)
 // =============================================================================
 

@@ -20,6 +20,7 @@ import { isElectron as checkIsElectron } from '../hooks/useEnvironment';
 import { useIdentity } from './IdentityContext';
 import identityManager from '../utils/identityManager';
 import { META_WS_PORT } from '../config/constants';
+import { logBehavior } from '../utils/logger';
 
 /**
  * Get identity-scoped storage key for web mode
@@ -598,6 +599,7 @@ export function WorkspaceProvider({ children }) {
     if (!name?.trim()) {
       throw new Error('Workspace name is required');
     }
+    logBehavior('workspace', 'create_workspace');
     
     // Password is optional
     
@@ -676,6 +678,7 @@ export function WorkspaceProvider({ children }) {
    * @param {Object} updates - Updates to apply
    */
   const updateWorkspace = useCallback(async (workspaceId, updates) => {
+    logBehavior('workspace', 'update_workspace');
     // Find the current workspace from ref to avoid stale closure
     // This ensures fields like joinedBy are preserved in the backend
     const currentWs = workspacesRef.current.find(w => w.id === workspaceId);
@@ -699,6 +702,7 @@ export function WorkspaceProvider({ children }) {
    * @param {string} workspaceId - Workspace ID
    */
   const deleteWorkspace = useCallback(async (workspaceId) => {
+    logBehavior('workspace', 'delete_workspace');
     const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
@@ -727,6 +731,7 @@ export function WorkspaceProvider({ children }) {
    * @param {string} workspaceId - Workspace ID
    */
   const leaveWorkspace = useCallback(async (workspaceId, { force = false } = {}) => {
+    logBehavior('workspace', 'leave_workspace');
     const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
@@ -763,6 +768,7 @@ export function WorkspaceProvider({ children }) {
    * @param {string} workspaceId - Workspace ID to switch to
    */
   const switchWorkspace = useCallback((workspaceId) => {
+    logBehavior('workspace', 'switch_workspace');
     const workspace = workspacesRef.current.find(w => w.id === workspaceId);
     if (!workspace) {
       secureLog('[WorkspaceContext] Workspace not found:', workspaceId);
@@ -790,6 +796,7 @@ export function WorkspaceProvider({ children }) {
    * @returns {Promise<Object>} Joined workspace
    */
   const joinWorkspace = useCallback(async (shareData) => {
+    logBehavior('workspace', 'join_workspace');
     const { entityId, password, encryptionKey, permission, serverUrl, bootstrapPeers, topicHash, directAddress } = shareData;
     
     // DEBUG: Log join attempt details
