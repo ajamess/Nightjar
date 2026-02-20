@@ -1109,15 +1109,17 @@ npm run test:e2e:smoke      # Quick smoke tests
 - **Style**: FileStorageNavRail header/divider hidden on mobile, z-index added
 - **Testing**: 56 unit tests (useIsMobile hook + comprehensive mobile suite), 8 E2E Playwright tests at mobile viewport — 24 files changed, 947 insertions, 58 deletions
 
-### v1.7.15 - Share Link Overhaul, DeepLinkGate & Invite Cleanup
+### v1.7.15 - Spreadsheet Sync Fix, Share Link Overhaul & Markdown Bug Reports
+- **Critical Fix**: Spreadsheet sync across clients (Issue #4) — migrated ops to Y.Array CRDT, added `convertCelldataToData`, dirty-flag protection window replaces stale-snapshot queue
 - **Critical Fix**: Share links now work when clicked from web on new devices — replaced deep-link shim with SPA-serving `/join/*` route
 - **New Feature**: DeepLinkGate component — detects `nightjar://` protocol support, offers fallback with "Continue in Browser", "Copy Link", "Try Again", and download options
+- **New Feature**: Markdown editor for bug report description — Write/Preview tabs, `simpleMarkdown()` renderer (headings, bold, italic, code, lists), structured template, dark-themed preview
 - **Security**: Mandatory expiry enforcement — signed links without expiry are now rejected
 - **Security**: Two-tier server invite cleanup — hourly expired removal + nuclear 24h deletion
 - **Security**: Pending share link persists through onboarding and PIN lock flows via `sessionStorage`
 - **Bug Fix**: "Already a member" toast now fires correctly (was never set in `joinWorkspace` return)
 - **Bug Fix**: Join button disabled for expired or invalid links with clear error message
-- **Testing**: 55 new tests across 3 suites (share-link-security, server-invite-cleanup, deep-link-gate)
+- **Testing**: 73 new tests across 4 suites (sheet-sync-fix, share-link-security, server-invite-cleanup, deep-link-gate) — 24 files changed, ~2,540 insertions
 
 ### v1.7.14 - Mobile Optimizations, PWA & Card Views
 - **New Feature**: Mobile card view for AllRequests admin table (≤768px), `useIsMobile` hook

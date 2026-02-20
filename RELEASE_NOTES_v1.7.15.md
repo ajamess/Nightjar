@@ -1,8 +1,46 @@
 # Nightjar v1.7.15 Release Notes
 
-**Release Date:** February 21, 2026
+**Release Date:** February 20, 2026
 
-This release delivers a **comprehensive share link overhaul** that fixes share links not working when clicked from the web on new devices. The old deep-link shim HTML page has been replaced with SPA-serving routes, a new **DeepLinkGate** component handles protocol detection gracefully, **mandatory expiry enforcement** prevents indefinite link reuse, and a **two-tier server cleanup** permanently removes expired invites.
+This release delivers three major improvements: a **critical spreadsheet sync fix** (GitHub Issue #4) that resolves cell edits not syncing across clients, a **comprehensive share link overhaul** that fixes share links not working when clicked from the web on new devices, and a **markdown editor for bug reports** with Write/Preview tabs.
+
+---
+
+## 📊 Spreadsheet Sync Fix — Critical (Issue #4)
+
+**Problem:** When two clients edited different cells in the same spreadsheet, edits from one client would not appear on the other. Text document sync (TipTap) worked fine, but spreadsheet sync was silently broken.
+
+**Root Cause — Three Compounding Bugs:**
+
+| Bug | Description | Impact |
+|-----|-------------|--------|
+| **Last-writer-wins ops** | `pendingOps` stored as a plain JSON value on `Y.Map` — concurrent `set()` calls from different clients would overwrite each other | Remote ops silently lost |
+| **Missing celldata→data conversion** | Remote data arrived as sparse `celldata` format, but Fortune Sheet needs the 2D `data` array after initial mount | Remote cells appeared blank ("non-empty cells: 0") |
+| **Stale protection-window queue** | 350ms protection window stored a snapshot of `newData` at queue time, not the live workbook state at replay time | Local edits during the window could be silently dropped |
+
+**Fix:**
+
+| Change | Description |
+|--------|-------------|
+| **Y.Array migration** | Replaced `ysheet.set('pendingOps', [...existing, newOp])` with `ydoc.getArray('sheet-ops').push([op])`. Y.Array uses CRDT-ordered append — concurrent pushes from different clients are all preserved. Clearing uses `yOps.delete(0, yOps.length)` which only removes items that existed at delete-time, not concurrent inserts. |
+| **`convertCelldataToData` helper** | New function that builds a 2D data array from sparse `celldata` entries before passing to `setData()`. Detects sheets missing their `data` key and fills a `rows × cols` grid with cell values from `celldata`. |
+| **Op-path short-circuit** | When `applyOp()` successfully processes remote ops via the Y.Array observer, the full-sheet `setData` path is skipped for that cycle, preventing double-application and flicker. |
+| **Dirty-flag protection window** | Replaced `queuedLocalSaveRef` (stale snapshot) with a boolean `dirtyDuringProtection` flag. When the 350ms window closes, if dirty, the latest live state from `workbookRef.current.getAllSheets()` is saved — no stale data. |
+| **Legacy cleanup** | On initialization, any existing `pendingOps` key on the `Y.Map` is deleted to prevent interference with the new `Y.Array` approach. |
+
+**Architecture Note:** This is a short-term targeted fix. The long-term plan is to migrate to a cell-level CRDT (`Y.Map` per cell) to eliminate the JSON-blob full-sheet replacement strategy entirely.
+
+---
+
+## 📝 Markdown Editor for Bug Reports
+
+The bug report modal's description field now includes a **Write/Preview** tab toggle with a lightweight markdown renderer:
+
+- **`simpleMarkdown()` renderer** — Pure React implementation (no external dependencies) supporting headings (`#`–`###`), bold (`**`), italic (`*`), inline code (`` ` ``), fenced code blocks (` ``` `), unordered lists (`-`), and ordered lists (`1.`)
+- **`MarkdownEditor` component** — Tabbed interface with Write (textarea) and Preview (rendered markdown) modes
+- **Structured template** — Description field opens with a pre-populated template for consistent bug reports
+- **Dark-themed preview** — 130+ lines of CSS for the markdown preview panel, matching the app's dark theme
+- All 66 bug-report-modal tests passing
 
 ---
 
@@ -32,12 +70,6 @@ A new overlay component that gracefully handles the transition between `https://
   - Download link — directs to the desktop app download
 - **Electron skip** — Automatically skipped in Electron (detected via `isElectron()`)
 - **Pending link persistence** — Share link and expiry are stored in `sessionStorage` so they survive onboarding and PIN lock flows
-
-### New Files
-| File | Purpose |
-|------|---------|
-| `frontend/src/components/common/DeepLinkGate.jsx` | Deep link gate overlay component (200 lines) |
-| `frontend/src/components/common/DeepLinkGate.css` | Styles for the gate overlay card (121 lines) |
 
 ---
 
@@ -97,7 +129,22 @@ When a user clicks a share link for a workspace they already belong to, all thre
 
 ## 🧪 Testing
 
-### Unit Tests (Jest)
+### Spreadsheet Sync Tests
+
+**`tests/sheet-sync-fix.test.js`** — 18 new tests:
+
+| Test Suite | Tests | Description |
+|-----------|-------|-------------|
+| celldata ↔ data conversion | 6 | Builds 2D array from sparse celldata, handles empty/OOB/default-size, round-trip preservation |
+| Y.Array-based ops sync | 4 | Cross-doc propagation, concurrent append preservation, delete-vs-push race, no Y.Map usage |
+| Full-sheet sync with celldata conversion | 3 | Remote celldata renders correctly, two-client edit propagation, three-way sync |
+| Legacy pendingOps cleanup | 1 | Old Y.Map key detected and removed |
+| Y.Array observer event structure | 2 | Event.changes.added structure, delete+push in same transaction |
+| Rapid edits stress test | 2 | 40 concurrent ops from 2 clients, 100-cell full-sheet round-trip |
+
+All 33 sheet tests passing (18 new + 15 existing).
+
+### Share Link Security Tests
 
 **`tests/share-link-security.test.js`** — 22 tests:
 - `validateSignedInvite` expiry enforcement (expired links, valid links, 24h cap, missing expiry on signed links, legacy links, tampered signatures, expiry in result)
@@ -105,6 +152,8 @@ When a user clicks a share link for a workspace they already belong to, all thre
 - `generateSignedInviteLink` security properties (required params, fragment fields, signature coverage, unique signatures per permission)
 - Link fragment security (keys in fragment only, signature in fragment only)
 - Edge cases (null input, empty string, undefined)
+
+### Server Invite Cleanup Tests
 
 **`tests/server-invite-cleanup.test.js`** — 24 tests:
 - Server source SQL statements (`deleteExpiredInvites`, `nuclearDeleteOldInvites`)
@@ -114,6 +163,8 @@ When a user clicks a share link for a workspace they already belong to, all thre
 - Invite table schema validation
 - At-rest encryption TODO detection
 
+### DeepLinkGate Component Tests
+
 **`tests/deep-link-gate.test.jsx`** — 9 tests:
 - Attempting phase render ("Opening Nightjar…")
 - Fallback UI after timeout
@@ -122,7 +173,23 @@ When a user clicks a share link for a workspace they already belong to, all thre
 - Null link handling
 - Copy link button
 
-**Total: 55 new tests across 3 suites. Combined run: 93 tests passing (including existing `sharing.test.js`).**
+### Bug Report Modal Tests
+
+**`tests/bug-report-modal.test.jsx`** — 66 tests:
+- Updated for template-aware description field
+- All existing tests passing with markdown editor changes
+
+### Test Totals
+
+| Suite | New | Existing | Total |
+|-------|-----|----------|-------|
+| Sheet sync | 18 | 15 | 33 |
+| Share link security | 22 | — | 22 |
+| Server invite cleanup | 24 | — | 24 |
+| DeepLinkGate | 9 | — | 9 |
+| Share link (existing) | — | 38 | 38 |
+| Bug report modal | — | 66 | 66 |
+| **Totals** | **73** | **119** | **192** |
 
 ---
 
@@ -135,34 +202,52 @@ When a user clicks a share link for a workspace they already belong to, all thre
 | `tests/share-link-security.test.js` | Share link security test suite (22 tests) |
 | `tests/server-invite-cleanup.test.js` | Server invite cleanup test suite (24 tests) |
 | `tests/deep-link-gate.test.jsx` | DeepLinkGate component test suite (9 tests) |
+| `tests/sheet-sync-fix.test.js` | Spreadsheet sync test suite (18 tests) |
+| `docs/release-notes/RELEASE_NOTES_v1.7.15.md` | Spreadsheet sync fix release notes |
 
 ## 📁 Modified Files
 
 | File | Changes |
 |------|---------|
+| `frontend/src/components/Sheet.jsx` | Migrated pendingOps to Y.Array, added `convertCelldataToData`, op-path short-circuit, dirty-flag protection window, legacy cleanup |
+| `frontend/src/components/BugReportModal.jsx` | Added `simpleMarkdown()` renderer, `MarkdownEditor` component with Write/Preview tabs, structured template |
+| `frontend/src/components/BugReportModal.css` | 130+ lines of dark-themed markdown preview styles |
 | `server/unified/index.js` | Replaced JOIN_REDIRECT_HTML with SPA-serving `/join/*` route; added invite cleanup (SQL + Storage methods + interval + graceful shutdown) |
 | `frontend/src/AppNew.jsx` | DeepLinkGate import/state, share link useEffect with deep link gate, `processPendingShareLink` helper, DeepLinkGate render |
 | `frontend/src/components/CreateWorkspace.jsx` | Expiry enforcement at join time, signature validation blocking, already-a-member toast, disabled button for expired/invalid |
 | `frontend/src/contexts/WorkspaceContext.jsx` | `alreadyMember: true` in `joinWorkspace` return for existing workspaces |
 | `frontend/src/utils/sharing.js` | `validateSignedInvite` rejects signed links without expiry; TODO for per-workspace relay |
 | `capacitor.config.json` | TODO for deep link configuration |
+| `frontend/public-site/content/security-model.json` | Updated invite expiry enforcement, cleanup, and future work sections |
+| `frontend/public-site/index.html` | Version bump 1.7.14 → 1.7.15 |
+| `tests/sheet.test.js` | Updated onOp test to verify Y.Array usage |
+| `tests/bug-report-modal.test.jsx` | Updated for template-aware description field |
 | `package.json` | Version 1.7.14 → 1.7.15 |
+| `README.md` | Changelog entry, sharing features, share link security section updates |
 
 ---
 
 ## 📊 Statistics
 
-- **12 files changed** (6 modified, 5 new, 1 version bump)
-- **55 new tests added**
-- **93 total tests passing** across share link test suites
+- **3 commits**, **24 files changed**
+- **~2,540 insertions(+)**, **~160 deletions(−)**
+- **73 new tests added** across 4 new test files
+- **1 GitHub issue resolved** (#4 — Spreadsheet sync)
 
 ---
 
 ## 🚀 Upgrade Notes
 
-This release is fully backward compatible with v1.7.14. No migration steps required.
+### Spreadsheet Sync (Breaking for mixed-version workspaces)
+- Existing Yjs documents with the old `pendingOps` key on `Y.Map('sheet-data')` will have that key automatically deleted on first load. This is a one-way migration.
+- Clients on v1.7.14 or earlier will not be able to process ops sent by v1.7.15 clients.
+- **Recommended:** All clients in a workspace should upgrade to v1.7.15 simultaneously to ensure consistent op handling.
 
+### Share Links
 - **Legacy links** (unsigned, no expiry) continue to work for backward compatibility
 - **Signed links without expiry** are now rejected — regenerate any bookmarked signed links
 - **Server cleanup** is automatic — no configuration needed. Invites older than 24 hours are permanently deleted
 - The DeepLinkGate only appears on web — Electron users see no change
+
+### Bug Reports
+- The description field now opens with a structured markdown template. No action required — existing bug report workflows are unchanged.
