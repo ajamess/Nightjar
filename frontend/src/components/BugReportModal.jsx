@@ -20,7 +20,7 @@ import { getLogs } from '../utils/logger';
 import { useToast } from '../contexts/ToastContext';
 import './BugReportModal.css';
 
-const GITHUB_ISSUES_PAGE = 'https://github.com/niyanagi/nightjar/issues/new?labels=bug';
+const GITHUB_ISSUES_PAGE = 'https://github.com/NiyaNagi/Nightjar/issues/new?labels=bug';
 const MAX_ACTION_CHARS = 2000;
 const MAX_RECENT_ACTIONS = 20;
 
@@ -161,7 +161,7 @@ export async function createGitHubIssue(title, body) {
   const pat = typeof process !== 'undefined' && process.env?.VITE_GITHUB_PAT;
   if (!pat) throw new Error('No GitHub PAT configured');
 
-  const response = await fetch('https://api.github.com/repos/niyanagi/nightjar/issues', {
+  const response = await fetch('https://api.github.com/repos/NiyaNagi/Nightjar/issues', {
     method: 'POST',
     headers: {
       'Authorization': `token ${pat}`,

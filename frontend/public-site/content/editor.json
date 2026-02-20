@@ -1,0 +1,36 @@
+{
+  "id": "editor",
+  "title": "✏️ Text Editor",
+  "icon": "✏️",
+  "content": [
+    { "type": "heading", "text": "Rich Text Editing" },
+    { "type": "paragraph", "text": "The text editor is built on TipTap (ProseMirror) and supports rich formatting, real-time collaboration, and version history." },
+    { "type": "screenshot", "id": "text-editor", "caption": "The TipTap editor with formatting toolbar, tables, and live collaboration cursors." },
+    { "type": "heading", "text": "Toolbar" },
+    { "type": "paragraph", "text": "The toolbar at the top of the editor provides formatting controls:" },
+    { "type": "list", "items": [
+      "Text style — Bold, Italic, Underline, Strikethrough.",
+      "Headings — H1, H2, H3 levels.",
+      "Lists — Bullet lists, numbered lists, and task/checkbox lists.",
+      "Block types — Code blocks, blockquotes, horizontal rules.",
+      "Insert — Links, tables.",
+      "History — Undo and redo."
+    ]},
+    { "type": "heading", "text": "Selection Toolbar" },
+    { "type": "paragraph", "text": "Select text to reveal a floating toolbar with quick formatting options. This provides fast access to bold, italic, link, highlight, and other actions without moving to the main toolbar." },
+    { "type": "heading", "text": "Editor Shortcuts" },
+    { "type": "shortcuts", "items": [
+      { "keys": ["Ctrl", "B"], "action": "Bold" },
+      { "keys": ["Ctrl", "I"], "action": "Italic" },
+      { "keys": ["Ctrl", "U"], "action": "Underline" },
+      { "keys": ["Ctrl", "Shift", "S"], "action": "Strikethrough" },
+      { "keys": ["Ctrl", "Shift", "8"], "action": "Bullet list" },
+      { "keys": ["Ctrl", "Shift", "7"], "action": "Numbered list" },
+      { "keys": ["Ctrl", "Z"], "action": "Undo" },
+      { "keys": ["Ctrl", "Shift", "Z"], "action": "Redo" }
+    ]},
+    { "type": "heading", "text": "Tables" },
+    { "type": "paragraph", "text": "Insert tables from the toolbar. Once inserted, you can add/remove rows and columns, merge cells, and set header rows. Use Tab to navigate between cells." },
+    { "type": "tip", "text": "The editor automatically saves as you type. Collaborators see your changes in real-time with colored cursors showing who is editing where." }
+  ]
+}

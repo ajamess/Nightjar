@@ -1,0 +1,33 @@
+{
+  "id": "kanban",
+  "title": "📋 Kanban Boards",
+  "icon": "📋",
+  "content": [
+    { "type": "heading", "text": "Using Kanban Boards" },
+    { "type": "paragraph", "text": "Kanban boards provide visual task management with draggable columns and cards. They sync in real-time like all Nightjar documents." },
+    { "type": "screenshot", "id": "kanban-board", "caption": "A kanban board with draggable columns and task cards." },
+    { "type": "heading", "text": "Managing Columns" },
+    { "type": "steps", "items": [
+      "Click \"➕ Add Column\" on the right side of the board to create a new column.",
+      "Click a column title to rename it.",
+      "Drag columns to reorder them.",
+      "Click the column menu (⋮) for options like delete."
+    ]},
+    { "type": "heading", "text": "Managing Cards" },
+    { "type": "steps", "items": [
+      "Click \"➕ Add Card\" at the bottom of any column.",
+      "Enter a title and press Enter.",
+      "Click a card to open it and add a description, labels, and due date.",
+      "Drag cards between columns or within a column to reorder."
+    ]},
+    { "type": "heading", "text": "Card Details" },
+    { "type": "paragraph", "text": "Click a card to open the detail view where you can:" },
+    { "type": "list", "items": [
+      "Edit the card title and description.",
+      "Add color-coded labels for categorization.",
+      "Set a due date.",
+      "Add comments to discuss the task with collaborators."
+    ]},
+    { "type": "tip", "text": "All board changes sync instantly. Multiple people can drag cards and edit details simultaneously." }
+  ]
+}

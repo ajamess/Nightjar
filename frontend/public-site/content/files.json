@@ -1,0 +1,26 @@
+{
+  "id": "files",
+  "title": "📁 File Storage",
+  "icon": "📁",
+  "content": [
+    { "type": "heading", "text": "File Storage" },
+    { "type": "paragraph", "text": "Nightjar includes encrypted file storage for each workspace. Upload files, organize them in folders, and share them with collaborators — all end-to-end encrypted." },
+    { "type": "screenshot", "id": "file-storage", "caption": "The encrypted file storage with drag-and-drop upload and folder organization." },
+    { "type": "heading", "text": "Uploading Files" },
+    { "type": "steps", "items": [
+      "Navigate to the Files section of your workspace.",
+      "Click \"Upload\" or drag and drop files into the file area.",
+      "Files are encrypted locally before being stored.",
+      "Uploaded files are available to all workspace members."
+    ]},
+    { "type": "heading", "text": "Views" },
+    { "type": "paragraph", "text": "File storage supports multiple view modes:" },
+    { "type": "list", "items": [
+      "List view — Compact listing with file details.",
+      "Grid view — Thumbnail/icon grid for visual browsing."
+    ]},
+    { "type": "heading", "text": "File Sync" },
+    { "type": "paragraph", "text": "Files are synced across peers using the P2P mesh. When you upload a file, it is encrypted and distributed to connected workspace members. Files are available offline once synced." },
+    { "type": "tip", "text": "Files are encrypted with the workspace key before storage. The relay server only ever sees encrypted blobs." }
+  ]
+}

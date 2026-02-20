@@ -1,0 +1,33 @@
+{
+  "id": "troubleshooting",
+  "title": "🔧 Troubleshooting",
+  "icon": "🔧",
+  "content": [
+    { "type": "heading", "text": "Common Issues" },
+    { "type": "heading", "text": "Documents not syncing" },
+    { "type": "steps", "items": [
+      "Check your internet connection.",
+      "Verify the peer count in the status bar — you need at least one connected peer.",
+      "Close and reopen the workspace tab.",
+      "In the desktop app, check Settings → Network for relay status and try reconnecting."
+    ]},
+    { "type": "heading", "text": "Forgot your PIN" },
+    { "type": "paragraph", "text": "If you saved your 12-word recovery phrase during setup, you can restore your identity:" },
+    { "type": "steps", "items": [
+      "On the lock screen, choose \"Restore Identity\".",
+      "Enter your 12-word recovery phrase.",
+      "Set a new 6-digit PIN.",
+      "Your identity is restored with all its workspace keys."
+    ]},
+    { "type": "paragraph", "text": "If you don't have your recovery phrase, the identity cannot be recovered. You will need to create a new identity and be re-invited to your workspaces." },
+    { "type": "heading", "text": "App feels slow" },
+    { "type": "list", "items": [
+      "Close unused tabs — each open document maintains a live sync connection.",
+      "In Settings → Network, increase the peer status poll interval.",
+      "In Settings → Advanced, try resetting settings to defaults."
+    ]},
+    { "type": "heading", "text": "Factory Reset" },
+    { "type": "paragraph", "text": "As a last resort, you can perform a factory reset in Settings → Advanced → Danger Zone. This deletes ALL local data including identities, workspaces, and documents. This action cannot be undone." },
+    { "type": "tip", "text": "Before factory resetting, save your recovery phrase and transfer workspace ownership if you are the sole owner of any workspaces." }
+  ]
+}

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loading… — Nightjar Docs</title>
+  <meta name="description" content="Nightjar documentation section">
+  <link rel="icon" href="/nightjar-64.png" type="image/png">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <a href="/" class="topbar-brand">
+      <img src="/nightjar-logo.png" alt="Nightjar">
+      Nightjar Docs
+    </a>
+    <div class="topbar-breadcrumb" id="breadcrumb">
+      <a href="/docs/">Docs</a><span class="sep">›</span><span id="breadcrumb-title">…</span>
+    </div>
+    <div class="topbar-links">
+      <a href="/">Home</a>
+      <a href="/docs/">All Docs</a>
+      <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+
+  <div class="docs-layout">
+    <nav class="docs-sidebar" id="sidebar"></nav>
+    <main class="docs-content" id="content">
+      <p style="color:var(--text-dim)">Loading…</p>
+    </main>
+  </div>
+
+  <div class="docs-footer">
+    Nightjar · <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">Open Source</a> · Built by <a href="https://github.com/NiyaNagi" target="_blank" rel="noopener">NiyaNagi</a>
+  </div>
+
+  <script>
+    const CONTENT_BASE = '/content';
+    const SCREENSHOT_BASE = '/screenshots';
+
+    // Derive section ID from filename: "editor.html" → "editor"
+    function getSectionId() {
+      const path = window.location.pathname;
+      const file = path.split('/').pop() || '';
+      return file.replace('.html', '');
+    }
+
+    function escapeHTML(str) {
+      const el = document.createElement('span');
+      el.textContent = str;
+      return el.innerHTML;
+    }
+
+    function renderBlock(block) {
+      switch (block.type) {
+        case 'heading':
+          return `<h3>${escapeHTML(block.text)}</h3>`;
+        case 'paragraph':
+          return `<p>${escapeHTML(block.text)}</p>`;
+        case 'list':
+          return `<ul>${(block.items || []).map(i => `<li>${escapeHTML(i)}</li>`).join('')}</ul>`;
+        case 'steps':
+          return `<ol>${(block.items || []).map(i => `<li>${escapeHTML(i)}</li>`).join('')}</ol>`;
+        case 'tip':
+          return `<div class="tip-box"><span class="icon">💡</span><p>${escapeHTML(block.text)}</p></div>`;
+        case 'shortcuts':
+          return `<div class="shortcuts-table">${(block.items || []).map(item =>
+            `<div class="shortcut-row">
+              <span class="shortcut-keys">${item.keys.map((k, i) =>
+                `${i > 0 ? '<span class="plus">+</span>' : ''}<kbd>${escapeHTML(k)}</kbd>`
+              ).join('')}</span>
+              <span class="shortcut-action">${escapeHTML(item.action)}</span>
+            </div>`
+          ).join('')}</div>`;
+        case 'screenshot':
+          return `<figure class="doc-screenshot">
+            <img src="${SCREENSHOT_BASE}/${escapeHTML(block.id)}.webp"
+                 alt="${escapeHTML(block.caption || block.id)}"
+                 loading="lazy"
+                 onerror="this.parentElement.style.display='none'">
+            ${block.caption ? `<figcaption>${escapeHTML(block.caption)}</figcaption>` : ''}
+          </figure>`;
+        default:
+          return '';
+      }
+    }
+
+    async function init() {
+      const sectionId = getSectionId();
+      if (!sectionId) { window.location.href = '/docs/'; return; }
+
+      // Load index for sidebar + prev/next navigation
+      let sections = [];
+      try {
+        const idxRes = await fetch(`${CONTENT_BASE}/index.json`);
+        if (idxRes.ok) {
+          const idx = await idxRes.json();
+          sections = idx.sections || [];
+        }
+      } catch {}
+
+      // Build sidebar
+      const sidebar = document.getElementById('sidebar');
+      sidebar.innerHTML = '<h3>Documentation</h3><ul>' +
+        sections.map(s => {
+          const active = s.id === sectionId ? ' class="active"' : '';
+          const label = s.title.replace(/^[^\s]+\s/, '');
+          return `<li><a href="${s.id}.html"${active}><span class="icon">${s.icon}</span>${label}</a></li>`;
+        }).join('') + '</ul>';
+
+      // Load section content
+      let data;
+      try {
+        const res = await fetch(`${CONTENT_BASE}/${sectionId}.json`);
+        if (!res.ok) { window.location.href = '/docs/'; return; }
+        data = await res.json();
+      } catch {
+        window.location.href = '/docs/';
+        return;
+      }
+
+      // Update page title
+      const plainTitle = data.title.replace(/^[^\s]+\s/, '');
+      document.title = `${plainTitle} — Nightjar Docs`;
+      document.getElementById('breadcrumb-title').textContent = plainTitle;
+
+      // Render content
+      const content = document.getElementById('content');
+      let html = `<h1>${escapeHTML(data.title)}</h1>`;
+      html += (data.content || []).map(renderBlock).join('\n');
+
+      // Prev / Next navigation
+      const idx = sections.findIndex(s => s.id === sectionId);
+      if (idx !== -1) {
+        const prev = idx > 0 ? sections[idx - 1] : null;
+        const next = idx < sections.length - 1 ? sections[idx + 1] : null;
+        html += '<div class="docs-nav">';
+        if (prev) {
+          html += `<a href="${prev.id}.html"><span class="label">← Previous</span><span class="title">${escapeHTML(prev.title)}</span></a>`;
+        }
+        if (next) {
+          html += `<a href="${next.id}.html" class="next"><span class="label">Next →</span><span class="title">${escapeHTML(next.title)}</span></a>`;
+        }
+        html += '</div>';
+      }
+
+      content.innerHTML = html;
+    }
+    init();
+  </script>
+</body>
+</html>

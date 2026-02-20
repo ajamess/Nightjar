@@ -1,0 +1,25 @@
+{
+  "id": "getting-started",
+  "title": "🚀 Getting Started",
+  "icon": "🚀",
+  "content": [
+    { "type": "heading", "text": "Welcome to Nightjar" },
+    { "type": "paragraph", "text": "Nightjar is a secure, decentralized collaboration platform. Everything you create is end-to-end encrypted and synced peer-to-peer — no central server ever sees your data." },
+    { "type": "screenshot", "id": "workspace-overview", "caption": "The Nightjar workspace — documents, files, and tools in one encrypted space." },
+    { "type": "heading", "text": "First-Time Setup" },
+    { "type": "steps", "items": [
+      "Launch Nightjar. You'll see the onboarding screen.",
+      "Choose \"Create New Identity\" and set a display name.",
+      "Set a 6-digit PIN to protect your identity.",
+      "Save your 12-word recovery phrase — you'll need it if you forget your PIN or move to a new device.",
+      "You're in! Create a workspace to get started."
+    ]},
+    { "type": "heading", "text": "Returning Users" },
+    { "type": "steps", "items": [
+      "Enter your 6-digit PIN on the lock screen.",
+      "If you have multiple identities, select the one you want from the identity list.",
+      "After 10 incorrect PIN attempts within one hour, your identity is permanently deleted for security."
+    ]},
+    { "type": "tip", "text": "Your 12-word recovery phrase is the only way to restore your identity. Write it down and keep it safe. You can view it again later from your profile (🔐 View Recovery Phrase)." }
+  ]
+}

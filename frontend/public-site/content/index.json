@@ -1,0 +1,126 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-02-17T00:00:00.000Z",
+  "sections": [
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "icon": "🚀",
+      "order": 1,
+      "file": "getting-started.json",
+      "summary": "First-time setup, creating your identity, and getting oriented in Nightjar."
+    },
+    {
+      "id": "identity",
+      "title": "Identity & Security",
+      "icon": "🪪",
+      "order": 2,
+      "file": "identity.json",
+      "summary": "Managing your cryptographic identity, PIN, recovery phrase, and multiple identities."
+    },
+    {
+      "id": "workspaces",
+      "title": "Workspaces",
+      "icon": "📂",
+      "order": 3,
+      "file": "workspaces.json",
+      "summary": "Creating, joining, and organizing workspaces with folders and documents."
+    },
+    {
+      "id": "documents",
+      "title": "Documents",
+      "icon": "📄",
+      "order": 4,
+      "file": "documents.json",
+      "summary": "Text documents, spreadsheets, and kanban boards — all with real-time collaboration."
+    },
+    {
+      "id": "editor",
+      "title": "Text Editor",
+      "icon": "✏️",
+      "order": 5,
+      "file": "editor.json",
+      "summary": "Rich text editing with TipTap — formatting, tables, task lists, and keyboard shortcuts."
+    },
+    {
+      "id": "kanban",
+      "title": "Kanban Boards",
+      "icon": "📋",
+      "order": 6,
+      "file": "kanban.json",
+      "summary": "Visual task management with columns, cards, labels, and due dates."
+    },
+    {
+      "id": "collaboration",
+      "title": "Collaboration",
+      "icon": "👥",
+      "order": 7,
+      "file": "collaboration.json",
+      "summary": "Real-time editing, live cursors, follow mode, comments, and version history."
+    },
+    {
+      "id": "sharing",
+      "title": "Sharing & Invites",
+      "icon": "🔗",
+      "order": 8,
+      "file": "sharing.json",
+      "summary": "Invite links, permission levels, QR codes, and managing workspace members."
+    },
+    {
+      "id": "chat",
+      "title": "Chat",
+      "icon": "💬",
+      "order": 9,
+      "file": "chat.json",
+      "summary": "Encrypted group chat, @mentions, notifications, and Do Not Disturb mode."
+    },
+    {
+      "id": "files",
+      "title": "File Storage",
+      "icon": "📁",
+      "order": 10,
+      "file": "files.json",
+      "summary": "Encrypted file storage, upload/download, grid/list views, and P2P file sync."
+    },
+    {
+      "id": "inventory",
+      "title": "Inventory",
+      "icon": "📦",
+      "order": 11,
+      "file": "inventory.json",
+      "summary": "Item tracking with SKUs, categories, CSV import/export, and geographic map views."
+    },
+    {
+      "id": "search",
+      "title": "Search",
+      "icon": "🔍",
+      "order": 12,
+      "file": "search.json",
+      "summary": "Quick search palette for navigating documents, folders, and workspace content."
+    },
+    {
+      "id": "networking",
+      "title": "Networking",
+      "icon": "🌐",
+      "order": 13,
+      "file": "networking.json",
+      "summary": "Peer-to-peer sync, relay fallback, mesh network, Tor support, and network settings."
+    },
+    {
+      "id": "shortcuts",
+      "title": "Shortcuts",
+      "icon": "⌨️",
+      "order": 14,
+      "file": "shortcuts.json",
+      "summary": "Keyboard shortcuts for the editor, navigation, and application commands."
+    },
+    {
+      "id": "troubleshooting",
+      "title": "Troubleshooting",
+      "icon": "🔧",
+      "order": 15,
+      "file": "troubleshooting.json",
+      "summary": "Common issues, sync problems, forgotten PINs, performance tips, and factory reset."
+    }
+  ]
+}

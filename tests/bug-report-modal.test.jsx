@@ -630,7 +630,7 @@ describe('Success Screen', () => {
     await submitAndSucceed();
     fireEvent.click(screen.getByTestId('view-issue-btn'));
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      'https://github.com/niyanagi/nightjar/issues/new?labels=bug',
+      'https://github.com/NiyaNagi/Nightjar/issues/new?labels=bug',
     );
   });
 
@@ -649,7 +649,7 @@ describe('Success Screen', () => {
 
     fireEvent.click(screen.getByTestId('view-issue-btn'));
     expect(mockWindowOpen).toHaveBeenCalledWith(
-      'https://github.com/niyanagi/nightjar/issues/new?labels=bug',
+      'https://github.com/NiyaNagi/Nightjar/issues/new?labels=bug',
       '_blank',
       'noopener',
     );
@@ -842,7 +842,7 @@ describe('E2E Scenarios', () => {
 
     // Click view issue (opens GitHub new issue page)
     fireEvent.click(screen.getByTestId('view-issue-btn'));
-    expect(mockOpenExternal).toHaveBeenCalledWith('https://github.com/niyanagi/nightjar/issues/new?labels=bug');
+    expect(mockOpenExternal).toHaveBeenCalledWith('https://github.com/NiyaNagi/Nightjar/issues/new?labels=bug');
 
     // Click done
     fireEvent.click(screen.getByText('Done'));

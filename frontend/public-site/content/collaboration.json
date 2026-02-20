@@ -1,0 +1,19 @@
+{
+  "id": "collaboration",
+  "title": "👥 Collaboration",
+  "icon": "👥",
+  "content": [
+    { "type": "heading", "text": "Real-Time Collaboration" },
+    { "type": "paragraph", "text": "Nightjar uses Yjs CRDT technology for conflict-free real-time editing. Multiple people can edit the same document simultaneously — changes merge automatically without conflicts." },
+    { "type": "screenshot", "id": "collaboration-cursors", "caption": "Multiple collaborators editing simultaneously with colored live cursors." },
+    { "type": "heading", "text": "Live Cursors" },
+    { "type": "paragraph", "text": "In text documents, you can see other collaborators' cursors in real-time. Each person gets a unique color with their display name shown next to their cursor." },
+    { "type": "heading", "text": "Follow Cursor" },
+    { "type": "paragraph", "text": "Click on a collaborator's name in the presence list to follow their cursor. Your view will scroll to track their position in the document." },
+    { "type": "heading", "text": "Comments" },
+    { "type": "paragraph", "text": "Leave comments on documents to discuss specific content with your collaborators. Comments are synced in real-time and visible to all workspace members." },
+    { "type": "heading", "text": "Version History" },
+    { "type": "paragraph", "text": "Text documents maintain version history. You can view past versions and roll back to a previous state if needed." },
+    { "type": "tip", "text": "The peer count in the status bar shows how many collaborators are currently connected to your workspace." }
+  ]
+}

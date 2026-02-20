@@ -1,0 +1,26 @@
+{
+  "id": "chat",
+  "title": "💬 Chat",
+  "icon": "💬",
+  "content": [
+    { "type": "heading", "text": "Workspace Chat" },
+    { "type": "paragraph", "text": "Each workspace has a built-in group chat. Messages are encrypted, synced peer-to-peer, and stored locally. All workspace members can participate." },
+    { "type": "screenshot", "id": "chat-panel", "caption": "The encrypted workspace chat with @mentions and desktop notifications." },
+    { "type": "heading", "text": "Using Chat" },
+    { "type": "steps", "items": [
+      "Open a workspace.",
+      "Click the chat icon or panel to expand the chat area.",
+      "Type your message and press Enter to send.",
+      "Use @mentions to notify specific collaborators."
+    ]},
+    { "type": "heading", "text": "Notifications" },
+    { "type": "paragraph", "text": "Configure chat notifications in Settings → Notifications:" },
+    { "type": "list", "items": [
+      "Enable or disable notification sounds.",
+      "Enable desktop notifications (browser permission required).",
+      "Set Do Not Disturb mode to mute all notifications.",
+      "Configure per-notification-type preferences (messages, mentions, joins)."
+    ]},
+    { "type": "tip", "text": "Chat messages are encrypted with the same workspace key as your documents. They are never readable by relay servers." }
+  ]
+}

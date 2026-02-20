@@ -1,0 +1,23 @@
+{
+  "id": "networking",
+  "title": "🌐 Networking",
+  "icon": "🌐",
+  "content": [
+    { "type": "heading", "text": "Peer-to-Peer Sync" },
+    { "type": "paragraph", "text": "Nightjar uses Hyperswarm for peer-to-peer discovery and data sync. When possible, data travels directly between devices with no server involved." },
+    { "type": "heading", "text": "Relay Fallback" },
+    { "type": "paragraph", "text": "When direct P2P connections aren't possible (e.g., behind strict NATs or firewalls), Nightjar automatically routes through relay servers. Relays only forward encrypted data — they cannot read it." },
+    { "type": "heading", "text": "Network Settings (Desktop)" },
+    { "type": "paragraph", "text": "In the desktop app, go to Settings → Network to configure:" },
+    { "type": "list", "items": [
+      "Relay server URLs — Add or change relay endpoints.",
+      "Peer status poll interval — How often to check for connected peers.",
+      "Connection timeout settings.",
+      "Sync verification — Confirm data integrity with connected peers."
+    ]},
+    { "type": "screenshot", "id": "settings", "caption": "The Settings panel with network, notification, and appearance configuration." },
+    { "type": "heading", "text": "Tor Support (Desktop)" },
+    { "type": "paragraph", "text": "The desktop app supports routing connections through the Tor network for enhanced privacy. Enable it in Settings → Desktop. Nightjar bundles a Tor client — no external setup required." },
+    { "type": "tip", "text": "The status bar at the bottom shows your current peer count and connection status. Hover for details." }
+  ]
+}

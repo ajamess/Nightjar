@@ -1,0 +1,35 @@
+{
+  "id": "shortcuts",
+  "title": "⌨️ Shortcuts",
+  "icon": "⌨️",
+  "content": [
+    { "type": "heading", "text": "Application Shortcuts" },
+    { "type": "shortcuts", "items": [
+      { "keys": ["Ctrl", "K"], "action": "Open search palette" },
+      { "keys": ["Ctrl", ","], "action": "Open Settings" },
+      { "keys": ["F1"], "action": "Open Help" },
+      { "keys": ["Ctrl", "L"], "action": "Lock app" }
+    ]},
+    { "type": "heading", "text": "Editor Shortcuts" },
+    { "type": "shortcuts", "items": [
+      { "keys": ["Ctrl", "B"], "action": "Bold" },
+      { "keys": ["Ctrl", "I"], "action": "Italic" },
+      { "keys": ["Ctrl", "U"], "action": "Underline" },
+      { "keys": ["Ctrl", "Shift", "S"], "action": "Strikethrough" },
+      { "keys": ["Ctrl", "Shift", "8"], "action": "Bullet list" },
+      { "keys": ["Ctrl", "Shift", "7"], "action": "Numbered list" },
+      { "keys": ["Ctrl", "Z"], "action": "Undo" },
+      { "keys": ["Ctrl", "Shift", "Z"], "action": "Redo" },
+      { "keys": ["Tab"], "action": "Indent / next cell (in table)" },
+      { "keys": ["Shift", "Tab"], "action": "Outdent / previous cell (in table)" }
+    ]},
+    { "type": "heading", "text": "Navigation" },
+    { "type": "shortcuts", "items": [
+      { "keys": ["Ctrl", "Tab"], "action": "Next tab" },
+      { "keys": ["Ctrl", "Shift", "Tab"], "action": "Previous tab" },
+      { "keys": ["Ctrl", "W"], "action": "Close current tab" },
+      { "keys": ["Escape"], "action": "Close overlay / modal / help" }
+    ]},
+    { "type": "tip", "text": "You can also view the full shortcut list in Settings → Shortcuts." }
+  ]
+}

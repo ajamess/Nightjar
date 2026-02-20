@@ -1,0 +1,24 @@
+{
+  "id": "documents",
+  "title": "📄 Documents",
+  "icon": "📄",
+  "content": [
+    { "type": "heading", "text": "Document Types" },
+    { "type": "paragraph", "text": "Nightjar supports three document types, all with real-time collaboration:" },
+    { "type": "list", "items": [
+      "📄 Text Documents — Rich text with formatting, links, tables, code blocks, and task lists.",
+      "📊 Spreadsheets — Powered by Fortune Sheet with formulas, cell formatting, and multi-sheet support.",
+      "📋 Kanban Boards — Visual task management with columns, cards, labels, and due dates."
+    ]},
+    { "type": "heading", "text": "Creating a Document" },
+    { "type": "steps", "items": [
+      "Click the ➕ (New) button in the sidebar action bar.",
+      "Choose the document type: Text, Spreadsheet, or Kanban.",
+      "Enter a name and press Enter.",
+      "The document opens in tabs. You can have multiple documents open at once."
+    ]},
+    { "type": "heading", "text": "Tabs" },
+    { "type": "paragraph", "text": "Documents open in tabs along the top of the content area. Click a tab to switch to it. Right-click a tab for options like close, close others, or rename. Drag tabs to reorder them." },
+    { "type": "tip", "text": "Changes are saved automatically — there is no save button. Everything syncs in real-time via Yjs CRDT." }
+  ]
+}

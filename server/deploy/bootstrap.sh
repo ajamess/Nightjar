@@ -97,12 +97,24 @@ chown -R $DEPLOY_USER:$DEPLOY_USER "$REPO_DIR"
 # 5. Web directories
 # =============================================================================
 log "Creating web directories..."
-mkdir -p "$WEB_DIR/download"
+mkdir -p "$WEB_DIR/download" "$WEB_DIR/docs" "$WEB_DIR/content" "$WEB_DIR/screenshots"
 
 # Copy landing page
 if [ -f "$REPO_DIR/frontend/public-site/index.html" ]; then
   cp "$REPO_DIR/frontend/public-site/index.html" "$WEB_DIR/index.html"
   log "Landing page copied to $WEB_DIR"
+fi
+
+# Copy docs wiki
+if [ -d "$REPO_DIR/frontend/public-site/docs" ]; then
+  cp -r "$REPO_DIR/frontend/public-site/docs/"* "$WEB_DIR/docs/" 2>/dev/null || true
+  log "Docs wiki copied to $WEB_DIR/docs"
+fi
+
+# Copy shared content JSON
+if [ -d "$REPO_DIR/frontend/public-site/content" ]; then
+  cp -r "$REPO_DIR/frontend/public-site/content/"* "$WEB_DIR/content/" 2>/dev/null || true
+  log "Content JSON copied to $WEB_DIR/content"
 fi
 
 # Copy logo for the landing page

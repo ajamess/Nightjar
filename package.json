@@ -82,7 +82,9 @@
     "version:bump:major": "node scripts/sync-version.js --bump major",
     "prerelease": "node scripts/sync-version.js --from-git",
     "release:notes": "node scripts/generate-release-notes.js",
-    "release:notes:stdout": "node scripts/generate-release-notes.js --stdout"
+    "release:notes:stdout": "node scripts/generate-release-notes.js --stdout",
+    "seed:demo": "node scripts/seed-demo-workspace.js",
+    "screenshots": "node scripts/capture-screenshots.js"
   },
   "build": {
     "appId": "com.niyanagi.nightjar",

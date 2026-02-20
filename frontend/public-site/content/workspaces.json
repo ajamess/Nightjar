@@ -1,0 +1,29 @@
+{
+  "id": "workspaces",
+  "title": "📂 Workspaces",
+  "icon": "📂",
+  "content": [
+    { "type": "heading", "text": "What Are Workspaces?" },
+    { "type": "paragraph", "text": "Workspaces are encrypted containers that hold your documents, spreadsheets, kanban boards, files, and inventory. Each workspace has its own encryption key and member list." },
+    { "type": "heading", "text": "Creating a Workspace" },
+    { "type": "steps", "items": [
+      "Click the ➕ (New) button in the sidebar action bar.",
+      "Enter a name for your workspace.",
+      "The workspace is created with a unique encryption key. You are the owner."
+    ]},
+    { "type": "heading", "text": "Joining a Workspace" },
+    { "type": "steps", "items": [
+      "Click the \"Join\" button in the sidebar action bar.",
+      "Paste the invite link you received.",
+      "The workspace key is extracted from the link fragment and stored locally."
+    ]},
+    { "type": "heading", "text": "Organizing with Folders" },
+    { "type": "steps", "items": [
+      "Click the 📁+ (New Folder) button in the sidebar action bar.",
+      "Name your folder and press Enter.",
+      "Drag and drop documents into folders to organize them.",
+      "Right-click a folder or document for rename, delete, and move options."
+    ]},
+    { "type": "tip", "text": "The sidebar shows your workspace hierarchy. Collapse or expand folders by clicking the arrow icon next to them." }
+  ]
+}

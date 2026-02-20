@@ -1,0 +1,26 @@
+{
+  "id": "sharing",
+  "title": "🔗 Sharing & Invites",
+  "icon": "🔗",
+  "content": [
+    { "type": "heading", "text": "Sharing a Workspace" },
+    { "type": "screenshot", "id": "sharing-panel", "caption": "The sharing panel with invite link generation and permission controls." },
+    { "type": "steps", "items": [
+      "Click the \"Share\" button in the sidebar action bar.",
+      "This opens the Workspace Settings panel.",
+      "In the sharing section, choose the permission level for the invite link.",
+      "Copy the generated link and send it to your collaborator."
+    ]},
+    { "type": "heading", "text": "Permission Levels" },
+    { "type": "list", "items": [
+      "Owner — Full control: manage members, sharing, settings, and all content.",
+      "Editor — Can create, edit, and delete documents within the workspace.",
+      "Viewer — Read-only access to all workspace content."
+    ]},
+    { "type": "heading", "text": "How Share Links Work" },
+    { "type": "paragraph", "text": "Share links encode the workspace encryption key in the URL fragment (the part after #). This fragment is never sent to any server — it stays in the browser. Only someone with the link can decrypt the workspace." },
+    { "type": "heading", "text": "Managing Members" },
+    { "type": "paragraph", "text": "Workspace owners can view and manage members from Workspace Settings. You can promote or demote members and revoke access." },
+    { "type": "tip", "text": "For maximum security, share invite links through an encrypted channel (e.g., Signal, encrypted email)." }
+  ]
+}

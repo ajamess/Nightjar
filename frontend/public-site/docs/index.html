@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation — Nightjar</title>
+  <meta name="description" content="Nightjar documentation — guides for identity, workspaces, documents, collaboration, security, and more.">
+  <link rel="icon" href="/nightjar-64.png" type="image/png">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <a href="/" class="topbar-brand">
+      <img src="/nightjar-logo.png" alt="Nightjar">
+      Nightjar Docs
+    </a>
+    <div class="topbar-links">
+      <a href="/">Home</a>
+      <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/NiyaNagi/Nightjar/releases" target="_blank" rel="noopener">Releases</a>
+    </div>
+  </div>
+
+  <div class="docs-layout">
+    <!-- Sidebar -->
+    <nav class="docs-sidebar" id="sidebar"></nav>
+
+    <!-- Hub content -->
+    <main class="docs-hub">
+      <h1>Nightjar Documentation</h1>
+      <p class="subtitle">Guides and references for every feature — from getting started to advanced networking.</p>
+      <div class="hub-grid" id="hub-grid"></div>
+    </main>
+  </div>
+
+  <div class="docs-footer">
+    Nightjar · <a href="https://github.com/NiyaNagi/Nightjar" target="_blank" rel="noopener">Open Source</a> · Built by <a href="https://github.com/NiyaNagi" target="_blank" rel="noopener">NiyaNagi</a>
+  </div>
+
+  <script>
+    const CONTENT_BASE = '/content';
+
+    async function init() {
+      try {
+        const res = await fetch(`${CONTENT_BASE}/index.json`);
+        if (!res.ok) return;
+        const index = await res.json();
+        const sections = index.sections || [];
+
+        // Build sidebar
+        const sidebar = document.getElementById('sidebar');
+        const navHTML = '<h3>Documentation</h3><ul>' +
+          sections.map(s => `<li><a href="${s.id}.html"><span class="icon">${s.icon}</span>${s.title.replace(/^[^\s]+\s/, '')}</a></li>`).join('') +
+          '</ul>';
+        sidebar.innerHTML = navHTML;
+
+        // Build hub grid
+        const grid = document.getElementById('hub-grid');
+        grid.innerHTML = sections.map(s =>
+          `<a href="${s.id}.html" class="hub-card">
+            <div class="icon">${s.icon}</div>
+            <h3>${s.title.replace(/^[^\s]+\s/, '')}</h3>
+            <p>${s.summary}</p>
+          </a>`
+        ).join('');
+      } catch (e) {
+        console.warn('Failed to load docs index:', e);
+      }
+    }
+    init();
+  </script>
+</body>
+</html>

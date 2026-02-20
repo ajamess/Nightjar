@@ -1,0 +1,27 @@
+{
+  "id": "identity",
+  "title": "🪪 Identity & Security",
+  "icon": "🪪",
+  "content": [
+    { "type": "heading", "text": "Your Identity" },
+    { "type": "paragraph", "text": "Your identity is a cryptographic keypair stored locally on your device. It's encrypted with your 6-digit PIN using Argon2 key derivation. Your identity is never sent to any server." },
+    { "type": "screenshot", "id": "identity-profile", "caption": "Your cryptographic identity — display name, avatar, and recovery phrase access." },
+    { "type": "heading", "text": "Managing Your Profile" },
+    { "type": "steps", "items": [
+      "Click your avatar or display name in the top-left area of the sidebar.",
+      "From your profile, you can change your display name and avatar color.",
+      "Click \"🔐 View Recovery Phrase\" to reveal your 12-word BIP39 backup phrase."
+    ]},
+    { "type": "heading", "text": "Recovery Phrase" },
+    { "type": "paragraph", "text": "During onboarding, Nightjar generates a 12-word BIP39 recovery phrase. This phrase can restore your identity on a new device or if you forget your PIN." },
+    { "type": "steps", "items": [
+      "To restore: on the lock screen, choose \"Restore Identity\".",
+      "Enter your 12-word recovery phrase.",
+      "Set a new 6-digit PIN.",
+      "Your identity and workspaces are restored."
+    ]},
+    { "type": "heading", "text": "Multiple Identities" },
+    { "type": "paragraph", "text": "You can create multiple identities and switch between them from the lock screen. Each identity has its own workspaces, documents, and settings." },
+    { "type": "tip", "text": "Your PIN protects only your local device. The recovery phrase is your ultimate backup — without it, a forgotten PIN means permanent loss of that identity." }
+  ]
+}

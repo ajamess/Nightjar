@@ -1,0 +1,20 @@
+{
+  "id": "search",
+  "title": "🔍 Search",
+  "icon": "🔍",
+  "content": [
+    { "type": "heading", "text": "Search Palette" },
+    { "type": "paragraph", "text": "Press Ctrl+K to open the search palette. This is a quick-access command palette that lets you search across your workspace." },
+    { "type": "screenshot", "id": "search-palette", "caption": "The search palette with instant results across documents, folders, and content." },
+    { "type": "heading", "text": "Using Search" },
+    { "type": "steps", "items": [
+      "Press Ctrl+K anywhere in the app.",
+      "Type your search query.",
+      "Results show matching documents, folders, and content.",
+      "Click a result to navigate to it, or use arrow keys and Enter."
+    ]},
+    { "type": "heading", "text": "Link Insert" },
+    { "type": "paragraph", "text": "When editing a text document with text selected, Ctrl+K switches to link-insert mode. Select text first, then press Ctrl+K to wrap it in a hyperlink." },
+    { "type": "tip", "text": "The search palette is the fastest way to navigate between documents in large workspaces." }
+  ]
+}

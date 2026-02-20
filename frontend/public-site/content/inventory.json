@@ -1,0 +1,29 @@
+{
+  "id": "inventory",
+  "title": "📦 Inventory",
+  "icon": "📦",
+  "content": [
+    { "type": "heading", "text": "Inventory Management" },
+    { "type": "paragraph", "text": "Nightjar includes a built-in inventory system for tracking items, quantities, and details. Useful for small businesses, personal collections, or any item tracking needs." },
+    { "type": "screenshot", "id": "inventory-list", "caption": "The inventory list with search, filters, and CSV import/export." },
+    { "type": "heading", "text": "Adding Items" },
+    { "type": "steps", "items": [
+      "Open the Inventory section of your workspace.",
+      "Click \"Add Item\" to create a new inventory entry.",
+      "Fill in the details: name, SKU, quantity, price, description, category, and location.",
+      "Click Save. The item appears in your inventory list."
+    ]},
+    { "type": "heading", "text": "Features" },
+    { "type": "list", "items": [
+      "Track items with fields: name, SKU, quantity, price, description, category, location.",
+      "Search and filter your inventory.",
+      "Import and export inventory data via CSV.",
+      "Low-stock alerts to notify you when quantities drop.",
+      "Role-based access — owners manage inventory, editors can add/edit items."
+    ]},
+    { "type": "heading", "text": "CSV Import/Export" },
+    { "type": "paragraph", "text": "Bulk manage inventory by importing from CSV files or exporting your current inventory to CSV for use in spreadsheets or other tools." },
+    { "type": "screenshot", "id": "inventory-map", "caption": "The geographic map view showing inventory item locations." },
+    { "type": "tip", "text": "Inventory data is encrypted and synced peer-to-peer like all other workspace content." }
+  ]
+}
