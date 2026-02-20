@@ -4,7 +4,7 @@
 #
 # Services:
 #   1. nightjar-relay   — Public relay server (wss://night-jar.co/signal)
-#   2. nightjar-private — Private instance with storage (night-jar.co/toot)
+#   2. nightjar-private — Private instance with storage (night-jar.co/app)
 #
 # The Docker image is built on GitHub Actions and pushed to GHCR.
 # This compose file PULLS the pre-built image — no local build needed.
@@ -51,8 +51,8 @@ services:
 
   # --------------------------------------------------------------------------
   # Private Instance — full persistence, no mesh participation
-  # Same image, different runtime config (BASE_PATH=/toot)
-  # Accessible at night-jar.co/toot
+  # Same image, different runtime config (BASE_PATH=/app)
+  # Accessible at night-jar.co/app
   # --------------------------------------------------------------------------
   nightjar-private:
     image: ghcr.io/niyanagi/nightjar:latest
@@ -67,11 +67,11 @@ services:
       - NODE_ENV=production
       - NIGHTJAR_MODE=private
       # Express uses this to prefix all routes and strip from incoming requests
-      - BASE_PATH=/toot
+      - BASE_PATH=/app
       # Bug report proxy — auto-submits GitHub issues from the app
       - GITHUB_PAT=${GITHUB_PAT:-}
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/toot/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/app/health"]
       interval: 30s
       timeout: 10s
       retries: 3

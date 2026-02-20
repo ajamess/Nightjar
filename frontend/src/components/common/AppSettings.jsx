@@ -1381,7 +1381,7 @@ export default function AppSettings({ isOpen, onClose }) {
                     <a href="https://github.com/NiyaNagi/Nightjar/releases" target="_blank" rel="noopener noreferrer">
                       All Releases
                     </a>
-                    <a href="https://night-jar.co/toot/" target="_blank" rel="noopener noreferrer">
+                    <a href="https://night-jar.co/app/" target="_blank" rel="noopener noreferrer">
                       Web App
                     </a>
                   </div>

@@ -16,7 +16,7 @@ import { isElectron } from '../hooks/useEnvironment';
 import { YJS_WS_PORT, META_WS_PORT, WEB_SERVER_PORT } from '../config/constants';
 
 /**
- * Get the deployment base path (e.g., '/toot' for sub-path deployments).
+ * Get the deployment base path (e.g., '/app' for sub-path deployments).
  * Injected by the server at runtime via <script> tag in index.html.
  * Returns empty string for root deployments.
  */

@@ -360,7 +360,7 @@ describe('Sharing Utilities', () => {
     });
 
     test('handles join URL with base path', () => {
-      const joinUrl = 'https://night-jar.co/toot/join/w/abc123#perm:e';
+      const joinUrl = 'https://night-jar.co/app/join/w/abc123#perm:e';
       const nightjarLink = joinUrlToNightjarLink(joinUrl);
       expect(nightjarLink).toBe('nightjar://w/abc123#perm:e');
     });

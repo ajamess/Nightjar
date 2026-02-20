@@ -14,7 +14,7 @@ Share links today use the `nightjar://` custom protocol, which is not clickable 
 | Format | Example | Sensitive data in URL? | Clickable? |
 |--------|---------|----------------------|------------|
 | `nightjar://` | `nightjar://w/{payload}#k:{key}&perm:e` | Yes — in `#fragment` (never sent to server) | ❌ No |
-| Server invite | `https://night-jar.co/toot/invite/{token}` | No — token is opaque lookup key | ✅ Yes |
+| Server invite | `https://night-jar.co/app/invite/{token}` | No — token is opaque lookup key | ✅ Yes |
 | Compressed | `nightjar://c/{deflate+base62}` | Yes — in compressed payload | ❌ No |
 
 **Key insight:** The `#fragment` portion of a URL is **never sent to the server** per RFC 3986. This means we can build clickable `https://` URLs that carry secrets in their fragment — the web app (running client-side in the browser) reads the fragment, but the server never sees it.
@@ -29,7 +29,7 @@ https://{webHost}/{basePath}/join/{base62_payload}#{fragment_params}
 
 **Example:**
 ```
-https://night-jar.co/toot/join/3mZKxvBc7DqNwRtYp2jH9a#k:abc123...&perm:editor&topic:deadbeef...&hpeer:cafebabe...&nodes:wss%3A%2F%2Frelay.night-jar.co&sig:xyz...&by:owner123&exp:1740000000000
+https://night-jar.co/app/join/3mZKxvBc7DqNwRtYp2jH9a#k:abc123...&perm:editor&topic:deadbeef...&hpeer:cafebabe...&nodes:wss%3A%2F%2Frelay.night-jar.co&sig:xyz...&by:owner123&exp:1740000000000
 ```
 
 **What's in the URL path (visible to server):**
@@ -52,7 +52,7 @@ https://night-jar.co/toot/join/3mZKxvBc7DqNwRtYp2jH9a#k:abc123...&perm:editor&to
 
 ### App-Installed Deep Link (Universal Links / App Links)
 
-When the desktop app is installed, the OS can intercept `https://night-jar.co/toot/join/...` and open the app instead of the browser.
+When the desktop app is installed, the OS can intercept `https://night-jar.co/app/join/...` and open the app instead of the browser.
 
 **How:**
 1. **Windows:** Register as handler for `https://night-jar.co` domain via `windows.protocol.handlers` or via a custom URI association
@@ -78,7 +78,7 @@ Add an optional `webUrl` field to workspace metadata:
   id: entityId,
   name: 'My Workspace',
   // ... existing fields ...
-  webUrl: 'https://night-jar.co/toot',  // NEW — web deployment URL for this workspace
+  webUrl: 'https://night-jar.co/app',  // NEW — web deployment URL for this workspace
 }
 ```
 

@@ -22,7 +22,7 @@ RUN npm ci --prefer-offline --ignore-scripts
 # Build frontend with relative base path ('./').
 # Relative URLs resolve correctly at any mount point:
 #   /          → ./assets/foo.js → /assets/foo.js
-#   /toot/     → ./assets/foo.js → /toot/assets/foo.js
+#   /app/      → ./assets/foo.js → /app/assets/foo.js
 # Image is built on GitHub Actions (7GB+ RAM), so give Node plenty of heap.
 RUN NODE_OPTIONS="--max-old-space-size=4096" npx vite build --base="./"
 
@@ -59,7 +59,7 @@ ENV PORT=3000
 ENV STATIC_PATH=/app/frontend/dist
 ENV DB_PATH=/app/server/unified/data/nightjar.db
 
-# Base path for sub-path deployments (e.g., /toot)
+# Base path for sub-path deployments (e.g., /app)
 # Express uses this to prefix all routes and strip it from incoming requests
 ENV BASE_PATH=
 

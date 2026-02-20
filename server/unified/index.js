@@ -50,7 +50,7 @@ const MAX_PEERS_PER_ROOM = parseInt(process.env.MAX_PEERS_PER_ROOM || '100');
 const RATE_LIMIT_WINDOW = 1000;
 const RATE_LIMIT_MAX = 50;
 
-// Base path for sub-path deployments (e.g., '/toot')
+// Base path for sub-path deployments (e.g., '/app')
 // Normalize: ensure leading slash, strip trailing slash, empty string for root
 const RAW_BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 const BASE_PATH = RAW_BASE_PATH && !RAW_BASE_PATH.startsWith('/') 
@@ -1840,7 +1840,7 @@ app.get((BASE_PATH || '') + '/join/*', (req, res) => {
 app.use(BASE_PATH || '/', express.static(STATIC_PATH));
 
 // Read index.html and inject BASE_PATH as a runtime global variable
-// so the frontend knows its deployment path (e.g., '/toot') for URL construction
+// so the frontend knows its deployment path (e.g., '/app') for URL construction
 const indexHtmlPath = join(STATIC_PATH, 'index.html');
 let injectedIndexHtml = null;
 if (existsSync(indexHtmlPath)) {
