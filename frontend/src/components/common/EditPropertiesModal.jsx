@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import IconColorPicker from './IconColorPicker';
+import UnifiedPicker from './UnifiedPicker';
 import { ensureContrastWithWhite, createColorGradient } from '../../utils/colorUtils';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './EditPropertiesModal.css';
@@ -100,13 +100,12 @@ export default function EditPropertiesModal({
                         <div className="edit-properties-modal__field">
                             <label className="edit-properties-modal__label">Appearance</label>
                             <div className="edit-properties-modal__picker-compact">
-                                <IconColorPicker
+                                <UnifiedPicker
                                     icon={icon}
                                     color={color}
                                     onIconChange={readOnly ? undefined : setIcon}
                                     onColorChange={readOnly ? undefined : setColor}
                                     size="medium"
-                                    showColorPreview={false}
                                     compact={true}
                                     disabled={readOnly}
                                 />

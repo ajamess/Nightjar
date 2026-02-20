@@ -61,8 +61,43 @@ jest.mock('../../../frontend/src/utils/qrcode', () => ({
 // Mock identity utils
 jest.mock('../../../frontend/src/utils/identity', () => ({
   generateTransferQRData: jest.fn().mockReturnValue('transfer-qr-data'),
-  EMOJI_OPTIONS: ['🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵'],
 }));
+
+// Mock UnifiedPicker - render a simple mock that exposes the same API
+jest.mock('../../../frontend/src/components/common/UnifiedPicker', () => {
+  const React = require('react');
+  const MockPicker = React.forwardRef(function MockUnifiedPicker(props, ref) {
+    return (
+      <div data-testid="unified-picker" ref={ref}>
+        <button
+          data-testid="unified-picker-trigger"
+          style={{ backgroundColor: props.color }}
+          onClick={() => {}}
+          disabled={props.disabled}
+        >
+          {props.icon || '📁'}
+        </button>
+        <button
+          data-testid="mock-emoji-btn"
+          onClick={() => props.onIconChange?.('🐻')}
+        >
+          🐻
+        </button>
+        <button
+          data-testid="mock-color-btn"
+          onClick={() => props.onColorChange?.('#ef4444')}
+          className="unified-picker__color-pill"
+          style={{ backgroundColor: '#ef4444' }}
+        />
+      </div>
+    );
+  });
+  MockPicker.displayName = 'UnifiedPicker';
+  return {
+    __esModule: true,
+    default: MockPicker,
+  };
+});
 
 // Mock confirm dialog
 jest.mock('../../../frontend/src/components/common/ConfirmDialog', () => ({
@@ -155,8 +190,7 @@ describe('IdentitySettings', () => {
       render(<IdentitySettings onClose={mockOnClose} />);
       
       expect(screen.getByText('Display Name')).toBeInTheDocument();
-      expect(screen.getByText('Avatar')).toBeInTheDocument();
-      expect(screen.getByText('Color')).toBeInTheDocument();
+      expect(screen.getByText('Appearance')).toBeInTheDocument();
     });
 
     test('displays current handle in input', () => {
@@ -175,21 +209,11 @@ describe('IdentitySettings', () => {
       expect(input.value).toBe('NewName');
     });
 
-    test('shows emoji picker with options', () => {
+    test('shows unified picker for appearance', () => {
       render(<IdentitySettings onClose={mockOnClose} />);
       
-      // Should show at least some emoji options
-      expect(screen.getAllByRole('button').filter(btn => 
-        /[\u{1F300}-\u{1FAD6}]/u.test(btn.textContent)
-      ).length).toBeGreaterThan(0);
-    });
-
-    test('shows color picker with presets', () => {
-      render(<IdentitySettings onClose={mockOnClose} />);
-      
-      // Should have color option buttons
-      const colorOptions = document.querySelectorAll('.color-option');
-      expect(colorOptions.length).toBeGreaterThan(0);
+      // Should render the UnifiedPicker component
+      expect(screen.getByTestId('unified-picker')).toBeInTheDocument();
     });
 
     test('save button calls updateIdentity', async () => {

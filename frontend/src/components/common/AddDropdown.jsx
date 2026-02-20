@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import IconColorPicker from './IconColorPicker';
+import UnifiedPicker from './UnifiedPicker';
 import './AddDropdown.css';
 
 const ITEM_TYPES = {
@@ -225,12 +225,13 @@ export default function AddDropdown({
               <div className="add-dropdown__creator-form">
                 {/* Icon & Name row */}
                 <div className="add-dropdown__creator-row">
-                  <IconColorPicker
+                  <UnifiedPicker
                     icon={itemIcon}
                     color={itemColor}
                     onIconChange={setItemIcon}
                     onColorChange={setItemColor}
                     size="medium"
+                    showStrip={false}
                   />
                   <input
                     ref={nameInputRef}

@@ -4,15 +4,10 @@
 import React, { useState, useCallback } from 'react';
 import { useIdentity } from '../../contexts/IdentityContext';
 import { generateQRCode } from '../../utils/qrcode';
-import { generateTransferQRData, EMOJI_OPTIONS } from '../../utils/identity';
+import { generateTransferQRData } from '../../utils/identity';
+import UnifiedPicker from '../common/UnifiedPicker';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 import './Settings.css';
-
-const COLOR_PRESETS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
-    '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
-    '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
-];
 
 export default function IdentitySettings({ onClose }) {
     const { identity, publicIdentity, updateIdentity, deleteIdentity, currentDevice } = useIdentity();
@@ -144,32 +139,15 @@ export default function IdentitySettings({ onClose }) {
                             </div>
                             
                             <div className="form-group">
-                                <label>Avatar</label>
-                                <div className="emoji-picker compact">
-                                    {EMOJI_OPTIONS.slice(0, 30).map((emoji) => (
-                                        <button
-                                            key={emoji}
-                                            className={`emoji-option ${emoji === selectedEmoji ? 'selected' : ''}`}
-                                            onClick={() => setSelectedEmoji(emoji)}
-                                        >
-                                            {emoji}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            <div className="form-group">
-                                <label>Color</label>
-                                <div className="color-picker">
-                                    {COLOR_PRESETS.map((color) => (
-                                        <button
-                                            key={color}
-                                            className={`color-option ${color === selectedColor ? 'selected' : ''}`}
-                                            style={{ backgroundColor: color }}
-                                            onClick={() => setSelectedColor(color)}
-                                        />
-                                    ))}
-                                </div>
+                                <label>Appearance</label>
+                                <UnifiedPicker
+                                    icon={selectedEmoji}
+                                    color={selectedColor}
+                                    onIconChange={setSelectedEmoji}
+                                    onColorChange={setSelectedColor}
+                                    size="medium"
+                                    compact={true}
+                                />
                             </div>
                             
                             {error && <div className="error-message">{error}</div>}

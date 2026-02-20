@@ -2,14 +2,10 @@
 // Component for creating a new identity with PIN protection
 
 import React, { useState, useEffect } from 'react';
-import { generateIdentity, EMOJI_OPTIONS, generateRandomColor } from '../../utils/identity';
+import { generateIdentity, generateRandomColor } from '../../utils/identity';
+import UnifiedPicker, { ALL_ICONS, PRESET_COLOR_HEXES } from '../common/UnifiedPicker';
 import PinInput from '../PinInput';
 
-const COLOR_PRESETS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
-    '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
-    '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
-];
 
 const STEPS = {
     PROFILE: 'profile',
@@ -22,7 +18,6 @@ export default function CreateIdentity({ hasExistingIdentity, onComplete, onBack
     const [handle, setHandle] = useState('');
     const [selectedEmoji, setSelectedEmoji] = useState('');
     const [selectedColor, setSelectedColor] = useState('');
-    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState(null);
     const [showDeleteWarning, setShowDeleteWarning] = useState(false);
@@ -35,8 +30,8 @@ export default function CreateIdentity({ hasExistingIdentity, onComplete, onBack
     
     // Initialize with random values
     useEffect(() => {
-        const randomEmoji = EMOJI_OPTIONS[Math.floor(Math.random() * EMOJI_OPTIONS.length)];
-        const randomColor = COLOR_PRESETS[Math.floor(Math.random() * COLOR_PRESETS.length)];
+        const randomEmoji = ALL_ICONS[Math.floor(Math.random() * ALL_ICONS.length)];
+        const randomColor = PRESET_COLOR_HEXES[Math.floor(Math.random() * PRESET_COLOR_HEXES.length)];
         setSelectedEmoji(randomEmoji);
         setSelectedColor(randomColor);
     }, []);
@@ -301,10 +296,6 @@ export default function CreateIdentity({ hasExistingIdentity, onComplete, onBack
                 <div 
                     className="avatar-large" 
                     style={{ backgroundColor: selectedColor }}
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    onKeyDown={(e) => e.key === 'Enter' && setShowEmojiPicker(!showEmojiPicker)}
-                    role="button"
-                    tabIndex={0}
                 >
                     {selectedEmoji}
                 </div>
@@ -326,53 +317,14 @@ export default function CreateIdentity({ hasExistingIdentity, onComplete, onBack
             </div>
             
             <div className="form-group">
-                <label>Avatar</label>
-                <div className="avatar-selector">
-                    <button 
-                        className="current-avatar"
-                        style={{ backgroundColor: selectedColor }}
-                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        data-testid="emoji-picker-trigger"
-                        type="button"
-                    >
-                        {selectedEmoji}
-                    </button>
-                    <span className="selector-hint">Click to change</span>
-                </div>
-                
-                {showEmojiPicker && (
-                    <div className="emoji-picker" data-testid="emoji-picker">
-                        {EMOJI_OPTIONS.map((emoji) => (
-                            <button
-                                key={emoji}
-                                className={`emoji-option ${emoji === selectedEmoji ? 'selected' : ''}`}
-                                onClick={() => {
-                                    setSelectedEmoji(emoji);
-                                    setShowEmojiPicker(false);
-                                }}
-                                data-testid={`emoji-${emoji}`}
-                                type="button"
-                            >
-                                {emoji}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-            
-            <div className="form-group">
-                <label>Color</label>
-                <div className="color-picker">
-                    {COLOR_PRESETS.map((color) => (
-                        <button
-                            key={color}
-                            className={`color-option ${color === selectedColor ? 'selected' : ''}`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => setSelectedColor(color)}
-                            type="button"
-                        />
-                    ))}
-                </div>
+                <label>Appearance</label>
+                <UnifiedPicker
+                    icon={selectedEmoji}
+                    color={selectedColor}
+                    onIconChange={setSelectedEmoji}
+                    onColorChange={setSelectedColor}
+                    size="medium"
+                />
             </div>
             
             {error && (

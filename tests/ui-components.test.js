@@ -2,7 +2,7 @@
  * UI Components Unit Tests
  * 
  * Tests for recently added UI components:
- * - IconColorPicker
+ * - UnifiedPicker (replacement for IconColorPicker)
  * - AddDropdown
  * - JoinWithLink
  * - AppSettings
@@ -15,108 +15,329 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import '@testing-library/jest-dom';
 
 // Import components directly
-import IconColorPicker, { PRESET_ICONS, PRESET_COLORS } from '../frontend/src/components/common/IconColorPicker';
+import UnifiedPicker, { PRESET_ICONS, PRESET_COLORS, PRESET_COLOR_HEXES, ALL_ICONS, EMOJI_DATA, EMOJI_CATEGORIES } from '../frontend/src/components/common/UnifiedPicker';
 import AddDropdown, { ITEM_TYPES } from '../frontend/src/components/common/AddDropdown';
 
 // ============================================================
-// IconColorPicker Tests
+// UnifiedPicker Tests (replaces old IconColorPicker tests)
 // ============================================================
 
-describe('IconColorPicker Component', () => {
+describe('UnifiedPicker Component', () => {
+  // Mock localStorage for recent emojis
+  const localStorageMock = (() => {
+    let store = {};
+    return {
+      getItem: jest.fn(key => store[key] || null),
+      setItem: jest.fn((key, val) => { store[key] = val; }),
+      removeItem: jest.fn(key => { delete store[key]; }),
+      clear: jest.fn(() => { store = {}; }),
+    };
+  })();
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'localStorage', { value: localStorageMock, writable: true });
+    localStorageMock.clear();
+    jest.clearAllMocks();
+  });
+
   describe('Rendering', () => {
     test('renders with default icon and color', () => {
-      render(<IconColorPicker />);
-      const trigger = screen.getByRole('button');
-      expect(trigger).toBeInTheDocument();
+      render(<UnifiedPicker />);
+      expect(screen.getByTestId('unified-picker')).toBeInTheDocument();
+      expect(screen.getByTestId('unified-picker-trigger')).toBeInTheDocument();
     });
 
     test('displays custom icon', () => {
-      render(<IconColorPicker icon="🚀" />);
-      expect(screen.getByText('🚀')).toBeInTheDocument();
+      render(<UnifiedPicker icon="🚀" />);
+      const trigger = screen.getByTestId('unified-picker-trigger');
+      expect(trigger).toHaveTextContent('🚀');
     });
 
     test('applies color to trigger', () => {
-      const { container } = render(<IconColorPicker color="#ff0000" />);
-      const trigger = container.querySelector('.icon-color-picker__trigger');
+      render(<UnifiedPicker color="#ff0000" />);
+      const trigger = screen.getByTestId('unified-picker-trigger');
       expect(trigger).toHaveStyle({ backgroundColor: '#ff0000' });
     });
 
     test('renders in different sizes', () => {
-      const { rerender, container } = render(<IconColorPicker size="small" />);
-      expect(container.querySelector('.icon-color-picker--small')).toBeInTheDocument();
+      const { rerender, container } = render(<UnifiedPicker size="small" />);
+      expect(container.querySelector('.unified-picker--small')).toBeInTheDocument();
       
-      rerender(<IconColorPicker size="large" />);
-      expect(container.querySelector('.icon-color-picker--large')).toBeInTheDocument();
+      rerender(<UnifiedPicker size="large" />);
+      expect(container.querySelector('.unified-picker--large')).toBeInTheDocument();
     });
 
     test('respects disabled state', () => {
-      render(<IconColorPicker disabled />);
-      expect(screen.getByRole('button')).toBeDisabled();
+      render(<UnifiedPicker disabled />);
+      expect(screen.getByTestId('unified-picker-trigger')).toBeDisabled();
+    });
+
+    test('renders inline mini-strip with quick-pick emojis and colors', () => {
+      render(<UnifiedPicker />);
+      expect(screen.getByTestId('unified-picker-strip')).toBeInTheDocument();
+    });
+
+    test('hides strip when showStrip is false', () => {
+      render(<UnifiedPicker showStrip={false} />);
+      expect(screen.queryByTestId('unified-picker-strip')).not.toBeInTheDocument();
+      expect(screen.getByTestId('unified-picker-trigger')).toBeInTheDocument();
+    });
+
+    test('renders inline popover in compact mode', () => {
+      render(<UnifiedPicker compact />);
+      expect(screen.getByTestId('unified-picker-popover')).toBeInTheDocument();
+      // No strip in compact mode
+      expect(screen.queryByTestId('unified-picker-strip')).not.toBeInTheDocument();
     });
   });
 
   describe('Interactions', () => {
-    test('opens picker on click', async () => {
-      render(<IconColorPicker />);
+    test('opens popover on trigger click', async () => {
+      render(<UnifiedPicker />);
       
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
       
       await waitFor(() => {
-        // The component opens a dialog panel
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+    });
+
+    test('opens popover on expand button click', async () => {
+      render(<UnifiedPicker />);
+      
+      fireEvent.click(screen.getByTestId('unified-picker-expand'));
+      
+      await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
     });
 
     test('closes on Escape key', async () => {
-      render(<IconColorPicker />);
+      render(<UnifiedPicker />);
       
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
       
-      // Fire escape on the picker container
-      const picker = screen.getByRole('dialog').closest('.icon-color-picker');
-      fireEvent.keyDown(picker, { key: 'Escape' });
+      // Fire escape globally (component uses document keydown)
+      fireEvent.keyDown(document, { key: 'Escape' });
       
       await waitFor(() => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       });
     });
 
-    test('calls onIconChange when icon selected', async () => {
+    test('calls onIconChange when emoji selected from strip', () => {
       const onIconChange = jest.fn();
-      render(<IconColorPicker onIconChange={onIconChange} />);
+      render(<UnifiedPicker onIconChange={onIconChange} />);
       
-      fireEvent.click(screen.getByRole('button'));
+      // Click a quick-pick emoji from the strip
+      const stripEmojis = screen.getByTestId('unified-picker-strip')
+        .querySelectorAll('.unified-picker__strip-emoji');
+      expect(stripEmojis.length).toBeGreaterThan(0);
+      fireEvent.click(stripEmojis[0]);
+      
+      expect(onIconChange).toHaveBeenCalled();
+    });
+
+    test('calls onColorChange when color selected from strip', () => {
+      const onColorChange = jest.fn();
+      render(<UnifiedPicker onColorChange={onColorChange} />);
+      
+      const stripColors = screen.getByTestId('unified-picker-strip')
+        .querySelectorAll('.unified-picker__strip-color');
+      expect(stripColors.length).toBeGreaterThan(0);
+      fireEvent.click(stripColors[0]);
+      
+      expect(onColorChange).toHaveBeenCalled();
+    });
+
+    test('calls onIconChange when emoji selected from popover', async () => {
+      const onIconChange = jest.fn();
+      render(<UnifiedPicker onIconChange={onIconChange} />);
+      
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
       
       await waitFor(() => {
-        // Select an icon using aria-label pattern
-        const icons = screen.getAllByRole('button', { name: /select.*icon/i });
-        fireEvent.click(icons[0]);
+        const emojiGrid = screen.getByTestId('unified-picker-category-grid');
+        const emojiBtns = emojiGrid.querySelectorAll('.unified-picker__emoji-btn');
+        expect(emojiBtns.length).toBeGreaterThan(0);
+        fireEvent.click(emojiBtns[0]);
       });
       
       expect(onIconChange).toHaveBeenCalled();
     });
 
-    test('calls onColorChange when color selected', async () => {
+    test('calls onColorChange when color selected from popover', async () => {
       const onColorChange = jest.fn();
-      render(<IconColorPicker onColorChange={onColorChange} />);
+      render(<UnifiedPicker onColorChange={onColorChange} />);
       
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
       
       await waitFor(() => {
-        // Switch to color tab by clicking the Color tab button
-        const colorTabButton = screen.getByText(/🎨 Color/);
-        fireEvent.click(colorTabButton);
+        const colorGrid = screen.getByTestId('unified-picker-color-grid');
+        const pills = colorGrid.querySelectorAll('.unified-picker__color-pill');
+        expect(pills.length).toBe(30);
+        fireEvent.click(pills[0]);
+      });
+      
+      expect(onColorChange).toHaveBeenCalledWith('#ef4444');
+    });
+  });
+
+  describe('Search', () => {
+    test('renders search input in popover', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('unified-picker-search')).toBeInTheDocument();
+      });
+    });
+
+    test('filters emojis by search text', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        const searchInput = screen.getByTestId('unified-picker-search');
+        fireEvent.change(searchInput, { target: { value: 'rocket' } });
+      });
+      
+      // Wait for debounce (150ms)
+      await waitFor(() => {
+        const results = screen.getByTestId('unified-picker-search-results');
+        expect(results).toBeInTheDocument();
+        expect(results.querySelector('button')).toBeInTheDocument();
+      }, { timeout: 500 });
+    });
+
+    test('shows empty state for no search results', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        fireEvent.change(screen.getByTestId('unified-picker-search'), {
+          target: { value: 'xyznonexistent123' }
+        });
       });
       
       await waitFor(() => {
-        const colors = screen.getAllByRole('button', { name: /select.*color/i });
-        fireEvent.click(colors[0]);
+        expect(screen.getByTestId('unified-picker-empty')).toBeInTheDocument();
+        expect(screen.getByText('No emoji found')).toBeInTheDocument();
+      }, { timeout: 500 });
+    });
+
+    test('clear button clears search', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        fireEvent.change(screen.getByTestId('unified-picker-search'), {
+          target: { value: 'rocket' }
+        });
       });
       
-      expect(onColorChange).toHaveBeenCalled();
+      await waitFor(() => {
+        const clearBtn = screen.getByTestId('unified-picker-search-clear');
+        fireEvent.click(clearBtn);
+        expect(screen.getByTestId('unified-picker-search').value).toBe('');
+      }, { timeout: 500 });
+    });
+  });
+
+  describe('Category Tabs', () => {
+    test('renders category tabs', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('unified-picker-category-tabs')).toBeInTheDocument();
+      });
+    });
+
+    test('switches categories on tab click', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        const animalsTab = screen.getByTestId('unified-picker-cat-animals');
+        fireEvent.click(animalsTab);
+        expect(animalsTab.classList.contains('unified-picker__cat-tab--active')).toBe(true);
+      });
+    });
+
+    test('hides category tabs during search', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        fireEvent.change(screen.getByTestId('unified-picker-search'), {
+          target: { value: 'heart' }
+        });
+      });
+      
+      await waitFor(() => {
+        expect(screen.queryByTestId('unified-picker-category-tabs')).not.toBeInTheDocument();
+      }, { timeout: 500 });
+    });
+  });
+
+  describe('Custom Color', () => {
+    test('renders custom color inputs in popover', async () => {
+      render(<UnifiedPicker />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('unified-picker-custom-color')).toBeInTheDocument();
+        expect(screen.getByTestId('unified-picker-native-color')).toBeInTheDocument();
+        expect(screen.getByTestId('unified-picker-hex-input')).toBeInTheDocument();
+      });
+    });
+
+    test('hex input calls onColorChange with valid hex', async () => {
+      const onColorChange = jest.fn();
+      render(<UnifiedPicker onColorChange={onColorChange} />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        const hexInput = screen.getByTestId('unified-picker-hex-input');
+        fireEvent.change(hexInput, { target: { value: '#abcdef' } });
+      });
+      
+      expect(onColorChange).toHaveBeenCalledWith('#abcdef');
+    });
+
+    test('hex input rejects invalid hex', async () => {
+      const onColorChange = jest.fn();
+      render(<UnifiedPicker onColorChange={onColorChange} />);
+      fireEvent.click(screen.getByTestId('unified-picker-trigger'));
+      
+      await waitFor(() => {
+        const hexInput = screen.getByTestId('unified-picker-hex-input');
+        fireEvent.change(hexInput, { target: { value: '#xyz' } });
+      });
+      
+      expect(onColorChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Mode Prop', () => {
+    test('mode="icon" hides color section', () => {
+      render(<UnifiedPicker compact mode="icon" />);
+      expect(screen.queryByTestId('unified-picker-color-section')).not.toBeInTheDocument();
+    });
+
+    test('mode="color" hides emoji section', () => {
+      render(<UnifiedPicker compact mode="color" />);
+      expect(screen.queryByTestId('unified-picker-emoji-scroll')).not.toBeInTheDocument();
+    });
+
+    test('mode="both" shows both sections', () => {
+      render(<UnifiedPicker compact mode="both" />);
+      expect(screen.getByTestId('unified-picker-emoji-scroll')).toBeInTheDocument();
+      expect(screen.getByTestId('unified-picker-color-section')).toBeInTheDocument();
     });
   });
 
@@ -127,11 +348,32 @@ describe('IconColorPicker Component', () => {
       expect(PRESET_ICONS.documents).toBeDefined();
     });
 
-    test('PRESET_COLORS is defined and has colors', () => {
+    test('PRESET_COLORS is defined and has 30 colors', () => {
       expect(PRESET_COLORS).toBeDefined();
-      expect(PRESET_COLORS.length).toBeGreaterThan(0);
-      // PRESET_COLORS is now an array of objects with hex property
+      expect(PRESET_COLORS.length).toBe(30);
       expect(PRESET_COLORS[0].hex).toMatch(/^#[0-9a-f]{6}$/i);
+    });
+
+    test('PRESET_COLOR_HEXES is an array of hex strings', () => {
+      expect(PRESET_COLOR_HEXES).toBeDefined();
+      expect(PRESET_COLOR_HEXES.length).toBe(30);
+      expect(PRESET_COLOR_HEXES[0]).toMatch(/^#[0-9a-f]{6}$/i);
+    });
+
+    test('ALL_ICONS contains 200+ emojis', () => {
+      expect(ALL_ICONS).toBeDefined();
+      expect(ALL_ICONS.length).toBeGreaterThan(200);
+    });
+
+    test('EMOJI_DATA has 10 categories', () => {
+      expect(EMOJI_DATA).toBeDefined();
+      expect(Object.keys(EMOJI_DATA).length).toBe(10);
+    });
+
+    test('EMOJI_CATEGORIES is ordered', () => {
+      expect(EMOJI_CATEGORIES).toBeDefined();
+      expect(EMOJI_CATEGORIES[0]).toBe('smileys');
+      expect(EMOJI_CATEGORIES.length).toBe(10);
     });
   });
 });

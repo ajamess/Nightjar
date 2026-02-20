@@ -5,25 +5,9 @@ import { useEnvironment } from '../hooks/useEnvironment';
 import RecoveryCodeModal from './RecoveryCodeModal';
 import { createBackup, downloadBackup } from '../utils/backup';
 import { copyDiagnosticReportToClipboard } from '../utils/diagnostics';
+import UnifiedPicker from './common/UnifiedPicker';
 import './UserProfile.css';
 
-// Preset emoji icons
-const PRESET_ICONS = [
-    '🦅', '😀', '😊', '🙂', '😎', '🤓', '🤠', '🥳', '😇', '🤔',
-    '🧐', '👻', '🤖', '👽', '💀', '🎭', '🦸', '🦹', '🧙', '🧝',
-    '🧛', '🐱', '🐶', '🦊', '🐻', '🐼', '🐨', '🦁', '🐯', '🐮',
-    '🐷', '🐸', '🐵', '🐔', '🦉', '🐧', '🐝', '🦋', '🐙', '🦄',
-    '🌸', '🌺', '🌻', '🌹', '🌵', '🌲', '🍀', '🌈', '⭐', '🌙',
-    '☀️', '🔥', '💧', '❄️', '⚡', '💎', '🎯', '🎲', '🎮', '🎸',
-];
-
-// Preset colors
-const PRESET_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
-    '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
-    '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
-    '#ec4899', '#f43f5e', '#64748b', '#1e293b', '#ffffff'
-];
 
 // Test user profiles for multi-client testing
 const TEST_USER_PROFILES = [
@@ -319,47 +303,15 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile, onLock }) =
                     {activeTab === 'appearance' && (
                         <div className="tab-content">
                             <div className="section">
-                                <label className="section-label">Color</label>
-                                <div className="preset-colors">
-                                    {PRESET_COLORS.map(color => (
-                                        <button
-                                            key={color}
-                                            type="button"
-                                            className={`color-option ${profile.color === color ? 'selected' : ''}`}
-                                            style={{ backgroundColor: color }}
-                                            onClick={() => updateProfile({ color })}
-                                            title={color}
-                                            aria-label={`Select color ${color}`}
-                                            aria-pressed={profile.color === color}
-                                        />
-                                    ))}
-                                </div>
-                                <div className="custom-color">
-                                    <label>Custom:</label>
-                                    <input
-                                        type="color"
-                                        value={profile.color}
-                                        onChange={(e) => updateProfile({ color: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="section">
-                                <label className="section-label">Icon</label>
-                                <div className="preset-icons">
-                                    {PRESET_ICONS.map(icon => (
-                                        <button
-                                            key={icon}
-                                            type="button"
-                                            className={`icon-option ${profile.icon === icon ? 'selected' : ''}`}
-                                            onClick={() => updateProfile({ icon })}
-                                            aria-label={`Select icon ${icon}`}
-                                            aria-pressed={profile.icon === icon}
-                                        >
-                                            {icon}
-                                        </button>
-                                    ))}
-                                </div>
+                                <label className="section-label">Appearance</label>
+                                <UnifiedPicker
+                                    icon={profile.icon}
+                                    color={profile.color}
+                                    onIconChange={(icon) => updateProfile({ icon })}
+                                    onColorChange={(color) => updateProfile({ color })}
+                                    size="medium"
+                                    compact={true}
+                                />
                             </div>
                         </div>
                     )}
@@ -612,5 +564,5 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile, onLock }) =
     );
 };
 
-export { loadUserProfile, saveUserProfile, PRESET_ICONS, PRESET_COLORS };
+export { loadUserProfile, saveUserProfile };
 export default UserProfile;

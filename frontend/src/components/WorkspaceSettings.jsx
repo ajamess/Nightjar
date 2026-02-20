@@ -18,7 +18,7 @@ import { getStoredKeyChain } from '../utils/keyDerivation';
 import { signData, uint8ToBase62 } from '../utils/identity';
 import { isElectron } from '../hooks/useEnvironment';
 import { getBasePath } from '../utils/websocket';
-import { IconColorPicker } from './common';
+import { UnifiedPicker } from './common';
 import { useConfirmDialog } from './common/ConfirmDialog';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { logBehavior } from '../utils/logger';
@@ -598,7 +598,7 @@ export default function WorkspaceSettings({
             <h3 className="workspace-settings__section-title">Workspace Info</h3>
             
             <div className="workspace-settings__field workspace-settings__field--row">
-              <IconColorPicker
+              <UnifiedPicker
                 icon={icon}
                 color={color}
                 onIconChange={setIcon}

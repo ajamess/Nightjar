@@ -2,19 +2,15 @@
 // Component for restoring identity from recovery phrase
 
 import React, { useState, useRef, useEffect } from 'react';
-import { restoreIdentityFromMnemonic, validateMnemonic, EMOJI_OPTIONS } from '../../utils/identity';
+import { restoreIdentityFromMnemonic, validateMnemonic } from '../../utils/identity';
+import UnifiedPicker, { ALL_ICONS, PRESET_COLOR_HEXES } from '../common/UnifiedPicker';
 
-const COLOR_PRESETS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
-    '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
-    '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
-];
 
 export default function RestoreIdentity({ hasExistingIdentity, onComplete, onBack }) {
     const [words, setWords] = useState(Array(12).fill(''));
     const [handle, setHandle] = useState('');
-    const [selectedEmoji, setSelectedEmoji] = useState(EMOJI_OPTIONS[0]);
-    const [selectedColor, setSelectedColor] = useState(COLOR_PRESETS[0]);
+    const [selectedEmoji, setSelectedEmoji] = useState(ALL_ICONS[0]);
+    const [selectedColor, setSelectedColor] = useState(PRESET_COLOR_HEXES[0]);
     const [step, setStep] = useState('phrase'); // 'phrase', 'profile', or 'success'
     const [restoring, setRestoring] = useState(false);
     const [error, setError] = useState(null);
@@ -169,32 +165,14 @@ export default function RestoreIdentity({ hasExistingIdentity, onComplete, onBac
                 </div>
                 
                 <div className="form-group">
-                    <label>Avatar</label>
-                    <div className="emoji-picker compact">
-                        {EMOJI_OPTIONS.slice(0, 20).map((emoji) => (
-                            <button
-                                key={emoji}
-                                className={`emoji-option ${emoji === selectedEmoji ? 'selected' : ''}`}
-                                onClick={() => setSelectedEmoji(emoji)}
-                            >
-                                {emoji}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-                
-                <div className="form-group">
-                    <label>Color</label>
-                    <div className="color-picker">
-                        {COLOR_PRESETS.map((color) => (
-                            <button
-                                key={color}
-                                className={`color-option ${color === selectedColor ? 'selected' : ''}`}
-                                style={{ backgroundColor: color }}
-                                onClick={() => setSelectedColor(color)}
-                            />
-                        ))}
-                    </div>
+                    <label>Appearance</label>
+                    <UnifiedPicker
+                        icon={selectedEmoji}
+                        color={selectedColor}
+                        onIconChange={setSelectedEmoji}
+                        onColorChange={setSelectedColor}
+                        size="medium"
+                    />
                 </div>
                 
                 {error && <div className="error-message">{error}</div>}

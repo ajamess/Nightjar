@@ -14,32 +14,16 @@ import {
   parseInviteLink, 
   isInviteLink,
   isCompressedLink,
+  isJoinUrl,
+  joinUrlToNightjarLink,
   validateSignedInvite
 } from '../utils/sharing';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { getBasePath } from '../utils/websocket';
 import { logBehavior } from '../utils/logger';
+import UnifiedPicker from './common/UnifiedPicker';
 import './CreateWorkspace.css';
 
-const EMOJI_OPTIONS = [
-  // Nightjar brand + General workspace & organization
-  '🦅', '📁', '💼', '📚', '🗂️', '📦', '🏢', '🏠',
-  '📋',
-  // Creative & design
-  '🎨', '🎬', '🎭', '🖼️', '✏️', '🖌️', '🎵', '📸',
-  // Technical & development
-  '💻', '⚙️', '🔧', '🛠️', '💡', '🔬', '🧪', '📡',
-  // Team & collaboration
-  '👥', '🤝', '💬', '📢', '🎯', '🎓', '📝', '📌',
-  // Planning & productivity
-  '📅', '⏰', '✅', '📈', '📊', '💰', '🚀', '🌟'
-];
-
-const COLOR_PRESETS = [
-  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
-  '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
-  '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
-];
 
 export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSuccess }) {
   const { createWorkspace, joinWorkspace } = useWorkspaces();
@@ -168,9 +152,12 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
       }
     }
     
-    // Try legacy nightjar:// format (may have bootstrap peers embedded)
+    // Convert HTTPS join URLs to nightjar:// format for parsing
+    const normalizedLink = isJoinUrl(value.trim()) ? joinUrlToNightjarLink(value.trim()) : value;
+    
+    // Try nightjar:// format (may have bootstrap peers embedded)
     try {
-      const parsed = parseShareLink(value);
+      const parsed = parseShareLink(normalizedLink);
       const hasHyperswarmPeers = parsed.hyperswarmPeers?.length > 0;
       const hasBootstrapPeers = parsed.bootstrapPeers?.length > 0;
       const hasDirectAddress = !!parsed.directAddress;
@@ -188,7 +175,7 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
         setJoinPassword(parsed.embeddedPassword);
       }
       // Validate signature for signed links
-      const validation = validateSignedInvite(value);
+      const validation = validateSignedInvite(normalizedLink);
       setLinkValidation(validation);
     } catch (err) {
       setParsedLink(null);
@@ -476,36 +463,15 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
         <div className="create-workspace__content">
           {activeTab === 'create' ? (
             <form onSubmit={handleCreate} className="create-workspace__form">
-              <div className="create-workspace__icon-section">
-                <label className="create-workspace__label">Choose an icon</label>
-                <div className="create-workspace__icon-grid">
-                  {EMOJI_OPTIONS.map(emoji => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      className={`create-workspace__icon-option ${icon === emoji ? 'create-workspace__icon-option--selected' : ''}`}
-                      onClick={() => setIcon(emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="create-workspace__color-section">
-                <label className="create-workspace__label">Choose a color</label>
-                <div className="create-workspace__color-grid">
-                  {COLOR_PRESETS.map(c => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`create-workspace__color-option ${color === c ? 'create-workspace__color-option--selected' : ''}`}
-                      style={{ backgroundColor: c }}
-                      onClick={() => setColor(c)}
-                      aria-label={`Select color ${c}`}
-                    />
-                  ))}
-                </div>
+              <div className="create-workspace__appearance-section">
+                <label className="create-workspace__label">Appearance</label>
+                <UnifiedPicker
+                  icon={icon}
+                  color={color}
+                  onIconChange={setIcon}
+                  onColorChange={setColor}
+                  size="medium"
+                />
               </div>
               
               <div className="create-workspace__field">
