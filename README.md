@@ -1086,6 +1086,12 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.17 - PWA Icon Refresh
+- **Enhancement**: PWA icons now show the bird on a transparent background (no dark box) so the icon looks native on mobile home screens
+- **Enhancement**: Bird fills ~94% of the icon width for maximum visibility at small sizes
+- **Enhancement**: Separate maskable icon (`nightjar-maskable-512.png`) with the app's dark background (#0f0f17) and safe-zone-aware sizing — OS can crop to any shape without clipping the bird
+- **Enhancement**: Apple touch icon (180×180) also updated to transparent bird
+
 ### v1.7.16 - PWA Start URL Fix
 - **Bug Fix**: PWA "Add to Home Screen" now opens the Nightjar app instead of the night-jar.co landing page — changed `start_url` from `"/"` to `"./"` (relative) and added `scope` property
 - **Enhancement**: Dynamic manifest route on the server injects `BASE_PATH` into `start_url`, `scope`, and icon paths at runtime, ensuring the PWA always opens to the correct deployment path
