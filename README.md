@@ -1086,6 +1086,11 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.16 - PWA Start URL Fix
+- **Bug Fix**: PWA "Add to Home Screen" now opens the Nightjar app instead of the night-jar.co landing page — changed `start_url` from `"/"` to `"./"` (relative) and added `scope` property
+- **Enhancement**: Dynamic manifest route on the server injects `BASE_PATH` into `start_url`, `scope`, and icon paths at runtime, ensuring the PWA always opens to the correct deployment path
+- **Enhancement**: Manifest served with `no-cache` headers to prevent stale PWA configs
+
 ### v1.7.15 - Spreadsheet Sync Fix (Issue #4)
 - **Critical Fix**: Spreadsheet cell edits now sync across clients — migrated real-time ops from `Y.Map.set('pendingOps', ...)` (last-writer-wins) to `Y.Array('sheet-ops')` with CRDT-ordered push/observe, eliminating silent op loss during concurrent edits
 - **Critical Fix**: Remote spreadsheet data now renders correctly — added `convertCelldataToData` helper that builds a 2D data array from sparse `celldata` format before passing to Fortune Sheet, fixing the "non-empty cells: 0" bug where remote updates arrived but cells appeared blank
