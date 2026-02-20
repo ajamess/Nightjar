@@ -158,7 +158,7 @@ Whether you're a journalist protecting sources, an activist organizing securely,
 ### 📁 Organization
 - **Workspace switcher** with permission badges (Owner/Editor/Viewer) and quick-create
 - **Hierarchical sidebar** — workspace → folder → document tree with color gradients, context menus, and inline renaming
-- **Icon & color picker** — emoji icons (8 categories) and color palette (20 presets) for workspaces, folders, and documents
+- **Icon & color picker** — UnifiedPicker with 500+ emojis across 10 categories, bubble trigger with portal popover, category tab paging, search filtering, and 20-color palette for workspaces, folders, and documents *(Redesigned in v1.7.13)*
 - **Breadcrumb navigation** — visual path with permission-aware access levels
 - **Search palette** — fuzzy search across 7 categories (people, documents, folders, inventory, files, chat, content) with instant + async full-text phases
 - Nested folder hierarchy with drag-and-drop reordering
@@ -178,7 +178,7 @@ Whether you're a journalist protecting sources, an activist organizing securely,
 - **Multiple identity management** — hold multiple cryptographic identities on one device with PIN unlock per identity
 - **Identity QR transfer** — generate QR code with encrypted identity data and 4-digit PIN for device-to-device migration (5-minute expiry)
 - **Encrypted backup & restore** — XSalsa20-Poly1305 encrypted identity + workspace backup files, downloadable and restorable
-- **User profile** — emoji icon picker (60+ icons), color picker, display name, recovery phrase reveal, diagnostic report copy
+- **User profile** — emoji icon picker (500+ icons via UnifiedPicker), color picker, display name, recovery phrase reveal, diagnostic report copy
 - **Memorable passwords** — human-friendly adjective-noun generator for workspace keys (8+ bits entropy per word)
 - **Encrypted local storage** — defense-in-depth NaCl secretbox encryption for browser localStorage with session-scoped keys
 - **Auto-lock timeout** — configurable idle timeout with lock screen
@@ -1065,6 +1065,37 @@ npm run test:e2e:smoke      # Quick smoke tests
 ---
 
 ## Changelog
+
+### v1.7.13 - Security Hardening, UnifiedPicker & Responsive Breakpoints
+- **Security**: Phase 1 hardening — oracle removal, security headers, signed key delivery, encrypted workspace secrets
+- **Security**: Phase 2 — HMAC room-join authentication, encrypted relay transport, security audit documentation
+- **Security**: Encrypted persistence (`ENCRYPTED_PERSISTENCE`) now enabled by default on all server deployments
+- **New Feature**: UnifiedPicker — 500+ emoji catalog across 10 categories with bubble trigger, portal popover, category tab paging, search filtering, and 20-color palette. Replaces `IconColorPicker` across all consumers
+- **New Feature**: Comprehensive mobile-first responsive breakpoints across 40+ CSS files (phone, tablet, desktop tiers)
+- **Bug Fix**: Removed 43 broken Unicode 13.0+/14.0/15.0 emojis; restored 13 corrupted emoji entries
+- **Bug Fix**: Emoji grid clipping fixed (10→8 columns), popover width tuned (520→480px)
+- **Bug Fix**: All inline compact pickers switched to bubble+popover pattern
+- **Bug Fix**: Mascot chat bubble no longer shifts page content (absolute positioning)
+- **Bug Fix**: HMAC room-auth bugs — dead variable in useWorkspaceSync, missing doc-room auth in AppNew
+- **Docs**: Updated screenshots, new Security Hardening docs, security model wiki page
+- **Style**: GitHub star count moved into nav button to save vertical space
+- **Testing**: 141 suites, 4,413 tests — 153 files changed, 11,005 insertions, 1,662 deletions
+
+### v1.7.12 - UI Telemetry, Bug Report Submission & Landing Page
+- **New Feature**: Comprehensive UI action telemetry across 21+ components (230+ instrumented actions)
+- **New Feature**: Automatic bug report submission — server-side proxy with three-tier fallback
+- **New Feature**: Clickable HTTPS share links replace opaque `nightjar://` protocol links
+- **New Feature**: Landing page mascot chat bubble and real app screenshots
+- **Bug Fix**: GitHub nav button contrast improved to WCAG AA (11:1+)
+- **Infrastructure**: App path rename `/toot` → `/app` across 9 files
+- **Testing**: 66 bug report modal tests, 23 proxy tests, 38 sharing tests
+
+### v1.7.11 - Clickable Share Links, Encrypted Persistence & Landing Page
+- **New Feature**: Clickable HTTPS share links with fragment-based secret transmission
+- **New Feature**: Encrypted at-rest persistence (server + client) via NaCl secretbox
+- **New Feature**: Public landing page overhaul — hero, slideshow, feature cards, comparison table, docs wiki
+- **New Feature**: Shared content architecture — 15 JSON content files consumed by landing page, docs wiki, and in-app help
+- **Infrastructure**: VITE_GITHUB_PAT injected in all build modes for CI/CD bug report integration
 
 ### v1.7.10 - Regression Fixes: Bug Report API, Changelog Slider & Rename Double-Fire
 - **Critical**: Restored GitHub API submission in BugReportModal — `createGitHubIssue()` re-added with API-first, clipboard-fallback strategy
