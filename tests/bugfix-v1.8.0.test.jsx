@@ -353,7 +353,7 @@ describe('Relay URL Migration – night-jar.io → night-jar.co', () => {
       'utf8',
     );
 
-    expect(source).toContain('wss://relay.night-jar.co');
+    expect(source).toContain('wss://night-jar.co');
     expect(source).not.toContain('wss://relay.night-jar.io');
   });
 
@@ -502,7 +502,7 @@ describe('AppSettings – Relay Bridge Toggle UI', () => {
     expect(source).toContain('Connect through Public Relay');
     expect(source).toContain('Public Relay Connection');
     expect(source).toContain('Route traffic through public relay');
-    expect(source).toContain('wss://relay.night-jar.co');
+    expect(source).toContain('wss://night-jar.co');
   });
 
   test('AppSettings relay bridge toggle sends IPC message', () => {
@@ -529,7 +529,7 @@ describe('TorSettings – Relay URL Update', () => {
       'utf8',
     );
 
-    expect(source).toContain('wss://relay.night-jar.co');
+    expect(source).toContain('wss://night-jar.co');
     expect(source).not.toContain('wss://relay.example.com');
   });
 

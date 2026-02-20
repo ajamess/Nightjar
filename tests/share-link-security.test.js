@@ -26,6 +26,7 @@ import {
   parseJoinUrl,
   parseAnyShareLink,
   DEFAULT_SHARE_HOST,
+  getShareHost,
 } from '../frontend/src/utils/sharing';
 
 // Setup crypto.subtle for Node.js test environment
@@ -186,7 +187,7 @@ describe('Share Link Security — v1.7.15', () => {
       const nightjar = 'nightjar://w/abc123#k:test&perm:e';
       const https = nightjarLinkToJoinUrl(nightjar);
       
-      expect(https).toBe('https://relay.night-jar.co/join/w/abc123#k:test&perm:e');
+      expect(https).toBe('https://night-jar.co/join/w/abc123#k:test&perm:e');
     });
     
     test('round-trip preserves signed invite link integrity', () => {
@@ -384,7 +385,11 @@ describe('Share Link Security — v1.7.15', () => {
     });
     
     test('DEFAULT_SHARE_HOST is set correctly', () => {
-      expect(DEFAULT_SHARE_HOST).toBe('https://relay.night-jar.co');
+      expect(DEFAULT_SHARE_HOST).toBe('https://night-jar.co');
+    });
+
+    test('getShareHost falls back to DEFAULT_SHARE_HOST outside browser', () => {
+      expect(getShareHost()).toBe('https://night-jar.co');
     });
   });
 });

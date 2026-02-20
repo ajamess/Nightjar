@@ -334,7 +334,7 @@ export function TorSettings({ isOpen, onClose }) {
               <div className="relay-url-input">
                 <input
                   type="text"
-                  placeholder="wss://relay.night-jar.co"
+                  placeholder="wss://night-jar.co"
                   value={relayUrl}
                   onChange={e => setRelayUrl(e.target.value)}
                 />

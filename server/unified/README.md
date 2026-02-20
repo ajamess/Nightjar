@@ -93,7 +93,7 @@ curl http://localhost:3000/health
 |----------|---------|-------------|
 | `PORT` | 3000 | Server port |
 | `NIGHTJAR_MODE` | `host` | Server mode: `host` (persistence + mesh), `relay` (mesh only), `private` (persistence, no mesh) |
-| `PUBLIC_URL` | (none) | WebSocket URL for mesh relay announcements (e.g., `wss://relay.night-jar.io`). Required for relay mode. |
+| `PUBLIC_URL` | (none) | WebSocket URL for mesh relay announcements (e.g., `wss://night-jar.co`). Required for relay mode. |
 | `STATIC_PATH` | `../../frontend/dist` | Path to built React app |
 | `DB_PATH` | `./data/Nightjar.db` | SQLite database path |
 | `MAX_PEERS_PER_ROOM` | 100 | Max concurrent users per workspace |

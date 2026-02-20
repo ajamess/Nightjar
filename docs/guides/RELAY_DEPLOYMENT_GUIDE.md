@@ -1,27 +1,27 @@
-# Nightjar Relay Server — Deployment Guide
+﻿# Nightjar Relay Server â€” Deployment Guide
 
 Step-by-step instructions for deploying a Nightjar relay server on a VPS with Docker and Caddy (auto-TLS).
 
 ## Overview
 
-The relay server is the rendezvous point for Nightjar clients that cannot connect directly via Hyperswarm (e.g., restrictive NATs, browser clients, or Tor-enabled privacy mode). It is **zero-knowledge** — it only sees opaque encrypted blobs and cannot read any content.
+The relay server is the rendezvous point for Nightjar clients that cannot connect directly via Hyperswarm (e.g., restrictive NATs, browser clients, or Tor-enabled privacy mode). It is **zero-knowledge** â€” it only sees opaque encrypted blobs and cannot read any content.
 
 ### Deployment Modes
 
 | Mode | Persistence | Mesh | Use Case |
 |------|------------|------|----------|
-| **host** (default) | ✅ SQLite | ✅ DHT | Main server — stores encrypted backups |
-| **relay** | ❌ | ✅ DHT | Lightweight relay — just routes connections |
-| **private** | ✅ SQLite | ❌ | Isolated — no public mesh participation |
+| **host** (default) | âœ… SQLite | âœ… DHT | Main server â€” stores encrypted backups |
+| **relay** | âŒ | âœ… DHT | Lightweight relay â€” just routes connections |
+| **private** | âœ… SQLite | âŒ | Isolated â€” no public mesh participation |
 
-For a public relay at `relay.night-jar.co`, use **relay** mode.
+For a public relay at `night-jar.co`, use **relay** mode.
 
 ---
 
 ## Prerequisites
 
 - A VPS with a public IP (Ubuntu 22.04+ recommended)
-- A domain name with DNS pointing to the VPS (e.g., `relay.night-jar.co`)
+- A domain name with DNS pointing to the VPS (e.g., `night-jar.co`)
 - Docker and Docker Compose installed
 - Ports 80 and 443 open (for Caddy auto-TLS)
 - Port 3000 open internally (Nightjar server)
@@ -77,7 +77,7 @@ cd Nightjar
 Create `/etc/caddy/Caddyfile`:
 
 ```caddyfile
-relay.night-jar.co {
+night-jar.co {
     # Reverse proxy to Nightjar server
     reverse_proxy localhost:3000
 
@@ -104,10 +104,10 @@ sudo systemctl status caddy
 cd /opt/Nightjar/server/unified
 
 # Relay mode (lightweight, no persistence)
-PUBLIC_URL=wss://relay.night-jar.co docker compose --profile relay up -d
+PUBLIC_URL=wss://night-jar.co docker compose --profile relay up -d
 
-# Or host mode (with encrypted persistence) — starts by default
-PUBLIC_URL=wss://relay.night-jar.co docker compose up -d
+# Or host mode (with encrypted persistence) â€” starts by default
+PUBLIC_URL=wss://night-jar.co docker compose up -d
 ```
 
 ### Option B: Docker Run
@@ -119,7 +119,7 @@ docker run -d \
   --name nightjar-relay \
   --restart unless-stopped \
   -e NIGHTJAR_MODE=relay \
-  -e PUBLIC_URL=wss://relay.night-jar.co \
+  -e PUBLIC_URL=wss://night-jar.co \
   -e NODE_ENV=production \
   -p 3000:3000 \
   nightjar-server
@@ -137,7 +137,7 @@ npm run build
 cd ../server/unified
 
 # Start
-PUBLIC_URL=wss://relay.night-jar.co NIGHTJAR_MODE=relay node index.js
+PUBLIC_URL=wss://night-jar.co NIGHTJAR_MODE=relay node index.js
 ```
 
 ---
@@ -149,7 +149,7 @@ PUBLIC_URL=wss://relay.night-jar.co NIGHTJAR_MODE=relay node index.js
 curl http://localhost:3000/health
 
 # External health check (after DNS propagates)
-curl https://relay.night-jar.co/health
+curl https://night-jar.co/health
 ```
 
 Expected response:
@@ -170,7 +170,7 @@ Expected response:
 npm i -g wscat
 
 # Test signaling endpoint
-wscat -c wss://relay.night-jar.co/signal
+wscat -c wss://night-jar.co/signal
 # Should receive: {"type":"welcome","peerId":"...","serverTime":...}
 ```
 
@@ -182,7 +182,7 @@ Add an A record pointing your domain to the VPS IP:
 
 | Type | Name | Value | TTL |
 |------|------|-------|-----|
-| A | relay | `<VPS_IP>` | 300 |
+| A | @ | `<VPS_IP>` | 300 |
 
 Wait for DNS propagation (usually < 5 minutes).
 
@@ -194,7 +194,7 @@ Wait for DNS propagation (usually < 5 minutes).
 |----------|---------|-------------|
 | `PORT` | `3000` | Server port |
 | `NIGHTJAR_MODE` | `host` | Server mode: `host`, `relay`, or `private` |
-| `PUBLIC_URL` | (none) | WebSocket URL for mesh announcements (e.g., `wss://relay.night-jar.co`) |
+| `PUBLIC_URL` | (none) | WebSocket URL for mesh announcements (e.g., `wss://night-jar.co`) |
 | `STATIC_PATH` | `../../frontend/dist` | Path to built React app |
 | `DB_PATH` | `./data/Nightjar.db` | SQLite database path (host/private modes) |
 | `MAX_PEERS_PER_ROOM` | `100` | Max concurrent users per workspace |
@@ -212,16 +212,16 @@ docker logs -f nightjar-relay
 ### Health check endpoint
 ```bash
 # Returns JSON with room count, uptime, mode
-curl -s https://relay.night-jar.co/health | jq .
+curl -s https://night-jar.co/health | jq .
 ```
 
 ### Mesh status
 ```bash
 # View mesh network status
-curl -s https://relay.night-jar.co/api/mesh/status | jq .
+curl -s https://night-jar.co/api/mesh/status | jq .
 
 # View top relay nodes
-curl -s https://relay.night-jar.co/api/mesh/relays | jq .
+curl -s https://night-jar.co/api/mesh/relays | jq .
 ```
 
 ---
@@ -233,7 +233,7 @@ curl -s https://relay.night-jar.co/api/mesh/relays | jq .
 - [ ] Docker runs as non-root user (`nightjar`)
 - [ ] Rate limiting: 10 req/s general, 5 req/s WebSocket
 - [ ] WebSocket `maxPayload`: 1 MB signaling, 10 MB document sync
-- [ ] No plaintext data — server only handles encrypted blobs
+- [ ] No plaintext data â€” server only handles encrypted blobs
 - [ ] Set `PUBLIC_URL` so the server can announce itself in the relay mesh
 
 ---
@@ -257,14 +257,14 @@ docker compose --profile relay up -d
 docker logs nightjar-relay
 
 # Common issues:
-# - Port 3000 already in use → check with: ss -tlnp | grep 3000
-# - Missing frontend build → cd frontend && npm run build
+# - Port 3000 already in use â†’ check with: ss -tlnp | grep 3000
+# - Missing frontend build â†’ cd frontend && npm run build
 ```
 
 ### WebSocket connections fail
 ```bash
 # Check if Caddy is proxying correctly
-curl -v https://relay.night-jar.co/health
+curl -v https://night-jar.co/health
 
 # Check Caddy logs
 sudo journalctl -u caddy -f
@@ -272,7 +272,7 @@ sudo journalctl -u caddy -f
 
 ### TLS certificate issues
 ```bash
-# Caddy auto-provisions certs — ensure:
+# Caddy auto-provisions certs â€” ensure:
 # 1. DNS A record points to this server
 # 2. Ports 80 and 443 are open
 # 3. Caddy has permission to bind to ports 80/443

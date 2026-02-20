@@ -19,6 +19,7 @@ import {
   parseAnyShareLink,
   isValidAnyShareLink,
   DEFAULT_SHARE_HOST,
+  getShareHost,
 } from '../frontend/src/utils/sharing';
 
 // Setup crypto.subtle for Node.js test environment
@@ -268,7 +269,7 @@ describe('Sharing Utilities', () => {
         password: 'test-pass',
       });
 
-      expect(link).toMatch(/^https:\/\/relay\.night-jar\.co\/join\/w\//);
+      expect(link).toMatch(/^https:\/\/night-jar\.co\/join\/w\//);
       expect(link).toContain('perm:e');
       expect(link).toContain('p:test-pass');
     });
@@ -301,20 +302,30 @@ describe('Sharing Utilities', () => {
     });
 
     test('DEFAULT_SHARE_HOST is set', () => {
-      expect(DEFAULT_SHARE_HOST).toBe('https://relay.night-jar.co');
+      expect(DEFAULT_SHARE_HOST).toBe('https://night-jar.co');
     });
-  });
+    test('getShareHost returns DEFAULT_SHARE_HOST in Node.js/test environment', () => {
+      // In Node.js test environment (no browser window.location), should fall back to DEFAULT_SHARE_HOST
+      const host = getShareHost();
+      expect(host).toBe(DEFAULT_SHARE_HOST);
+      expect(host).toBe('https://night-jar.co');
+    });
+
+    test('getShareHost does not include trailing slash', () => {
+      const host = getShareHost();
+      expect(host.endsWith('/')).toBe(false);
+    });  });
 
   describe('nightjarLinkToJoinUrl / joinUrlToNightjarLink', () => {
     test('converts nightjar:// to HTTPS join URL', () => {
       const nightjarLink = 'nightjar://w/abc123#p:test&perm:e';
       const joinUrl = nightjarLinkToJoinUrl(nightjarLink);
 
-      expect(joinUrl).toBe('https://relay.night-jar.co/join/w/abc123#p:test&perm:e');
+      expect(joinUrl).toBe('https://night-jar.co/join/w/abc123#p:test&perm:e');
     });
 
     test('converts HTTPS join URL back to nightjar://', () => {
-      const joinUrl = 'https://relay.night-jar.co/join/w/abc123#p:test&perm:e';
+      const joinUrl = 'https://night-jar.co/join/w/abc123#p:test&perm:e';
       const nightjarLink = joinUrlToNightjarLink(joinUrl);
 
       expect(nightjarLink).toBe('nightjar://w/abc123#p:test&perm:e');
@@ -375,10 +386,12 @@ describe('Sharing Utilities', () => {
 
   describe('isJoinUrl', () => {
     test('recognizes valid join URLs', () => {
-      expect(isJoinUrl('https://relay.night-jar.co/join/w/abc123')).toBe(true);
-      expect(isJoinUrl('https://relay.night-jar.co/join/f/abc123#perm:e')).toBe(true);
-      expect(isJoinUrl('https://relay.night-jar.co/join/d/abc123#p:pass&perm:v')).toBe(true);
+      expect(isJoinUrl('https://night-jar.co/join/w/abc123')).toBe(true);
+      expect(isJoinUrl('https://night-jar.co/join/f/abc123#perm:e')).toBe(true);
+      expect(isJoinUrl('https://night-jar.co/join/d/abc123#p:pass&perm:v')).toBe(true);
       expect(isJoinUrl('http://localhost:3000/join/w/abc123')).toBe(true);
+      // Legacy relay subdomain URLs should still be recognized
+      expect(isJoinUrl('https://relay.night-jar.co/join/w/abc123')).toBe(true);
     });
 
     test('rejects non-join URLs', () => {

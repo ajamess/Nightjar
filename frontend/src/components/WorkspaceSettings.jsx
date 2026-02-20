@@ -13,7 +13,7 @@ import { useWorkspaces } from '../contexts/WorkspaceContext';
 import { usePermissions } from '../contexts/PermissionContext';
 import { useIdentity } from '../contexts/IdentityContext';
 import { useToast } from '../contexts/ToastContext';
-import { generateShareLink, generateShareMessage, compressShareLink, generateSignedInviteLink, generateTopicHash, BOOTSTRAP_RELAY_NODES, nightjarLinkToJoinUrl, joinUrlToNightjarLink, extractShareCode, DEFAULT_SHARE_HOST } from '../utils/sharing';
+import { generateShareLink, generateShareMessage, compressShareLink, generateSignedInviteLink, generateTopicHash, BOOTSTRAP_RELAY_NODES, nightjarLinkToJoinUrl, joinUrlToNightjarLink, extractShareCode, getShareHost } from '../utils/sharing';
 import { getStoredKeyChain } from '../utils/keyDerivation';
 import { signData, uint8ToBase62 } from '../utils/identity';
 import { isElectron } from '../hooks/useEnvironment';
@@ -384,7 +384,7 @@ export default function WorkspaceSettings({
           serverUrl,
         });
         
-        const finalLink = nightjarLinkToJoinUrl(signedInvite.link, DEFAULT_SHARE_HOST);
+        const finalLink = nightjarLinkToJoinUrl(signedInvite.link, getShareHost());
         return compress ? await compressShareLink(finalLink) : finalLink;
       } catch (err) {
         console.warn('Failed to generate signed invite, falling back to legacy:', err);
@@ -407,7 +407,7 @@ export default function WorkspaceSettings({
     });
     
     // Convert to clickable HTTPS link
-    const link = nightjarLinkToJoinUrl(nightjarLink, DEFAULT_SHARE_HOST);
+    const link = nightjarLinkToJoinUrl(nightjarLink, getShareHost());
     
     if (compress) {
       try {

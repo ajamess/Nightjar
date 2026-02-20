@@ -88,7 +88,7 @@ jest.mock('yjs', () => {
 describe('BOOTSTRAP_NODES Configuration', () => {
   test('BOOTSTRAP_NODES contains the production relay URL', () => {
     const { BOOTSTRAP_NODES } = require('../sidecar/mesh-constants');
-    expect(BOOTSTRAP_NODES).toContain('wss://relay.night-jar.co');
+    expect(BOOTSTRAP_NODES).toContain('wss://night-jar.co');
     expect(BOOTSTRAP_NODES.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -174,19 +174,19 @@ describe('RelayBridge Graceful Fallback', () => {
     const now = Date.now();
     bridge.connections.set('room-a', {
       status: 'connected',
-      relayUrl: 'wss://relay.night-jar.co',
+      relayUrl: 'wss://night-jar.co',
       connectedAt: now,
     });
     bridge.connections.set('room-b', {
       status: 'connected',
-      relayUrl: 'wss://relay.night-jar.co',
+      relayUrl: 'wss://night-jar.co',
       connectedAt: now - 5000,
     });
     
     const statuses = bridge.getAllStatuses();
     expect(Object.keys(statuses).length).toBe(2);
     expect(statuses['room-a'].status).toBe('connected');
-    expect(statuses['room-b'].relayUrl).toBe('wss://relay.night-jar.co');
+    expect(statuses['room-b'].relayUrl).toBe('wss://night-jar.co');
   });
 
   test('disconnect cleans up connection state completely', () => {
@@ -653,7 +653,7 @@ describe('Deployment Guide', () => {
   test('covers PUBLIC_URL configuration', () => {
     if (guideContent) {
       expect(guideContent).toContain('PUBLIC_URL');
-      expect(guideContent).toContain('wss://relay.night-jar.co');
+      expect(guideContent).toContain('wss://night-jar.co');
     }
   });
 
@@ -769,7 +769,7 @@ describe('Root README Relay Documentation', () => {
 
   test('references night-jar.co relay', () => {
     if (readmeContent) {
-      expect(readmeContent).toContain('relay.night-jar.co');
+      expect(readmeContent).toContain('night-jar.co');
     }
   });
 
@@ -898,7 +898,7 @@ describe('E2E Scenario: Tor Privacy Mode Flow', () => {
 describe('E2E Scenario: Relay Unreachable — Graceful Degradation', () => {
   test('client continues working when relay is down', () => {
     // Simulate: relay connection attempt fails, app should continue
-    const relayNodes = ['wss://relay.night-jar.co'];
+    const relayNodes = ['wss://night-jar.co'];
     let relayConnected = false;
     let directP2PActive = true; // Hyperswarm still works
     let appFunctional = true;

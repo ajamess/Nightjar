@@ -1034,7 +1034,7 @@ export default function AppSettings({ isOpen, onClose }) {
                       id="custom-relay-url"
                       type="text"
                       className="app-settings__input"
-                      placeholder="wss://relay.night-jar.co"
+                      placeholder="wss://night-jar.co"
                       value={customRelayUrl}
                       onChange={(e) => setCustomRelayUrl(e.target.value)}
                     />

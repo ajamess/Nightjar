@@ -55,7 +55,7 @@
     {
       "type": "mermaid",
       "caption": "Relay Mesh Topology",
-      "text": "graph TB\n    subgraph Mesh[\"Relay Mesh Network\"]\n        R1[\"🌍 relay.night-jar.co\\nDefault bootstrap relay\"]\n        R2[\"🌏 Self-hosted Relay A\\nDocker · relay mode\"]\n        R3[\"🌎 Self-hosted Relay B\\nDocker · relay mode\"]\n        H1[\"🖥️ Host Server\\nPersistence + mesh\"]\n    end\n\n    R1 <-->|Hyperswarm DHT| R2\n    R1 <-->|Hyperswarm DHT| R3\n    R2 <-->|Hyperswarm DHT| H1\n    R3 <-->|Hyperswarm DHT| H1\n    R1 <-->|Hyperswarm DHT| H1\n\n    C1[\"Client A\"] -->|WebSocket| R1\n    C2[\"Client B\"] -->|WebSocket| R2\n    C3[\"Client C\"] -->|Hyperswarm| H1\n    C1 <-.->|Direct P2P after discovery| C2\n    C2 <-.->|Direct P2P after discovery| C3"
+      "text": "graph TB\n    subgraph Mesh[\"Relay Mesh Network\"]\n        R1[\"🌍 night-jar.co\\nDefault bootstrap relay\"]\n        R2[\"🌏 Self-hosted Relay A\\nDocker · relay mode\"]\n        R3[\"🌎 Self-hosted Relay B\\nDocker · relay mode\"]\n        H1[\"🖥️ Host Server\\nPersistence + mesh\"]\n    end\n\n    R1 <-->|Hyperswarm DHT| R2\n    R1 <-->|Hyperswarm DHT| R3\n    R2 <-->|Hyperswarm DHT| H1\n    R3 <-->|Hyperswarm DHT| H1\n    R1 <-->|Hyperswarm DHT| H1\n\n    C1[\"Client A\"] -->|WebSocket| R1\n    C2[\"Client B\"] -->|WebSocket| R2\n    C3[\"Client C\"] -->|Hyperswarm| H1\n    C1 <-.->|Direct P2P after discovery| C2\n    C2 <-.->|Direct P2P after discovery| C3"
     },
     {
       "type": "heading",

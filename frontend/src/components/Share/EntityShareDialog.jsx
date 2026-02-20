@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { generateShareLink, generateClickableShareLink, DEFAULT_SHARE_HOST } from '../../utils/sharing';
+import { generateShareLink, generateClickableShareLink, getShareHost } from '../../utils/sharing';
 import { getBasePath } from '../../utils/websocket';
 import { usePermissions } from '../../contexts/PermissionContext';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback';
@@ -118,7 +118,7 @@ export function EntityShareDialog({
         password: includePassword ? password : undefined,
         permission: selectedPermission,
         serverUrl,
-        shareHost: DEFAULT_SHARE_HOST,
+        shareHost: getShareHost(),
         useLegacyFormat,
       });
       

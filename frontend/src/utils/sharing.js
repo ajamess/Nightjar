@@ -1473,17 +1473,45 @@ export const ICE_SERVERS = [
 // =============================================================================
 
 /**
- * Default share host derived from the production relay server.
- * Used when no explicit shareHost is provided.
- * 
- * TODO: Support per-workspace relay URL configuration. Currently all workspaces
- * share the same relay host. When a workspace is created on a self-hosted server,
- * share links should use that server's URL instead of the default. This requires:
- * 1. Storing the relay URL in workspace metadata
- * 2. Passing it through to generateClickableShareLink/generateSignedInviteLink
- * 3. UI in workspace settings to configure the relay URL
+ * Default share host for production.
+ * Used as the fallback when getShareHost() can't auto-detect from the browser
+ * (e.g., Electron desktop mode, Node.js test environment).
+ *
+ * Share links are served by the relay server behind nginx at the main domain.
+ * The /join/* route on the relay serves the SPA, which handles the share link
+ * client-side via DeepLinkGate.
  */
-export const DEFAULT_SHARE_HOST = 'https://relay.night-jar.co';
+export const DEFAULT_SHARE_HOST = 'https://night-jar.co';
+
+/**
+ * Auto-detect the share host from the current browser context.
+ *
+ * In the browser: returns window.location.origin (e.g., 'https://night-jar.co')
+ * so share links always match the deployment the user is on — works for
+ * self-hosted deployments automatically.
+ *
+ * In Electron / Node.js / SSR: falls back to DEFAULT_SHARE_HOST.
+ *
+ * @returns {string} HTTPS host for share link URLs
+ */
+export function getShareHost() {
+  if (typeof window !== 'undefined' && window.location && window.location.origin
+      && window.location.origin !== 'null'          // file:// gives origin 'null'
+      && !window.location.origin.startsWith('file:') // Electron production
+  ) {
+    // Skip Electron — always use configured default
+    if (typeof window.electronAPI !== 'undefined') {
+      return DEFAULT_SHARE_HOST;
+    }
+    // Skip localhost / 127.0.0.1 (dev server, test environment)
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+      return DEFAULT_SHARE_HOST;
+    }
+    return window.location.origin;
+  }
+  return DEFAULT_SHARE_HOST;
+}
 
 /**
  * Generate a clickable HTTPS share link.
@@ -1498,7 +1526,7 @@ export const DEFAULT_SHARE_HOST = 'https://relay.night-jar.co';
  * @returns {string} Clickable HTTPS share link (or nightjar:// if useLegacyFormat)
  */
 export function generateClickableShareLink(options = {}) {
-  const { shareHost = DEFAULT_SHARE_HOST, useLegacyFormat = false, ...linkOptions } = options;
+  const { shareHost = getShareHost(), useLegacyFormat = false, ...linkOptions } = options;
 
   // Generate the standard nightjar:// link using the existing, untouched function
   const nightjarLink = generateShareLink(linkOptions);
@@ -1520,7 +1548,7 @@ export function generateClickableShareLink(options = {}) {
  * @param {string} [shareHost] - HTTPS host (default: DEFAULT_SHARE_HOST)
  * @returns {string} HTTPS join URL
  */
-export function nightjarLinkToJoinUrl(nightjarLink, shareHost = DEFAULT_SHARE_HOST) {
+export function nightjarLinkToJoinUrl(nightjarLink, shareHost = getShareHost()) {
   if (!nightjarLink) return nightjarLink;
 
   // Match nightjar://{path}#{fragment} (case-insensitive protocol)

@@ -712,7 +712,7 @@ PUBLIC_URL=wss://relay.your-domain.com docker compose --profile relay up -d
 PUBLIC_URL=wss://your-domain.com docker compose up -d
 ```
 
-The default public relay is `wss://relay.night-jar.co`. Clients will automatically connect when available, and gracefully fall back to direct Hyperswarm P2P if the relay is unreachable.
+The default public relay is `wss://night-jar.co`. Clients will automatically connect when available, and gracefully fall back to direct Hyperswarm P2P if the relay is unreachable.
 
 **Full step-by-step deployment guide:** [docs/guides/RELAY_DEPLOYMENT_GUIDE.md](docs/guides/RELAY_DEPLOYMENT_GUIDE.md)
 
@@ -915,7 +915,7 @@ nightjar://w/abc123#key=base64encryptionkey&perm=e&exp=1706745600&sig=ed25519sig
 4. Grant access if signature valid and not expired
 
 **Web Share Link Flow** *(New in v1.7.15):*
-1. User clicks HTTPS share link (`https://relay.night-jar.co/join/...`)
+1. User clicks HTTPS share link (`https://night-jar.co/join/...`)
 2. Server serves full SPA (not a redirect shim)
 3. DeepLinkGate attempts to open `nightjar://` protocol for desktop app
 4. If app doesn't respond within 1.5s, shows fallback with "Continue in Browser"
@@ -1085,6 +1085,15 @@ npm run test:e2e:smoke      # Quick smoke tests
 ---
 
 ## Changelog
+
+### v1.7.19 - Share Link Host Fix & Deployment Hardening
+- **Critical Fix**: Share links now use `https://night-jar.co/join/...` instead of the non-existent `https://relay.night-jar.co` subdomain — clicking share links previously showed "This site can't be reached"
+- **Enhancement**: New `getShareHost()` auto-detection — web deployments automatically use their own origin for share links; self-hosted instances work without configuration
+- **Infrastructure**: Nginx `/join/` location block routes share link HTTP requests to the relay server (port 3001)
+- **Bug Fix**: Added missing `screenshots/` directory copy in CI/CD deploy step — screenshots were not being served on the public site
+- **Bug Fix**: Cache-bust screenshot URLs with `?v={hash}` query parameter to bypass Cloudflare edge cache after image updates
+- **Docs**: Added comprehensive release notes and documentation update process instructions to `CLAUDE.md`
+- **Testing**: 5 new tests for `getShareHost()`, updated 21 assertions across 5 test files
 
 ### v1.7.18 - Consistent Appearance Picker
 - **Bug Fix**: "Create New Item" dialog now uses the standard popout appearance picker (bubble trigger → floating popover) instead of rendering the full emoji grid + color palette inline — consistent with "Edit Document Properties" and all other picker instances
@@ -1262,7 +1271,7 @@ npm run test:e2e:smoke      # Quick smoke tests
 - **Enhancement**: Relay bridge graceful fallback — logs warning and schedules background retry instead of stopping sync
 - **Enhancement**: Tor SOCKS proxy support for relay WebSocket connections (relay-bridge.js)
 - **Enhancement**: P2P bridge suspend/resume — tears down Hyperswarm UDP when Tor is active (relay-only mode) to prevent IP leakage
-- **Enhancement**: Default BOOTSTRAP_NODES now includes `wss://relay.night-jar.co`
+- **Enhancement**: Default BOOTSTRAP_NODES now includes `wss://night-jar.co`
 - **Critical Fix**: `getMap('info')` → `getMap('workspaceInfo')` — fixes workspace metadata never persisting via Yjs
 - **Bug Fix**: Duplicate Yjs observer guard prevents registering update observers more than once per workspace
 - **Bug Fix**: Sync exchange guard prevents redundant sync-state-request messages on duplicate join-topic events

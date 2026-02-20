@@ -29,7 +29,7 @@ https://{webHost}/{basePath}/join/{base62_payload}#{fragment_params}
 
 **Example:**
 ```
-https://night-jar.co/app/join/3mZKxvBc7DqNwRtYp2jH9a#k:abc123...&perm:editor&topic:deadbeef...&hpeer:cafebabe...&nodes:wss%3A%2F%2Frelay.night-jar.co&sig:xyz...&by:owner123&exp:1740000000000
+https://night-jar.co/app/join/3mZKxvBc7DqNwRtYp2jH9a#k:abc123...&perm:editor&topic:deadbeef...&hpeer:cafebabe...&nodes:wss%3A%2F%2Fnight-jar.co&sig:xyz...&by:owner123&exp:1740000000000
 ```
 
 **What's in the URL path (visible to server):**
