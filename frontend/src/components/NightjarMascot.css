@@ -34,12 +34,16 @@
 
 /* Large mode: bubble ABOVE bird, arrow pointing DOWN (centered) */
 .nightjar-mascot--large .nightjar-mascot__bubble {
-    position: relative;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
     max-width: 320px;
     min-width: 200px;
     padding: 16px 24px;
-    margin-bottom: 16px;
-    order: -1; /* Put bubble before bird in flex order */
+    margin-bottom: 6px;
+    white-space: normal;
+    z-index: 1;
 }
 
 /* Arrow pointing down (at bottom of bubble) - centered */
