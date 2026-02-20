@@ -260,7 +260,11 @@ export default function BugReportModal({ isOpen, onClose, context }) {
 
     if (isOpen && !wasOpen) {
       setTitle(generateDefaultTitle(context));
-      setDescription('');
+      setDescription(
+        '## Description\n\nDescribe the issue you encountered.\n\n' +
+        '## Steps to Reproduce\n\n**When** (describe what you did)\n**Then** (describe what happened)\n\n' +
+        '## Expected Behavior\n\n**I Expected** (describe what should have happened)'
+      );
       setSubmitted(false);
       setIssueUrl('');
       setIsSubmitting(false);
