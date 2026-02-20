@@ -224,6 +224,14 @@ Whether you're a journalist protecting sources, an activist organizing securely,
 - Works offline with automatic sync
 - **Peer status monitoring** with connection health indicators *(v1.4+)*
 
+### 📱 Mobile & PWA *(New in v1.7.14)*
+- **Progressive Web App** — installable from mobile browser with `display: standalone`, themed splash screen, and home screen icons
+- **Responsive card views** — admin tables transform into touch-friendly card lists on mobile viewports (≤768px)
+- **iOS zoom prevention** — 16px input font-size, `touch-action: manipulation`, transparent tap highlight
+- **Momentum scrolling** — `-webkit-overflow-scrolling: touch` on all scrollable panels
+- **Four-tier breakpoint system** — phone (≤480px), tablet portrait (≤768px), tablet landscape (≤1024px), small desktop (≤1280px) across 50+ CSS files
+- **Touch-friendly targets** — minimum 44px tap targets, hover guard for touch devices
+
 ---
 
 ## Download
@@ -1065,6 +1073,20 @@ npm run test:e2e:smoke      # Quick smoke tests
 ---
 
 ## Changelog
+
+### v1.7.14 - Mobile UX Optimizations, PWA & Card View
+- **New Feature**: Progressive Web App (PWA) — manifest.json, generated icons (192/512/apple-touch), `display: standalone`, theme-color, apple-mobile-web-app-capable meta tags. Users can "Add to Home Screen" on iOS and Android
+- **New Feature**: Mobile card view for AllRequests — responsive card layout replaces the admin table on ≤768px viewports, with status-colored borders and SlidePanel drill-in
+- **New Feature**: `useIsMobile` hook — reusable React hook for viewport-based responsive behavior with matchMedia and Safari fallback
+- **Bug Fix**: Z-index stacking — SlidePanel, ProducerDashboard, and ProducerMyRequests overlays changed from hardcoded `100` to `var(--z-modal-backdrop, 900)` to prevent collision with toolbars
+- **Bug Fix**: FileStorageNavRail class name mismatch — mobile styles targeted `.file-storage-nav-rail__item` (BEM) but the actual class was `.file-storage-nav-item` (flat). Fixed selector
+- **Bug Fix**: InventoryNavRail — added scrollbar hiding, z-index layering, and flex-shrink:0 to prevent icon compression on narrow viewports
+- **Style**: iOS zoom prevention — `touch-action: manipulation`, `-webkit-tap-highlight-color: transparent`, 16px input font on mobile, hover guard for touch devices
+- **Style**: Breakpoint standardization — BulkTagDialog, CatalogManager, SubmitRequest changed from 600px to 768px
+- **Style**: Momentum scrolling — `-webkit-overflow-scrolling: touch` on SlidePanel and AllRequests
+- **Style**: Toast bottom offset increased 40→80px to clear mobile nav rail
+- **Style**: FileStorageNavRail header/divider hidden on mobile, z-index added
+- **Testing**: 56 unit tests (useIsMobile hook + comprehensive mobile suite), 8 E2E Playwright tests at mobile viewport — 24 files changed, 947 insertions, 58 deletions
 
 ### v1.7.13 - Security Hardening, UnifiedPicker & Responsive Breakpoints
 - **Security**: Phase 1 hardening — oracle removal, security headers, signed key delivery, encrypted workspace secrets
