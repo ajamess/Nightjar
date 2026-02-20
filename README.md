@@ -1086,6 +1086,11 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.18 - Consistent Appearance Picker
+- **Bug Fix**: "Create New Item" dialog now uses the standard popout appearance picker (bubble trigger → floating popover) instead of rendering the full emoji grid + color palette inline — consistent with "Edit Document Properties" and all other picker instances
+- **Cleanup**: Removed dead `compact` prop and inline rendering path from `UnifiedPicker` component (~30 lines JS, ~20 lines CSS removed)
+- **Tests**: Updated 8 tests across `UnifiedPicker.test.js` and `ui-components.test.js` to verify popout behavior without compact mode
+
 ### v1.7.17 - PWA Icon Refresh
 - **Enhancement**: PWA icons now show the bird on a transparent background (no dark box) so the icon looks native on mobile home screens
 - **Enhancement**: Bird fills ~94% of the icon width for maximum visibility at small sizes
