@@ -99,17 +99,14 @@ export default function EditPropertiesModal({
                         
                         <div className="edit-properties-modal__field">
                             <label className="edit-properties-modal__label">Appearance</label>
-                            <div className="edit-properties-modal__picker-compact">
-                                <UnifiedPicker
-                                    icon={icon}
-                                    color={color}
-                                    onIconChange={readOnly ? undefined : setIcon}
-                                    onColorChange={readOnly ? undefined : setColor}
-                                    size="medium"
-                                    compact={true}
-                                    disabled={readOnly}
-                                />
-                            </div>
+                            <UnifiedPicker
+                                icon={icon}
+                                color={color}
+                                onIconChange={readOnly ? undefined : setIcon}
+                                onColorChange={readOnly ? undefined : setColor}
+                                size="medium"
+                                disabled={readOnly}
+                            />
                         </div>
                     </div>
                     

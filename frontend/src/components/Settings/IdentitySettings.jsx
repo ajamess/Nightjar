@@ -146,7 +146,6 @@ export default function IdentitySettings({ onClose }) {
                                     onIconChange={setSelectedEmoji}
                                     onColorChange={setSelectedColor}
                                     size="medium"
-                                    compact={true}
                                 />
                             </div>
                             

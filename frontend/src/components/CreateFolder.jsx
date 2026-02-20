@@ -116,7 +116,7 @@ export default function CreateFolderDialog({
               color={color}
               onIconChange={setIcon}
               onColorChange={setColor}
-              compact
+              size="medium"
             />
           </div>
           

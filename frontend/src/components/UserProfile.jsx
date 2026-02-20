@@ -310,7 +310,6 @@ const UserProfile = ({ onProfileChange, initialProfile, userProfile, onLock }) =
                                     onIconChange={(icon) => updateProfile({ icon })}
                                     onColorChange={(color) => updateProfile({ color })}
                                     size="medium"
-                                    compact={true}
                                 />
                             </div>
                         </div>
