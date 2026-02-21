@@ -32,8 +32,6 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
     const [columns, setColumns] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [syncError, setSyncError] = useState(null);
-    const [draggedCard, setDraggedCard] = useState(null);
-    const [draggedColumn, setDraggedColumn] = useState(null);
     const [activeId, setActiveId] = useState(null);
     const [activeData, setActiveData] = useState(null);
     const [editingCard, setEditingCard] = useState(null);
@@ -566,8 +564,6 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
             }
         }
 
-        setDraggedCard(null);
-        setDraggedColumn(null);
     }, [columns, saveToYjs]);
 
     return (
@@ -625,28 +621,20 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                     <p>Syncing board...</p>
                 </div>
             ) : (
+            <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDndStart}
+                onDragOver={handleDndOver}
+                onDragEnd={handleDndEnd}
+            >
             <div className="kanban-board" data-testid="kanban-board">
+                <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
                 {columns.map((column) => (
-                    <div
-                        key={column.id}
-                        className="kanban-column"
-                        style={{ '--column-color': column.color }}
-                        role="region"
-                        aria-labelledby={`column-header-${column.id}`}
-                        data-testid={`kanban-column-${(column.name || '').toLowerCase().replace(/\s+/g, '-')}`}
-                        draggable={!readOnly}
-                        onDragStart={(e) => !readOnly && handleColumnDragStart(e, column)}
-                        onDragEnd={!readOnly ? handleColumnDragEnd : undefined}
-                        onDragOver={!readOnly ? handleDragOver : undefined}
-                        onDrop={!readOnly ? (e) => {
-                            if (draggedColumn) {
-                                handleColumnDrop(e, column.id);
-                            } else {
-                                handleDrop(e, column.id);
-                            }
-                        } : undefined}
-                    >
-                        <div className="column-header">
+                    <SortableKanbanColumn key={column.id} column={column} disabled={readOnly}>
+                        {(dragListeners) => (
+                            <>
+                        <div className="column-header" {...(readOnly ? {} : dragListeners)}>
                             {!readOnly && editingColumn === column.id ? (
                                 <input
                                     type="text"
@@ -699,33 +687,15 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                             )}
                         </div>
 
+                        <SortableContext items={column.cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
                         <div className="column-cards" role="list" aria-label={`${column.name} cards`}>
-                            {column.cards.map((card, index) => (
-                                <div
+                            {column.cards.map((card) => (
+                                <SortableKanbanCard
                                     key={card.id}
-                                    className={`kanban-card ${draggedCard?.card.id === card.id ? 'dragging' : ''}`}
-                                    style={card.color ? { borderLeftColor: card.color } : {}}
-                                    draggable={!readOnly && editingCard !== card.id}
-                                    tabIndex={0}
-                                    role="listitem"
-                                    aria-label={`Card: ${card.title}${card.description ? '. ' + card.description.substring(0, 50) : ''}`}
-                                    onDragStart={(e) => {
-                                        // Don't start drag if clicking on input/textarea elements
-                                        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || editingCard === card.id) {
-                                            e.preventDefault();
-                                            return;
-                                        }
-                                        !readOnly && handleDragStart(e, card, column.id);
-                                    }}
-                                    onDragEnd={!readOnly ? handleDragEnd : undefined}
-                                    onDragOver={!readOnly ? (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                    } : undefined}
-                                    onDrop={!readOnly ? (e) => {
-                                        e.stopPropagation();
-                                        handleDrop(e, column.id, index);
-                                    } : undefined}
+                                    id={card.id}
+                                    card={card}
+                                    columnId={column.id}
+                                    disabled={readOnly || editingCard === card.id}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' && !readOnly) {
                                             e.preventDefault();
@@ -794,9 +764,10 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                                             )}
                                         </div>
                                     )}
-                                </div>
+                                </SortableKanbanCard>
                             ))}
                         </div>
+                        </SortableContext>
 
                         {!readOnly && (
                         <div className="column-footer">
@@ -809,8 +780,11 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                             </button>
                         </div>
                         )}
-                    </div>
+                            </>
+                        )}
+                    </SortableKanbanColumn>
                 ))}
+                </SortableContext>
 
                 {!readOnly && showNewColumn && (
                     <div className="kanban-column new-column">
@@ -842,6 +816,24 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
                     </div>
                 )}
             </div>
+
+            {/* @dnd-kit drag overlay — shows preview while dragging */}
+            <DragOverlay>
+                {activeId && activeData?.type === 'card' ? (
+                    <div className="kanban-card dragging" style={activeData.card?.color ? { borderLeftColor: activeData.card.color } : {}}>
+                        <div className="card-content">
+                            <div className="card-header"><h4>{activeData.card?.title}</h4></div>
+                        </div>
+                    </div>
+                ) : activeId && activeData?.type === 'column' ? (
+                    <div className="kanban-column" style={{ '--column-color': activeData.column?.color, opacity: 0.8 }}>
+                        <div className="column-header">
+                            <h3>{activeData.column?.name}</h3>
+                        </div>
+                    </div>
+                ) : null}
+            </DragOverlay>
+            </DndContext>
             )}
         </div>
     );

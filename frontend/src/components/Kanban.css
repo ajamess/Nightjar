@@ -167,6 +167,20 @@
     border-top: 3px solid var(--column-color, var(--accent-color));
 }
 
+/* @dnd-kit: column being dragged */
+.kanban-column--dragging {
+    opacity: 0.5;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* @dnd-kit: card being dragged (overlay preview) */
+.kanban-card.dragging {
+    opacity: 0.85;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    transform: rotate(2deg);
+    cursor: grabbing;
+}
+
 .kanban-column.new-column {
     background: var(--bg-tertiary);
     padding: 16px;
