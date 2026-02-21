@@ -19,7 +19,8 @@
       "List view — Compact listing with file details.",
       "Grid view — Thumbnail/icon grid for visual browsing."
     ]},
-    { "type": "heading", "text": "File Sync" },
+    { "type": "heading", "text": "File Actions" },
+    { "type": "paragraph", "text": "Right-click a file or folder on desktop to access the context menu with options like rename, move, download, and delete. On mobile and touch devices, long-press (hold for half a second) to open the same actions as a bottom sheet — a touch-friendly panel that slides up from the bottom of the screen." },
     { "type": "paragraph", "text": "Files are synced across peers using the P2P mesh. When you upload a file, it is encrypted and distributed to connected workspace members. Files are available offline once synced." },
     { "type": "tip", "text": "Files are encrypted with the workspace key before storage. The relay server only ever sees encrypted blobs." }
   ]

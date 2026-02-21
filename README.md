@@ -1086,6 +1086,23 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.8.0 - World-Class Mobile UX Overhaul
+- **Feature**: Complete 15-step mobile experience transformation — bottom-sheet modals, touch-first interactions, native share, virtual keyboard handling
+- **Feature**: CSS-first bottom-sheet transform for ALL 30+ modals at ≤768px — no JavaScript required for most modals
+- **Feature**: @dnd-kit migration for Kanban boards — full touch drag-and-drop support replacing broken HTML5 DnD
+- **Feature**: Mobile formatting toolbar — compact bottom bar with Bold, Italic, Headings, Lists, Undo/Redo
+- **Feature**: Virtual keyboard detection hook — dual-strategy (VirtualKeyboard API + visualViewport) keeps UI above keyboard
+- **Feature**: Native share sheet integration via Capacitor on supported devices
+- **Feature**: Sidebar backdrop overlay + swipe-to-close gesture on mobile
+- **Feature**: Long-press context menus (500ms) on file/folder cards with haptic feedback
+- **Feature**: Swipe-to-dismiss toasts with coordinated bottom-nav/keyboard spacing
+- **Architecture**: Consolidated 9 breakpoint values to 3 standards (480px, 768px, 1024px) across 45 files
+- **Architecture**: Design token system — CSS custom properties for spacing, typography, layout, z-index
+- **Architecture**: 100vh → 100dvh migration across entire codebase (eliminates mobile browser chrome bugs)
+- **Architecture**: `@media (pointer: coarse)` overrides for touch-visible controls
+- **Dependencies**: @dnd-kit/core, @dnd-kit/sortable, @use-gesture/react, @capacitor/clipboard, share, haptics, device
+- **Testing**: 48 new E2E tests (33 mobile + 15 desktop regression), 100% pass rate
+
 ### v1.7.30 - Document Sync Race Condition Fix (Issue #15)
 - **Critical Fix**: Sidecar relay auth used `sessionKey` fallback instead of `null` when per-document key wasn't yet available — computed wrong HMAC tokens that poisoned the server's first-write-wins auth, causing perpetual 4403 rejections and connect/disconnect loops
 - **Critical Fix**: `set-key` handler checked for auth token *absence* (`!token`) instead of *mismatch* (`token !== newToken`) — connections with wrong tokens from the race window were never reconnected with the correct key

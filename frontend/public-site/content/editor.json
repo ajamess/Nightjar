@@ -16,6 +16,9 @@
       "Insert — Links, tables.",
       "History — Undo and redo."
     ]},
+    { "type": "heading", "text": "Mobile Toolbar" },
+    { "type": "paragraph", "text": "On mobile devices (screens ≤768px), a compact formatting toolbar appears at the bottom of the screen, fixed just above the virtual keyboard. It provides quick access to Bold, Italic, Strikethrough, Headings (H1–H3), Bullet and Numbered lists, Blockquote, Code, Undo, and Redo — all optimized for touch." },
+    { "type": "tip", "text": "The mobile toolbar automatically repositions when the virtual keyboard opens, so formatting controls are always accessible while typing." },
     { "type": "heading", "text": "Selection Toolbar" },
     { "type": "paragraph", "text": "Select text to reveal a floating toolbar with quick formatting options. This provides fast access to bold, italic, link, highlight, and other actions without moving to the main toolbar." },
     { "type": "heading", "text": "Editor Shortcuts" },

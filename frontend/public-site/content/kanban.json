@@ -6,6 +6,8 @@
     { "type": "heading", "text": "Using Kanban Boards" },
     { "type": "paragraph", "text": "Kanban boards provide visual task management with draggable columns and cards. They sync in real-time like all Nightjar documents." },
     { "type": "screenshot", "id": "kanban-board", "caption": "A kanban board with draggable columns and task cards." },
+    { "type": "heading", "text": "Touch & Mobile Support" },
+    { "type": "paragraph", "text": "Kanban boards use @dnd-kit for drag-and-drop, providing full touch support on mobile devices. Cards and columns can be dragged with a finger — a brief hold (250ms) activates the drag to avoid interfering with scrolling. A drag overlay shows the item being moved for clear visual feedback." },
     { "type": "heading", "text": "Managing Columns" },
     { "type": "steps", "items": [
       "Click \"➕ Add Column\" on the right side of the board to create a new column.",

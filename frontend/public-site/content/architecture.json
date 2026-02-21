@@ -182,7 +182,7 @@
     {
       "type": "list",
       "items": [
-        "Frontend: React 18, Vite 5, TipTap 2.4, Fortune Sheet, react-beautiful-dnd",
+        "Frontend: React 18, Vite 5, TipTap 2.4, Fortune Sheet, @dnd-kit (Kanban drag-and-drop)",
         "CRDT: Yjs with y-websocket, y-indexeddb, custom encrypted persistence",
         "Encryption: TweetNaCl (XSalsa20-Poly1305), BIP39, PBKDF2-SHA512, Argon2id",
         "Networking: Hyperswarm DHT, WebRTC, WebSocket, mDNS, libp2p",

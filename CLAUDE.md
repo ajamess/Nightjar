@@ -27,9 +27,12 @@ Nightjar is a secure, peer-to-peer collaborative editor with end-to-end encrypti
 - **Frontend**: React 18 + Vite
 - **Editor**: TipTap (ProseMirror-based)
 - **Spreadsheet**: Fortune Sheet
+- **Drag & Drop**: @dnd-kit (Kanban boards)
+- **Touch Gestures**: @use-gesture/react (swipe, drag)
 - **Real-time Sync**: Yjs (CRDT) + y-websocket
 - **Encryption**: TweetNaCl (XSalsa20-Poly1305), Argon2id (hash-wasm)
 - **Desktop**: Electron
+- **Mobile**: Capacitor (clipboard, share, haptics, device)
 - **P2P**: Hyperswarm (DHT) + libp2p + WebRTC
 - **Persistence**: LevelDB (local), IndexedDB (browser)
 - **Anonymity**: Tor hidden services (optional)
@@ -60,14 +63,17 @@ Nightjar uses an **Electron + Sidecar** pattern:
 | Directory | Purpose |
 |-----------|---------|
 | `frontend/src/components/` | UI components (editor, sidebar, modals) |
+| `frontend/src/components/common/` | Shared components (BottomSheet, ResponsiveModal) |
 | `frontend/src/contexts/` | React contexts (Workspace, Identity, Folder, Permission, Presence) |
-| `frontend/src/hooks/` | Custom hooks (useWorkspaceSync, usePeerManager, etc.) |
+| `frontend/src/hooks/` | Custom hooks (useWorkspaceSync, usePeerManager, useVirtualKeyboard, etc.) |
 | `frontend/src/services/p2p/` | P2P transport layer (WebSocket, WebRTC, Hyperswarm) |
-| `frontend/src/utils/` | Crypto, sharing, key derivation utilities |
+| `frontend/src/styles/` | Global CSS, design tokens, mobile-modals.css |
+| `frontend/src/utils/` | Crypto, sharing, key derivation, platform bridge |
 | `sidecar/` | Node.js backend (P2P, storage, identity) |
 | `src/` | Electron main process |
 | `server/` | Optional relay/persistence servers |
 | `tests/` | Jest unit tests and integration tests |
+| `tests/e2e/` | Playwright E2E tests (mobile + desktop) |
 
 ## Key Files
 
@@ -80,7 +86,12 @@ Nightjar uses an **Electron + Sidecar** pattern:
 | `frontend/src/contexts/WorkspaceContext.jsx` | Workspace state, WebSocket to sidecar |
 | `frontend/src/contexts/IdentityContext.jsx` | User identity and keys |
 | `frontend/src/utils/keyDerivation.js` | Argon2id key derivation |
+| `frontend/src/utils/platform.js` | Capacitor/browser platform bridge (share, clipboard, haptics) |
 | `frontend/src/services/p2p/PeerManager.js` | Unified P2P API |
+| `frontend/src/hooks/useVirtualKeyboard.js` | Virtual keyboard height detection (dual-strategy) |
+| `frontend/src/components/common/BottomSheet.jsx` | Reusable mobile bottom sheet with drag-to-dismiss |
+| `frontend/src/components/MobileToolbar.jsx` | Mobile-only formatting toolbar |
+| `frontend/src/styles/mobile-modals.css` | CSS-first bottom-sheet transform for all modals |
 
 ## Common Commands
 
