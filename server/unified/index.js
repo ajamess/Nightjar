@@ -1621,8 +1621,10 @@ app.get(BASE_PATH + '/api/mesh/relays', (req, res) => {
 });
 
 // API: Check if encrypted persistence is enabled
+// Returns false when persistence is disabled entirely (relay mode) — even if
+// ENCRYPTED_PERSISTENCE env var is true, there is nothing to encrypt.
 app.get(BASE_PATH + '/api/encrypted-persistence', (req, res) => {
-  res.json({ enabled: ENCRYPTED_PERSISTENCE });
+  res.json({ enabled: ENCRYPTED_PERSISTENCE && !DISABLE_PERSISTENCE });
 });
 
 // =============================================================================
