@@ -186,9 +186,10 @@ export function getApiBaseUrl() {
  * @param {string} roomName - The Yjs room name
  * @param {string} keyBase64 - Base64-encoded 32-byte encryption key
  * @param {string|null} serverUrl - Optional remote server URL
+ * @param {number} maxRetries - Number of retry attempts on failure (default: 3)
  * @returns {Promise<boolean>} True if key was delivered (or not needed), false on error
  */
-export async function deliverKeyToServer(roomName, keyBase64, serverUrl = null) {
+export async function deliverKeyToServer(roomName, keyBase64, serverUrl = null, maxRetries = 3) {
     // Skip in Electron mode — keys go to sidecar via WebSocket
     if (isElectron() && !serverUrl) {
         return true;
@@ -198,6 +199,28 @@ export async function deliverKeyToServer(roomName, keyBase64, serverUrl = null) 
         console.warn('[KeyDelivery] Missing roomName or key');
         return false;
     }
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+            // Exponential backoff: 1s, 2s, 4s
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+            console.log(`[KeyDelivery] Retry ${attempt}/${maxRetries} for ${roomName.slice(0, 30)}... in ${delay}ms`);
+            await new Promise(r => setTimeout(r, delay));
+        }
+
+        const result = await _deliverKeyToServerOnce(roomName, keyBase64, serverUrl);
+        if (result) return true;
+    }
+
+    console.error(`[KeyDelivery] All ${maxRetries + 1} attempts failed for ${roomName.slice(0, 30)}...`);
+    return false;
+}
+
+/**
+ * Single attempt to deliver an encryption key to the server.
+ * @private
+ */
+async function _deliverKeyToServerOnce(roomName, keyBase64, serverUrl) {
 
     try {
         // Determine the API base URL
