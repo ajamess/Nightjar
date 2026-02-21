@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { useDrag } from '@use-gesture/react';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
 import CreateFolder from './CreateFolder';
 import CreateDocument from './CreateDocument';
@@ -504,6 +505,26 @@ const HierarchicalSidebar = ({
     // Confirmation dialog
     const { confirm, ConfirmDialogComponent } = useConfirmDialog();
     
+    // Mobile sidebar: swipe-to-close gesture
+    const sidebarRef = useRef(null);
+    const [swipeX, setSwipeX] = useState(0);
+    const isMobile = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches;
+    
+    const bindSwipe = useDrag(({ movement: [mx], velocity: [vx], direction: [dx], cancel, active, last }) => {
+        // Only allow leftward swipe (negative x)
+        if (mx > 20) { setSwipeX(0); return; }
+        if (active) {
+            setSwipeX(Math.min(0, mx));
+        }
+        if (last) {
+            // Close if swiped far enough left or with enough velocity
+            if (mx < -80 || (vx > 0.5 && dx < 0)) {
+                onToggleCollapse?.();
+            }
+            setSwipeX(0);
+        }
+    }, { axis: 'x', filterTaps: true, enabled: isMobile && !isCollapsed });
+    
     // Delete confirmation handler
     const handleRequestDelete = useCallback(async (id, type, name) => {
         const confirmed = await confirm({
@@ -819,7 +840,19 @@ const HierarchicalSidebar = ({
     const hasContent = workspaceFolders.length > 0 || rootDocuments.length > 0;
     
     return (
-        <div className="hierarchical-sidebar">
+        <>
+        {/* Mobile backdrop — visible only on ≤768px via CSS */}
+        <div
+            className="sidebar-backdrop"
+            onClick={onToggleCollapse}
+            aria-hidden="true"
+        />
+        <div
+            className="hierarchical-sidebar"
+            ref={sidebarRef}
+            style={isMobile && swipeX < 0 ? { transform: `translateX(${swipeX}px)`, transition: 'none' } : undefined}
+            {...(isMobile ? bindSwipe() : {})}
+        >
             {/* Workspace dropdown */}
             <WorkspaceSwitcher
                 onOpenSettings={() => setShowWorkspaceSettings(true)}
@@ -1126,6 +1159,7 @@ const HierarchicalSidebar = ({
                 onCreateFileStorage={onCreateFileStorage}
             />
         </div>
+        </>
     );
 };
 

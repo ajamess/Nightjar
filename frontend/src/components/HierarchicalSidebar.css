@@ -831,8 +831,23 @@
   }
 }
 
+/* ========== Mobile Sidebar Backdrop ========== */
+/* Hidden on desktop; shown on mobile when sidebar is open */
+.sidebar-backdrop {
+  display: none;
+}
+
 /* ========== Mobile Responsive — Slide-in overlay ========== */
 @media (max-width: 768px) {
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-overlay, 500) - 1); /* 499 — behind sidebar (500) */
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .hierarchical-sidebar {
     position: fixed;
     top: 0;
@@ -845,6 +860,7 @@
     transition: transform 0.25s ease, box-shadow 0.25s ease;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
     height: var(--app-height, 100dvh);
+    touch-action: pan-y; /* Allow vertical scroll, horizontal reserved for swipe */
   }
 
   /* When collapsed on mobile, slide completely off-screen */
