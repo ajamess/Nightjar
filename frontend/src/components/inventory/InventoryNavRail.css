@@ -159,6 +159,11 @@
 
 /* Mobile: horizontal bottom bar */
 @media (max-width: 768px) {
+  /* Signal other fixed elements (chat bubble, toasts) to shift up */
+  :root {
+    --bottom-nav-height: 56px;
+  }
+
   .inventory-nav-rail {
     flex-direction: row;
     width: 100%;

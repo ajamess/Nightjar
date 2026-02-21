@@ -498,6 +498,9 @@ body {
     gap: 12px;
     max-width: 400px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    /* Swipe-to-dismiss: allow horizontal touch gesture */
+    touch-action: pan-x;
+    transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 .toast__icon {
@@ -647,7 +650,7 @@ input:focus {
         right: 12px;
         left: 12px;
         max-width: none;
-        bottom: calc(80px + var(--safe-area-inset-bottom));
+        bottom: calc(var(--bottom-nav-height, 0px) + var(--keyboard-height, 0px) + 16px + env(safe-area-inset-bottom, 0px));
     }
 
     .onboarding-welcome h2 {

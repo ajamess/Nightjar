@@ -25,36 +25,64 @@ export function useToast() {
 
 /**
  * Provider that manages toast state and renders the toast element.
- * Wrap the app content in <ToastProvider> at the same level as other providers.
+ * Includes swipe-to-dismiss on touch devices.
  */
 export function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
   const timeoutRef = useRef(null);
+  const toastRef = useRef(null);
+  const swipeStartRef = useRef(null);
 
-  // Clean up timeout on unmount to prevent setState on unmounted component
   useEffect(() => {
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
   const showToast = useCallback((message, type = 'info') => {
-    // Clear any existing timeout to prevent stale updates
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setToast({ message, type });
     timeoutRef.current = setTimeout(() => setToast(null), 3000);
   }, []);
 
   const dismissToast = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setToast(null);
   }, []);
+
+  // Swipe-to-dismiss touch handlers
+  const handleTouchStart = useCallback((e) => {
+    swipeStartRef.current = e.touches[0].clientX;
+    if (toastRef.current) toastRef.current.style.transition = 'none';
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (swipeStartRef.current == null || !toastRef.current) return;
+    const dx = e.touches[0].clientX - swipeStartRef.current;
+    // Only allow rightward swipe (positive dx)
+    if (dx > 0) {
+      toastRef.current.style.transform = `translateX(${dx}px)`;
+      toastRef.current.style.opacity = String(Math.max(0, 1 - dx / 200));
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    if (swipeStartRef.current == null || !toastRef.current) return;
+    const dx = e.changedTouches[0].clientX - swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (dx > 80) {
+      // Swipe far enough — dismiss
+      toastRef.current.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+      toastRef.current.style.transform = 'translateX(120%)';
+      toastRef.current.style.opacity = '0';
+      setTimeout(dismissToast, 200);
+    } else {
+      // Snap back
+      toastRef.current.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+      toastRef.current.style.transform = '';
+      toastRef.current.style.opacity = '';
+    }
+  }, [dismissToast]);
 
   const value = useMemo(() => ({ toast, showToast, dismissToast }), [toast, showToast, dismissToast]);
 
@@ -63,9 +91,13 @@ export function ToastProvider({ children }) {
       {children}
       {toast && (
         <div
+          ref={toastRef}
           className={`toast toast--${toast.type}`}
           role="alert"
           aria-live="polite"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           <span className="toast__icon">
             {toast.type === 'success' && '✓'}
