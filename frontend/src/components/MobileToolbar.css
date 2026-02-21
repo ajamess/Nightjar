@@ -1,0 +1,96 @@
+/* ========== Mobile Bottom Formatting Toolbar ========== */
+/* Hidden on desktop; fixed to bottom on mobile */
+
+.mobile-toolbar {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .mobile-toolbar {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: var(--bg-secondary, #1e1e2e);
+        border-top: 1px solid var(--border-color, #333);
+        padding: 4px 8px;
+        padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+        height: auto;
+        min-height: 44px;
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .mobile-toolbar__scroll {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex: 1;
+    }
+
+    .mobile-toolbar__scroll::-webkit-scrollbar {
+        display: none;
+    }
+
+    .mobile-toolbar__btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 8px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-secondary, #aaa);
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.15s ease, color 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-toolbar__btn.bold { font-weight: 800; }
+    .mobile-toolbar__btn.italic { font-style: italic; }
+    .mobile-toolbar__btn.strike { text-decoration: line-through; }
+
+    .mobile-toolbar__btn:active {
+        background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+    }
+
+    .mobile-toolbar__btn.active {
+        background: var(--accent-color, #6366f1);
+        color: #fff;
+        border-radius: 6px;
+    }
+
+    .mobile-toolbar__sep {
+        width: 1px;
+        height: 20px;
+        background: var(--border-color, #444);
+        flex-shrink: 0;
+        margin: 0 4px;
+    }
+
+    /* Compensate for the mobile toolbar height in the editor */
+    .editor-pane .editor-content-wrapper {
+        padding-bottom: 52px;
+    }
+
+    /* Hide the desktop top toolbar on mobile */
+    .editor-pane > .toolbar {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mobile-toolbar__btn {
+        transition: none;
+    }
+}

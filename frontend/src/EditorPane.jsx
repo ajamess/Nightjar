@@ -12,6 +12,7 @@ import Highlight from '@tiptap/extension-highlight';
 import Link from '@tiptap/extension-link';
 import * as Y from 'yjs';
 import Toolbar from './components/Toolbar';
+import MobileToolbar from './components/MobileToolbar';
 import SelectionToolbar from './components/SelectionToolbar';
 import { sanitizeCssColor } from './utils/colorUtils';
 import { useAutoSave } from './hooks/useAutoSave';
@@ -302,6 +303,7 @@ const EditorPane = ({
                     />
                 )}
             </div>
+            {!readOnly && <MobileToolbar editor={editor} />}
             {!readOnly && (
                 <input
                     ref={fileInputRef}
