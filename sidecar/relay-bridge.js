@@ -263,16 +263,25 @@ class RelayBridge {
    * @private
    */
   _setupSync(roomName, ws, ydoc) {
-    // y-websocket protocol uses binary messages
-    // Message format: [messageType, ...data]
-    // messageType 0 = sync step 1
-    // messageType 1 = sync step 2
-    // messageType 2 = update
-    // messageType 3 = awareness
+    // y-websocket wire protocol uses a TWO-LAYER binary message format:
+    //
+    // OUTER layer (first varuint in every message):
+    //   messageSync      = 0  — payload is a sync-protocol message
+    //   messageAwareness = 1  — payload is an awareness update
+    //
+    // INNER sync-protocol layer (second varuint when outer == messageSync):
+    //   syncStep1  = 0  — state-vector exchange
+    //   syncStep2  = 1  — state diff (response to syncStep1)
+    //   syncUpdate = 2  — incremental Yjs update
+    //
+    // Every outgoing message MUST include the outer layer prefix.
     
     const encoding = require('lib0/encoding');
     const decoding = require('lib0/decoding');
     const syncProtocol = require('y-protocols/sync');
+    
+    const messageSync = 0;
+    const messageAwareness = 1;
     
     // Track sync state
     let synced = false;
@@ -281,50 +290,34 @@ class RelayBridge {
     // WSSharedDoc from y-websocket/bin/utils has awareness attached
     const awareness = ydoc.awareness;
     
-    // Handle incoming messages
+    // Handle incoming messages from the relay server
     ws.on('message', (data) => {
       try {
         const decoder = decoding.createDecoder(new Uint8Array(data));
         const messageType = decoding.readVarUint(decoder);
         
         switch (messageType) {
-          case 0: // sync step 1
-          case 1: // sync step 2
+          case messageSync: // 0 — sync protocol message
             {
               const encoder = encoding.createEncoder();
+              // Prepend messageSync to the response so the server recognises
+              // it as a sync-protocol message (not awareness or unknown type).
+              encoding.writeVarUint(encoder, messageSync);
               const syncMessageType = syncProtocol.readSyncMessage(decoder, encoder, ydoc, null);
               
-              if (syncMessageType === 1) {
+              if (syncMessageType === 1) { // received SyncStep2 — initial sync complete
                 synced = true;
                 console.log(`[RelayBridge] ✓ Synced with relay for ${roomName}`);
               }
               
-              if (encoding.length(encoder) > 0) {
+              // Only send response if encoder has more than just the messageSync prefix
+              if (encoding.length(encoder) > 1) {
                 ws.send(encoding.toUint8Array(encoder));
               }
             }
             break;
             
-          case 2: // update
-            {
-              const update = decoding.readVarUint8Array(decoder);
-              // Validate update size to prevent malformed updates from corrupting Yjs documents
-              const MAX_UPDATE_SIZE = 10 * 1024 * 1024; // 10MB max update size
-              if (update.length > MAX_UPDATE_SIZE) {
-                console.warn(`[RelayBridge] Rejecting oversized update (${update.length} bytes) for ${roomName}`);
-                break;
-              }
-              try {
-                Y.applyUpdate(ydoc, update, 'relay');
-              } catch (applyErr) {
-                console.error(`[RelayBridge] Failed to apply update for ${roomName}:`, applyErr.message);
-                // Don't propagate corrupted updates - just log and continue
-              }
-            }
-            break;
-            
-          case 3: // awareness
-            // Apply incoming awareness updates from relay to local awareness
+          case messageAwareness: // 1 — awareness update
             if (awareness) {
               try {
                 const awarenessUpdate = decoding.readVarUint8Array(decoder);
@@ -340,37 +333,37 @@ class RelayBridge {
       }
     });
     
-    // Send initial sync step 1
+    // Send initial sync step 1: [messageSync, syncStep1, stateVector]
     const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, 0); // sync step 1
+    encoding.writeVarUint(encoder, messageSync);
     syncProtocol.writeSyncStep1(encoder, ydoc);
     ws.send(encoding.toUint8Array(encoder));
     
-    // Send our current awareness state
+    // Send our current awareness state: [messageAwareness, awarenessData]
     if (awareness) {
       const awarenessEncoder = encoding.createEncoder();
-      encoding.writeVarUint(awarenessEncoder, 3); // awareness message
+      encoding.writeVarUint(awarenessEncoder, messageAwareness);
       encoding.writeVarUint8Array(awarenessEncoder, 
         awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID])
       );
       ws.send(encoding.toUint8Array(awarenessEncoder));
     }
     
-    // Forward local updates to relay
+    // Forward local Yjs updates to relay: [messageSync, syncUpdate(2), update]
     const updateHandler = (update, origin) => {
       if (origin === 'relay') return; // Don't echo relay updates back
       
       if (ws.readyState === WebSocket.OPEN) {
         const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, 2); // update message
-        encoding.writeVarUint8Array(encoder, update);
+        encoding.writeVarUint(encoder, messageSync);
+        syncProtocol.writeUpdate(encoder, update);
         ws.send(encoding.toUint8Array(encoder));
       }
     };
     
     ydoc.on('update', updateHandler);
     
-    // Forward local awareness changes to relay
+    // Forward local awareness changes to relay: [messageAwareness, awarenessData]
     const awarenessHandler = ({ added, updated, removed }, origin) => {
       if (origin === 'relay') return; // Don't echo relay awareness back
       
@@ -379,7 +372,7 @@ class RelayBridge {
       
       if (ws.readyState === WebSocket.OPEN) {
         const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, 3); // awareness message
+        encoding.writeVarUint(encoder, messageAwareness);
         encoding.writeVarUint8Array(encoder, 
           awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients)
         );

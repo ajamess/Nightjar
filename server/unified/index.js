@@ -1333,9 +1333,12 @@ if (!DISABLE_PERSISTENCE) {
         console.error(`[Persistence] Failed to write final state for room ${docName}:`, e);
       }
 
-      // Clean up key from memory when doc is destroyed (all clients disconnected)
+      // Do NOT delete keys from memory when a doc is destroyed.
+      // Keys are legitimately delivered and should remain available so that
+      // persisted state can be decrypted when a new client reconnects.
+      // Previously, deleting keys here meant reconnecting clients saw empty
+      // rooms because bindState couldn't decrypt the stored data.
       if (ENCRYPTED_PERSISTENCE) {
-        documentKeys.delete(docName);
         pendingKeyLoads.delete(docName);
       }
     }

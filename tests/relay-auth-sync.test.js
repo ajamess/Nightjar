@@ -660,9 +660,13 @@ describe('Regression: existing relay functionality preserved', () => {
     expect(relayBridgeSource).toContain('getSocksProxyAgent');
   });
 
-  test('relay-bridge still validates update size', () => {
-    expect(relayBridgeSource).toContain('MAX_UPDATE_SIZE');
-    expect(relayBridgeSource).toContain('Rejecting oversized update');
+  test('relay-bridge uses standard sync protocol (updates handled by readSyncMessage)', () => {
+    // v1.7.28: Update validation is now handled at the WebSocket layer (maxPayload)
+    // and by the standard y-protocols sync protocol via readSyncMessage.
+    // The old manual MAX_UPDATE_SIZE check was part of the broken protocol that
+    // used raw message type 2 (which the server silently dropped anyway).
+    expect(relayBridgeSource).toContain('syncProtocol.readSyncMessage');
+    expect(relayBridgeSource).toContain('syncProtocol.writeUpdate');
   });
 
   test('relay-bridge still handles Yjs sync protocol correctly', () => {

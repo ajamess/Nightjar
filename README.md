@@ -1086,6 +1086,12 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.28 - Relay Bridge Protocol Fix (Issue #13)
+- **Critical Fix**: Relay bridge used wrong wire protocol — data NEVER flowed from sidecar to relay server. The y-websocket two-layer message format (outer messageSync/messageAwareness + inner sync types) was confused with inner-only constants, causing every outgoing SyncStep2, update forward, and awareness message to be either misinterpreted or silently dropped by the server
+- **Fix**: Rewrote `_setupSync()` in `sidecar/relay-bridge.js` with correct two-layer encoding: all outgoing sync messages now include the `messageSync=0` outer prefix, updates use `syncProtocol.writeUpdate()`, awareness uses `messageAwareness=1`
+- **Fix**: Server no longer deletes encryption keys from memory when a doc is destroyed (writeState), enabling seamless reconnection
+- **Testing**: 38 new protocol verification tests covering wire format, full sync round-trips, and all 4 cross-platform matrix scenarios (native↔web, web↔web, native↔native)
+
 ### v1.7.25 - Share Link Reliability Fix (Issue #10)
 - **Critical Fix**: Pasting an invalid or malformed share link into the join dialog now shows an error message instead of silently failing with a disabled Join button
 - **Critical Fix**: Electron deep link handler (`onProtocolLink`) was dead code — clicking a `nightjar://` link while the app was running focused the window but never opened the join dialog; now properly wired up in AppNew.jsx
