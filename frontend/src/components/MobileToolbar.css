@@ -9,7 +9,7 @@
     .mobile-toolbar {
         display: flex;
         position: fixed;
-        bottom: 0;
+        bottom: var(--keyboard-height, 0px);
         left: 0;
         right: 0;
         z-index: 100;
@@ -20,6 +20,7 @@
         height: auto;
         min-height: 44px;
         box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+        transition: bottom 0.15s ease;
     }
 
     .mobile-toolbar__scroll {

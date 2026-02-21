@@ -37,6 +37,7 @@ import SearchPalette from './components/SearchPalette';
 import BugReportModal from './components/BugReportModal';
 import { handleIndexResults, clearCache as clearSearchIndexCache } from './services/SearchIndexCache';
 import { useAutoLock } from './hooks/useAutoLock';
+import useVirtualKeyboard from './hooks/useVirtualKeyboard';
 import identityManager from './utils/identityManager';
 import { deleteChangelogForDocument } from './utils/changelogStore';
 import { useAuthorAttribution } from './hooks/useAuthorAttribution';
@@ -169,6 +170,9 @@ function PresenceDocumentTracker({ activeDocId }) {
 }
 
 function App() {
+    // --- Virtual keyboard tracking (sets --keyboard-height CSS var) ---
+    useVirtualKeyboard();
+    
     // --- Identity Context ---
     // Identity context is available for features like kick signatures, membership tracking
     const { 
