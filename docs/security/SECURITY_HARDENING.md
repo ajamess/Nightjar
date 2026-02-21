@@ -15,6 +15,7 @@ The Nightjar security hardening effort addressed **7 categories of vulnerabiliti
 | 5 | Encrypted localStorage secrets | 1 | ✅ Complete |
 | 6 | E2E encrypted relay messages | 2 | ✅ Complete |
 | 7 | Security documentation | 2 | ✅ Complete |
+| 8 | Relay bridge preference persistence & auto-connect | 3 | ✅ Complete |
 
 ---
 
@@ -224,6 +225,8 @@ This document. Provides a comprehensive record of all security fixes, their thre
 | `tests/security-hardening.test.js` | Fix 1, 2, 3, 5 | Phase 1 |
 | `tests/security-hardening-source-verify.test.js` | Fix 1, 2, 3, 5 | Source verification |
 | `tests/security-hardening-phase2.test.js` | Fix 4, 6 | Phase 2 (66 tests) |
+| `tests/relay-bridge-auto-connect.test.js` | Fix 8 | v1.7.22 (56 tests) |
+| `tests/share-link-routing-fix.test.js` | Fix 8 (docker) | v1.7.21-22 (22 tests) |
 
 ### Phase 2 test breakdown
 
@@ -240,3 +243,32 @@ This document. Provides a comprehensive record of all security fixes, their thre
 - **E2E encrypted y-websocket sync**: Currently, Yjs sync updates pass through the server in plaintext (the server needs to process them for awareness/persistence). Full E2E encryption of the sync channel would require a custom relay-only server architecture. Encrypted at-rest persistence already protects stored data.
 - **Room auth token expiry**: Room auth tokens currently persist for the lifetime of the server process. Adding time-based expiry or token rotation would improve security for long-running deployments.
 - **Rate limiting on auth failures**: Currently, failed auth attempts are rejected but not rate-limited. Adding exponential backoff or temporary bans would mitigate brute-force attacks.
+
+---
+
+## Fix 8: Relay Bridge Preference Persistence & Auto-Connect (v1.7.22)
+
+**Threat**: Relay bridge defaulting to OFF meant Electron users who shared documents via invite links would produce share links without a relay URL. Browser recipients would connect but see 0 documents because there was no relay bridge carrying the Yjs data to the public relay.
+
+**Fix**:
+- **Default ON**: Relay bridge now defaults to enabled (`!== 'false'` instead of `=== 'true'`)
+- **LevelDB persistence**: User's relay bridge preference is saved to the sidecar metadata LevelDB store (`setting:relayBridgeEnabled`). The preference survives app restarts.
+- **Startup restore**: On sidecar startup, the persisted preference is loaded from LevelDB before P2P initialization
+- **Proactive doc creation**: `autoRejoinWorkspaces` uses `getOrCreateYDoc()` to ensure workspace-meta docs exist before relay bridge connects
+- **Frontend startup sync**: `WorkspaceContext` sends `relay-bridge:enable` on WebSocket connect to ensure belt-and-suspenders activation
+- **Electron share links**: Electron share links now include `srv:wss://night-jar.co` so browser recipients know which relay to connect to
+- **Docker relay mode preserved**: The public relay server (`wss://night-jar.co`) runs in `NIGHTJAR_MODE=relay` with NO persistence or data storage — it is a pure relay/signaling server
+
+### Security implications
+
+- **No new data exposure**: The relay bridge preference is a single boolean stored in the local LevelDB metadata store on the user's device. It is not transmitted to any server.
+- **Relay remains zero-knowledge**: The public relay (`wss://night-jar.co`) forwards encrypted Yjs sync messages and NaCl secretbox relay payloads. It does not store documents or hold encryption keys. `NIGHTJAR_MODE=relay` explicitly disables persistence.
+- **Existing encryption layers unaffected**: All four defense layers (identity, data encryption, network auth, relay encryption) continue to apply. The relay bridge simply provides a WebSocket transport for already-encrypted data.
+
+### Files changed
+
+- `sidecar/index.js` — Default ON logic, `saveRelayBridgePreference()`, `loadRelayBridgePreference()`, `connectAllDocsToRelay()`, proactive `getOrCreateYDoc()` in `autoRejoinWorkspaces`, startup IIFE preference restore
+- `frontend/src/contexts/WorkspaceContext.jsx` — Startup relay bridge sync on WebSocket connect
+- `frontend/src/components/common/AppSettings.jsx` — Default ON in `useState` initializer
+- `frontend/src/components/WorkspaceSettings.jsx` — Electron share links include `srv:wss://night-jar.co`
+- `server/deploy/docker-compose.prod.yml` — Reverted relay to `NIGHTJAR_MODE=relay`, removed persistence and data volume

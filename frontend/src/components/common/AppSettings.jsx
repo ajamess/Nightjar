@@ -139,8 +139,10 @@ export default function AppSettings({ isOpen, onClose }) {
   const [relayStatus, setRelayStatus] = useState({ running: false, activeConnections: 0 });
   
   // Relay bridge state (connecting THROUGH public relay, not acting AS relay)
+  // Default: ON — ensures Native↔Web sharing works out of the box.
+  // Users can opt out via the toggle; preference persisted in localStorage.
   const [relayBridgeEnabled, setRelayBridgeEnabled] = useState(() => {
-    return localStorage.getItem('Nightjar_relay_bridge_enabled') === 'true';
+    return localStorage.getItem('Nightjar_relay_bridge_enabled') !== 'false';
   });
   const [relayBridgeStatus, setRelayBridgeStatus] = useState({ connectedRooms: 0 });
   const [customRelayUrl, setCustomRelayUrl] = useState(() => {

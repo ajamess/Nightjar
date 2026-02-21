@@ -327,6 +327,13 @@ export default function WorkspaceSettings({
         serverUrl = autoDetectedRelay;
         console.log('[WorkspaceSettings] Using auto-detected relay server:', serverUrl);
       }
+    } else {
+      // Electron: Include the public relay URL so web recipients know which
+      // server to sync through. Without this, the share link has no srv:
+      // parameter and web clients can't connect to the relay for Yjs sync.
+      // Uses the same host as DEFAULT_SHARE_HOST but with wss:// protocol.
+      serverUrl = 'wss://night-jar.co';
+      console.log('[WorkspaceSettings] Electron mode: including relay server URL for cross-platform sharing');
     }
     
     // Get P2P info for true serverless sharing (Electron only)

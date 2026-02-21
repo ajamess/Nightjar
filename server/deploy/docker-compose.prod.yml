@@ -24,9 +24,10 @@
 
 services:
   # --------------------------------------------------------------------------
-  # Public Server — mesh participation + encrypted persistence
-  # Persists workspace data encrypted at rest so share-link users can sync
-  # even when the original desktop peer is offline.
+  # Public Relay — signaling + y-websocket sync (NO persistence)
+  # The relay is a lightweight message router. All document data lives on
+  # peers' devices (Electron desktop clients). The relay bridges Yjs sync
+  # between Native ↔ Web clients but never stores anything to disk.
   # Accessible at night-jar.co/signal, /health, /api/*, /yjs/*, /join/*
   # --------------------------------------------------------------------------
   nightjar-relay:
@@ -35,16 +36,11 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3001:3000"
-    volumes:
-      - nightjar-relay-data:/app/server/unified/data
     environment:
       - PORT=3000
       - NODE_ENV=production
-      - NIGHTJAR_MODE=host
+      - NIGHTJAR_MODE=relay
       - PUBLIC_URL=wss://night-jar.co
-      # Encrypted persistence ON — workspace data encrypted at rest (default)
-      # Clients deliver encryption keys via POST /api/rooms/:room/key
-      - ENCRYPTED_PERSISTENCE=true
       # Bug report proxy — auto-submits GitHub issues from the app
       - GITHUB_PAT=${GITHUB_PAT:-}
     healthcheck:
@@ -87,8 +83,6 @@ services:
       - nightjar-net
 
 volumes:
-  nightjar-relay-data:
-    driver: local
   nightjar-private-data:
     driver: local
 

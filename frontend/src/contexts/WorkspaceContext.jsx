@@ -479,6 +479,23 @@ export function WorkspaceProvider({ children }) {
           
           // Request workspace list
           ws.send(JSON.stringify({ type: 'list-workspaces' }));
+          
+          // Restore relay bridge state from localStorage → sidecar
+          // The relay bridge defaults to ON for cross-platform sharing.
+          // On startup, tell the sidecar to enable it unless the user explicitly disabled it.
+          // This ensures all existing workspace-meta docs get connected to the relay
+          // immediately, so Native→Web sharing works without opening Settings.
+          const relayBridgePref = localStorage.getItem('Nightjar_relay_bridge_enabled');
+          const shouldEnableRelay = relayBridgePref !== 'false'; // default ON
+          if (shouldEnableRelay) {
+            const customRelayUrl = localStorage.getItem('Nightjar_custom_relay_url') || '';
+            const customRelays = customRelayUrl.trim() ? [customRelayUrl.trim()] : [];
+            ws.send(JSON.stringify({
+              type: 'relay-bridge:enable',
+              payload: { customRelays },
+            }));
+            secureLog('[WorkspaceContext] Sent relay-bridge:enable to sidecar (startup restore)');
+          }
         };
         
         ws.onmessage = (event) => {

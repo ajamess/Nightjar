@@ -119,13 +119,39 @@ const shareLink = generateShareLink({
 - At least one Electron user with UPnP
 - Or manually forwarded port
 
+## Relay Bridge (v1.7.22+)
+
+The **relay bridge** automatically connects Electron clients' local Yjs documents to the public WebSocket relay (`wss://night-jar.co`), enabling cross-platform sharing between Electron ↔ Browser without manual configuration.
+
+### Default Behavior
+
+- **ON by default** — The relay bridge is enabled unless the user explicitly disables it in App Settings or sets `NIGHTJAR_RELAY_BRIDGE=false`.
+- **LevelDB persistence** — The user's relay bridge preference is persisted to LevelDB (`setting:relayBridgeEnabled` key in the metadata store) so it survives app restarts.
+- **Startup restore** — On sidecar startup, the persisted preference is loaded from LevelDB before P2P initialization. If enabled (or no preference saved), the relay bridge connects all existing docs automatically.
+- **Frontend sync** — `WorkspaceContext` sends a `relay-bridge:enable` message on WebSocket connect (after `list-workspaces`), ensuring the sidecar activates the relay bridge even if the startup IIFE races with doc loading.
+
+### Proactive Document Creation
+
+When `autoRejoinWorkspaces` runs at startup, it uses `getOrCreateYDoc(roomName)` instead of `docs.get(roomName)`. This ensures workspace-meta docs exist in the Yjs Map before the relay bridge attempts to connect them, eliminating the race condition where relay bridge would find zero docs.
+
+### `connectAllDocsToRelay` Helper
+
+A dedicated helper function iterates all entries in the sidecar's `docs` Map and connects any `workspace-meta:` or `doc-` rooms to the relay bridge. This is called:
+- On `relay-bridge:enable` (user toggles ON)
+- On startup preference restore (if enabled)
+- Via the `doc-added` event (for docs created after relay bridge is already active)
+
+### Electron Share Links
+
+Electron share links now include `srv:wss://night-jar.co` in the URL, so browser recipients know which relay to connect to for document sync. Previously, Electron share links omitted the `srv:` parameter, causing browser clients to have no relay URL and see 0 documents.
+
 ## Zero-Config Approach
 
 Nightjar achieves zero-config through:
 
 1. **Auto-Detection:**
    - Browser: `window.location.origin` → relay URL
-   - Electron: Hyperswarm DHT
+   - Electron: Hyperswarm DHT + relay bridge (default ON)
    - Development: `ws://localhost:3000`
 
 2. **User-Hosted Relays:**
@@ -133,10 +159,15 @@ Nightjar achieves zero-config through:
    - UPnP automatically opens port
    - Share links include Electron user's public IP
 
-3. **Fallback Chain:**
+3. **Relay Bridge (default ON):**
+   - Connects local docs to `wss://night-jar.co`
+   - Enables Electron → Browser sharing
+   - Persisted preference via LevelDB
+
+4. **Fallback Chain:**
    - Try custom relay (if configured)
    - Fall back to auto-detected relay
-   - For Electron: use Hyperswarm DHT directly
+   - For Electron: use Hyperswarm DHT directly + relay bridge
 
 ## Custom Relay Configuration
 

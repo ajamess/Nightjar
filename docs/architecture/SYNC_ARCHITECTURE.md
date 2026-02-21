@@ -41,6 +41,30 @@ Nightjar uses a hybrid synchronization approach combining:
 
 ## Sync Mechanisms
 
+### 0. Relay Bridge Auto-Connect (v1.7.22+)
+
+For Electron clients, the **relay bridge** automatically connects all local Yjs documents to the public relay (`wss://night-jar.co`) at startup. This enables seamless cross-platform sync:
+
+```
+Electron Client                    Public Relay (wss://night-jar.co)
+┌──────────────┐                   ┌──────────────────┐
+│ workspace-meta│──relay bridge───►│  y-websocket room │◄───Browser Client
+│ doc-xxx       │──relay bridge───►│  y-websocket room │◄───Browser Client
+└──────────────┘                   └──────────────────┘
+```
+
+**Startup sequence:**
+1. Sidecar loads relay bridge preference from LevelDB (`setting:relayBridgeEnabled`)
+2. `autoRejoinWorkspaces` proactively creates Yjs docs via `getOrCreateYDoc()`
+3. If relay bridge is enabled (default), `connectAllDocsToRelay()` connects all docs
+4. Frontend `WorkspaceContext` sends `relay-bridge:enable` as belt-and-suspenders
+5. New docs created after startup are auto-connected via `doc-added` event
+
+**Persistence:**
+- Preference stored in LevelDB metadata store (key: `setting:relayBridgeEnabled`)
+- Survives app restarts — no need to re-enable each session
+- User can disable in App Settings → the OFF state is also persisted
+
 ### 1. Same-Machine Multi-Window Testing
 
 To test on the same machine with multiple windows:

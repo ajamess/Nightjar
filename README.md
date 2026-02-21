@@ -1086,9 +1086,18 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.22 - Relay Bridge Auto-Connect & Cross-Platform Sharing Fix (Issue #6 Part 2)
+- **Critical Fix**: Native→Web document sharing now works end-to-end — Electron users' documents automatically reach the public relay so browser recipients see all content instead of 0 documents
+- **Relay Bridge Default ON**: The relay bridge is now enabled by default (`NIGHTJAR_RELAY_BRIDGE !== 'false'`) — users no longer need to manually enable it in settings for sharing to work
+- **LevelDB Persistence**: Relay bridge preference is persisted to the sidecar metadata LevelDB store (`setting:relayBridgeEnabled`), surviving app restarts
+- **Proactive Doc Creation**: `autoRejoinWorkspaces` now creates Yjs docs proactively via `getOrCreateYDoc()`, eliminating race conditions where the relay bridge found zero docs at startup
+- **Electron Share Links**: Electron share links now include `srv:wss://night-jar.co` so browser recipients know which relay to connect to
+- **Frontend Startup Sync**: `WorkspaceContext` sends `relay-bridge:enable` on WebSocket connect for belt-and-suspenders activation
+- **Docker Fix**: Reverted relay service to `NIGHTJAR_MODE=relay` (pure relay, no persistence, no data storage)
+- **Testing**: 56 new tests covering sidecar defaults, LevelDB persistence, frontend sync, Electron share links, docker config, nginx regression, E2E scenarios
+
 ### v1.7.21 - Share Link Blank Screen & Relay Routing Fix (Issue #6)
 - **Critical Fix**: Clicking a `/join/` share link no longer shows a blank screen — nginx now proxies `/assets/` and `/api/` to the relay server so the SPA's JS bundles and API calls reach the correct backend
-- **Enhancement**: Public relay upgraded from signaling-only to full encrypted persistence — workspace data is encrypted at rest so share-link users can sync even when the desktop peer is offline
 - **Server Fix**: `/api/encrypted-persistence` endpoint now returns `false` when persistence is disabled, preventing unnecessary key delivery in pure-relay deployments
 - **Testing**: 22 new tests for nginx routing, Docker config, server logic, and v1.7.20 regression checks
 

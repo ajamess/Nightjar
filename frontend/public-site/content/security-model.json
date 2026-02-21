@@ -115,7 +115,7 @@
       "type": "list",
       "items": [
         "Passive network eavesdropping — All WebSocket connections use WSS (TLS). P2P relay messages are encrypted with NaCl secretbox. Direct peer connections use encrypted transports.",
-        "Server-side data breach (Electron mode) — Documents never leave your device. The server is either not used or acts as a relay only. No document content is stored server-side.",
+        "Server-side data breach (Electron mode) — Documents never leave your device. The server is either not used or acts as a relay only. No document content is stored server-side. The relay bridge (enabled by default since v1.7.22) transports encrypted Yjs sync messages to the public relay — the relay cannot decrypt them.",
         "Server-side data breach (encrypted persistence) — Even if the server's SQLite database is stolen, document blobs are NaCl secretbox ciphertext. Attacker needs the workspace key to decrypt.",
         "Unauthorized room joins — HMAC-SHA256 tokens bind room access to workspace key knowledge. First-write-wins registration with constant-time comparison prevents timing attacks.",
         "Key delivery spoofing — Ed25519-signed key delivery with replay protection (5-min timestamp window). First public key to deliver 'owns' the room — others cannot overwrite.",
@@ -124,7 +124,7 @@
         "Brute-force PIN attacks (online) — 10 attempt limit per hour. Exceeding the limit permanently deletes the identity. Timing-safe comparison prevents enumeration.",
         "Invite link credential leakage to servers — Passwords and encryption keys are placed in URL fragments (#), which are never sent in HTTP requests per RFC 3986.",
         "Indefinite invite link reuse — Signed invite links now require a mandatory expiry timestamp (maximum 24 hours). Links without expiry are rejected. The server runs two-tier automatic cleanup: hourly purge of expired invites plus a nuclear deletion of all invites older than 24 hours regardless of expiry.",
-        "Relay operator reading messages — When workspace key is available, relay messages are encrypted with NaCl secretbox before reaching the relay. The server forwards opaque blobs it cannot decrypt.",
+        "Relay operator reading messages — When workspace key is available, relay messages are encrypted with NaCl secretbox before reaching the relay. The server forwards opaque blobs it cannot decrypt. As of v1.7.22, the relay bridge is ON by default for Electron clients, so all documents are automatically bridged to the public relay via encrypted channels.",
         "Traffic analysis on document size — All encrypted blobs use 4KB block padding, so an observer cannot determine exact document length from ciphertext size."
       ]
     },

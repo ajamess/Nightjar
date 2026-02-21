@@ -105,7 +105,10 @@ let meshParticipant = null;
 let meshEnabled = process.env.NIGHTJAR_MESH !== 'false'; // Default enabled, can disable via env
 
 // Enable relay bridge for cross-platform sharing (connects local docs to public relay)
-let relayBridgeEnabled = process.env.NIGHTJAR_RELAY_BRIDGE === 'true'; // Default disabled (Electron uses Hyperswarm DHT)
+// Default: ON — ensures Native↔Web sharing works out of the box.
+// Users can opt out via env NIGHTJAR_RELAY_BRIDGE=false or the Settings toggle.
+// The persisted preference in LevelDB (set by the Settings toggle) takes priority.
+let relayBridgeEnabled = process.env.NIGHTJAR_RELAY_BRIDGE !== 'false'; // Default ON for cross-platform sharing
 
 // Track if P2P is initialized with identity
 let p2pInitialized = false;
@@ -682,6 +685,59 @@ try {
     });
 } catch (err) {
     console.error('[Sidecar] Failed to create metadata DB:', err.message);
+}
+
+// --- Relay Bridge Preference Persistence ---
+// Store relay bridge enabled/disabled in LevelDB so it survives restarts.
+// Key: 'setting:relayBridgeEnabled', Value: { enabled: boolean }
+
+/**
+ * Persist the relay bridge preference to LevelDB.
+ * @param {boolean} enabled - Whether relay bridge is enabled
+ */
+async function saveRelayBridgePreference(enabled) {
+    try {
+        await metadataDbReady;
+        await metadataDb.put('setting:relayBridgeEnabled', { enabled });
+        console.log(`[Sidecar] Relay bridge preference saved: ${enabled}`);
+    } catch (err) {
+        console.warn('[Sidecar] Failed to save relay bridge preference:', err.message);
+    }
+}
+
+/**
+ * Load the relay bridge preference from LevelDB.
+ * @returns {Promise<boolean|null>} true/false if persisted, null if not set
+ */
+async function loadRelayBridgePreference() {
+    try {
+        await metadataDbReady;
+        const data = await metadataDb.get('setting:relayBridgeEnabled');
+        return typeof data?.enabled === 'boolean' ? data.enabled : null;
+    } catch (err) {
+        if (err.code === 'LEVEL_NOT_FOUND') return null;
+        console.warn('[Sidecar] Failed to load relay bridge preference:', err.message);
+        return null;
+    }
+}
+
+/**
+ * Connect ALL active workspace-meta and doc rooms to the relay.
+ * Reusable helper called from: relay-bridge:enable, autoRejoinWorkspaces, startup restore.
+ */
+async function connectAllDocsToRelay() {
+    let connected = 0;
+    for (const [roomName, doc] of docs) {
+        if (roomName.startsWith('workspace-meta:') || roomName.startsWith('doc-')) {
+            try {
+                await relayBridge.connect(roomName, doc);
+                connected++;
+            } catch (connectErr) {
+                console.warn(`[Sidecar] Relay connect for ${roomName} failed:`, connectErr.message);
+            }
+        }
+    }
+    return connected;
 }
 
 // Load all document metadata
@@ -1831,8 +1887,12 @@ async function handleMetadataMessage(ws, parsed) {
                     });
                 }
                 
-                // Restore relay bridge to original env-configured state
-                relayBridgeEnabled = process.env.NIGHTJAR_RELAY_BRIDGE === 'true';
+                // Restore relay bridge to persisted or env-configured state (default ON)
+                relayBridgeEnabled = process.env.NIGHTJAR_RELAY_BRIDGE !== 'false';
+                // Re-read persisted preference (may have been changed by user)
+                loadRelayBridgePreference().then(persisted => {
+                    if (persisted !== null) relayBridgeEnabled = persisted;
+                }).catch(() => {});
             }
             
             // Send confirmation
@@ -2568,6 +2628,9 @@ async function handleMetadataMessage(ws, parsed) {
                 relayBridgeEnabled = true;
                 console.log('[Sidecar] Relay bridge enabled by user');
                 
+                // Persist preference to LevelDB so it survives restarts
+                saveRelayBridgePreference(true);
+                
                 // Optionally set custom relay URLs
                 const { customRelays } = parsed.payload || {};
                 if (customRelays && Array.isArray(customRelays) && customRelays.length > 0) {
@@ -2577,15 +2640,8 @@ async function handleMetadataMessage(ws, parsed) {
                 }
                 
                 // Connect all active workspace docs through the relay
-                for (const [roomName, doc] of docs) {
-                    if (roomName.startsWith('workspace-meta:') || roomName.startsWith('doc-')) {
-                        try {
-                            await relayBridge.connect(roomName, doc);
-                        } catch (connectErr) {
-                            console.warn(`[Sidecar] Relay connect for ${roomName} failed:`, connectErr.message);
-                        }
-                    }
-                }
+                const connectedCount = await connectAllDocsToRelay();
+                console.log(`[Sidecar] Relay bridge enabled: ${connectedCount} rooms connected`);
                 
                 ws.send(JSON.stringify({
                     type: 'relay-bridge:status',
@@ -2606,6 +2662,9 @@ async function handleMetadataMessage(ws, parsed) {
             try {
                 relayBridgeEnabled = false;
                 console.log('[Sidecar] Relay bridge disabled by user');
+                
+                // Persist preference to LevelDB so it survives restarts
+                saveRelayBridgePreference(false);
                 
                 // Disconnect all relay connections
                 if (relayBridge) {
@@ -4913,9 +4972,13 @@ async function autoRejoinWorkspaces() {
                     }
                     
                     // Also try relay as fallback for fresh sync
+                    // Proactively create the workspace-meta Yjs doc so it enters the
+                    // docs Map NOW — this means the doc-added event fires, persistence
+                    // loads, and (if relay bridge is on) it connects to the relay
+                    // immediately at startup rather than waiting for a frontend client.
                     if (relayBridgeEnabled) {
                         const roomName = `workspace-meta:${ws.id}`;
-                        const doc = docs.get(roomName);
+                        const doc = getOrCreateYDoc(roomName);
                         if (doc) {
                             relayBridge.connect(roomName, doc).catch(err => {
                                 console.warn(`[Sidecar] Relay connection for ${ws.id.slice(0, 8)}... failed:`, err.message);
@@ -5026,6 +5089,22 @@ async function initializeP2PWithRetry() {
 }
 
 // Start P2P initialization after a short delay to let everything start up
+// Before P2P init, restore the persisted relay bridge preference from LevelDB.
+// This ensures relayBridgeEnabled has the correct value before autoRejoinWorkspaces
+// creates docs and connects them to the relay.
+(async () => {
+    try {
+        const persisted = await loadRelayBridgePreference();
+        if (persisted !== null) {
+            relayBridgeEnabled = persisted;
+            console.log(`[Sidecar] Restored relay bridge preference from LevelDB: ${persisted}`);
+        } else {
+            console.log(`[Sidecar] No persisted relay bridge preference, using default: ${relayBridgeEnabled}`);
+        }
+    } catch (err) {
+        console.warn('[Sidecar] Failed to restore relay bridge preference:', err.message);
+    }
+})();
 setTimeout(initializeP2PWithRetry, 1000);
 
 // Initialize: Load all document keys from metadata on startup (after servers are ready)

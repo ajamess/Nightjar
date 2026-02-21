@@ -1,9 +1,9 @@
 /**
  * Tests for Issue #6 — Share Link Routing Fix
  * 
- * Validates the three fixes:
+ * Validates the fixes from v1.7.21 (nginx + server) and v1.7.22 (docker revert):
  * 1. nginx proxies /assets/ and /api/ to the relay (blank screen fix)
- * 2. Relay docker-compose sets ENCRYPTED_PERSISTENCE=false
+ * 2. Relay docker-compose uses NIGHTJAR_MODE=relay (pure relay, no persistence)
  * 3. Server /api/encrypted-persistence respects DISABLE_PERSISTENCE
  */
 
@@ -88,33 +88,33 @@ describe('nginx: join route', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Docker — relay ENCRYPTED_PERSISTENCE=false
+// 4. Docker — relay stays in pure relay mode (no persistence)
 // ---------------------------------------------------------------------------
-describe('docker-compose.prod: relay persistence config', () => {
-  test('relay service uses NIGHTJAR_MODE=host for encrypted persistence', () => {
+describe('docker-compose.prod: relay config', () => {
+  test('relay service uses NIGHTJAR_MODE=relay (pure relay, no persistence)', () => {
     const relayIdx = dockerCompose.indexOf('nightjar-relay:');
     expect(relayIdx).toBeGreaterThan(-1);
 
     const privateIdx = dockerCompose.indexOf('nightjar-private:', relayIdx);
     const relayBlock = dockerCompose.slice(relayIdx, privateIdx > 0 ? privateIdx : undefined);
 
-    expect(relayBlock).toContain('NIGHTJAR_MODE=host');
+    expect(relayBlock).toContain('NIGHTJAR_MODE=relay');
   });
 
-  test('relay service has ENCRYPTED_PERSISTENCE=true', () => {
+  test('relay service does NOT have ENCRYPTED_PERSISTENCE (relay has no persistence)', () => {
     const relayIdx = dockerCompose.indexOf('nightjar-relay:');
     const privateIdx = dockerCompose.indexOf('nightjar-private:', relayIdx);
     const relayBlock = dockerCompose.slice(relayIdx, privateIdx > 0 ? privateIdx : undefined);
 
-    expect(relayBlock).toContain('ENCRYPTED_PERSISTENCE=true');
+    expect(relayBlock).not.toContain('ENCRYPTED_PERSISTENCE');
   });
 
-  test('relay service has a persistent data volume', () => {
+  test('relay service has NO persistent data volume', () => {
     const relayIdx = dockerCompose.indexOf('nightjar-relay:');
     const privateIdx = dockerCompose.indexOf('nightjar-private:', relayIdx);
     const relayBlock = dockerCompose.slice(relayIdx, privateIdx > 0 ? privateIdx : undefined);
 
-    expect(relayBlock).toMatch(/nightjar-relay-data:\/app\/server\/unified\/data/);
+    expect(relayBlock).not.toContain('nightjar-relay-data');
   });
 
   test('private service keeps ENCRYPTED_PERSISTENCE=true', () => {
