@@ -17,6 +17,7 @@ import { generateShareLink, generateShareMessage, compressShareLink, generateSig
 import { getStoredKeyChain } from '../utils/keyDerivation';
 import { signData, uint8ToBase62 } from '../utils/identity';
 import { isElectron } from '../hooks/useEnvironment';
+import Platform from '../utils/platform';
 import { getBasePath } from '../utils/websocket';
 import { UnifiedPicker } from './common';
 import { useConfirmDialog } from './common/ConfirmDialog';
@@ -454,7 +455,7 @@ export default function WorkspaceSettings({
     }
     
     try {
-      await navigator.clipboard.writeText(textToCopy);
+      await Platform.copyToClipboard(textToCopy);
       setCopiedLink(true);
       setShowShareMenu(false);
       // Clear any previous timer and set new one
@@ -466,6 +467,27 @@ export default function WorkspaceSettings({
       console.error('Failed to copy:', err);
     }
   };
+
+  // Native share (Web Share API / Capacitor Share)
+  const handleNativeShare = async () => {
+    if (!generatedLink) return;
+    try {
+      await Platform.share({
+        title: `Join ${workspace.name} on Nightjar`,
+        text: `Join my workspace "${workspace.name}" on Nightjar:`,
+        url: generatedLink,
+      });
+      setShowShareMenu(false);
+    } catch (err) {
+      // User cancelled or share failed — fall back to copy
+      if (err.name !== 'AbortError') {
+        handleCopyFormat('link');
+      }
+    }
+  };
+
+  // Can we use native share?
+  const canNativeShare = typeof navigator !== 'undefined' && (!!navigator.share || Platform.isCapacitor());
 
   // Legacy copy handler (for backwards compat)
   const handleCopyShareLink = () => handleCopyFormat('link');
@@ -866,6 +888,16 @@ export default function WorkspaceSettings({
                         <span>Copy Code</span>
                         <span className="workspace-settings__share-menu-desc">Compact share code</span>
                       </button>
+                      {canNativeShare && (
+                        <button 
+                          className="workspace-settings__share-menu-item workspace-settings__share-menu-item--share"
+                          onClick={handleNativeShare}
+                        >
+                          <span className="workspace-settings__share-menu-icon">📤</span>
+                          <span>Share...</span>
+                          <span className="workspace-settings__share-menu-desc">Open share sheet</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
