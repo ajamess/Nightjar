@@ -213,18 +213,18 @@ describe('RelayBridge 4403 auth rejection handling', () => {
 describe('Sidecar relay connect call sites pass auth tokens', () => {
   test('connectAllDocsToRelay computes and passes auth token', () => {
     // Should get key and compute token before connecting
-    const pattern = /const key = getKeyForDocument\(roomName\);\s*const authToken = computeRelayAuthToken\(key, roomName\);\s*await relayBridge\.connect\(roomName, doc, null, authToken\)/;
+    const pattern = /const key = getKeyForRelayAuth\(roomName\);[\s\S]*?const authToken = computeRelayAuthToken\(key, roomName\);\s*await relayBridge\.connect\(roomName, doc, null, authToken\)/;
     expect(sidecarSource).toMatch(pattern);
   });
 
   test('manual peer sync relay fallback passes auth token', () => {
-    const pattern = /const key = getKeyForDocument\(roomName\);\s*const authToken = computeRelayAuthToken\(key, roomName\);\s*await relayBridge\.connect\(roomName, doc, null, authToken\);\s*syncSuccess = true/;
+    const pattern = /const key = getKeyForRelayAuth\(roomName\);[\s\S]*?const authToken = computeRelayAuthToken\(key, roomName\);\s*await relayBridge\.connect\(roomName, doc, null, authToken\);\s*syncSuccess = true/;
     expect(sidecarSource).toMatch(pattern);
   });
 
   test('autoRejoinWorkspaces relay connection passes auth token', () => {
     // After v1.7.27, autoRejoinWorkspaces has a key-null guard before connecting
-    const pattern = /const key = getKeyForDocument\(roomName\);\s*[\s\S]*?if \(key\) \{\s*const authToken = computeRelayAuthToken\(key, roomName\);\s*relayBridge\.connect\(roomName, doc, null, authToken\)\.catch/;
+    const pattern = /const key = getKeyForRelayAuth\(roomName\);\s*[\s\S]*?if \(key\) \{\s*const authToken = computeRelayAuthToken\(key, roomName\);\s*relayBridge\.connect\(roomName, doc, null, authToken\)\.catch/;
     expect(sidecarSource).toMatch(pattern);
   });
 
@@ -233,8 +233,8 @@ describe('Sidecar relay connect call sites pass auth tokens', () => {
     expect(sidecarSource).toContain(
       "console.log(`[Sidecar] Connecting ${docName} to public relay for cross-platform sharing...`);"
     );
-    // Auth token is computed and passed inside the if (key) guard
-    const docAddedPattern = /if \(key\) \{[\s\S]*?const authToken = computeRelayAuthToken\(key, docName\);\s*relayBridge\.connect\(docName, doc, null, authToken\)\.catch/;
+    // Auth token is computed and passed inside the if (relayKey) guard
+    const docAddedPattern = /if \(relayKey\) \{[\s\S]*?const authToken = computeRelayAuthToken\(relayKey, docName\);\s*relayBridge\.connect\(docName, doc, null, authToken\)\.catch/;
     expect(sidecarSource).toMatch(docAddedPattern);
   });
 
@@ -290,16 +290,16 @@ describe('Expanded relay room filters', () => {
 describe('set-key handler reconnects relay with auth', () => {
   test('checks existing relay connection for missing auth token', () => {
     expect(sidecarSource).toContain(
-      'existingConn && !existingConn.authToken'
+      'existingConn && existingConn.authToken !== newAuthToken'
     );
   });
 
   test('disconnects and reconnects with auth when key arrives late', () => {
     expect(sidecarSource).toContain(
-      'Key received for'
+      'Key changed for'
     );
     expect(sidecarSource).toContain(
-      'reconnecting to relay with auth'
+      'reconnecting to relay with updated auth'
     );
     expect(sidecarSource).toContain(
       'relayBridge.disconnect(sanitizedDocName)'
@@ -336,7 +336,7 @@ describe('Browser async auth fallback (useWorkspaceSync)', () => {
 
   test('async fallback fires when sync token is null', () => {
     expect(useWorkspaceSyncSource).toContain(
-      '!ywsAuthToken && authKeyChain?.workspaceKey'
+      'const needsAsyncAuth = !ywsAuthToken && !!authKeyChain?.workspaceKey'
     );
   });
 
@@ -893,13 +893,13 @@ describe('Key delivery wiring — all paths deliver keys to relay', () => {
     const docAddedSection = sidecarSource.match(/docs\.on\('doc-added'[\s\S]*?^\}\);/m);
     expect(docAddedSection).not.toBeNull();
     expect(docAddedSection[0]).toContain('Deferring relay connect');
-    expect(docAddedSection[0]).toContain('no key available yet');
+    expect(docAddedSection[0]).toContain('no per-doc key available yet');
   });
 
   test('doc-added handler delivers key to relay when key exists', () => {
     const docAddedSection = sidecarSource.match(/docs\.on\('doc-added'[\s\S]*?^\}\);/m);
     expect(docAddedSection).not.toBeNull();
-    expect(docAddedSection[0]).toContain('deliverKeyToAllRelays(docName, key)');
+    expect(docAddedSection[0]).toContain('deliverKeyToAllRelays(docName, relayKey)');
   });
 });
 
@@ -1068,9 +1068,9 @@ describe('Key persistence — workspace keys survive restart', () => {
 
   test('autoRejoinWorkspaces uses preloaded keys for relay auth', () => {
     // After loadWorkspaceList preloads keys, autoRejoinWorkspaces should
-    // find them via getKeyForDocument and compute auth tokens
+    // find them via getKeyForRelayAuth and compute auth tokens
     const fnSection = sidecarSource.match(/async function autoRejoinWorkspaces[\s\S]*?^\}/m);
-    expect(fnSection[0]).toContain('getKeyForDocument(roomName)');
+    expect(fnSection[0]).toContain('getKeyForRelayAuth(roomName)');
     expect(fnSection[0]).toContain('computeRelayAuthToken(key, roomName)');
   });
 

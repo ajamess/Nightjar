@@ -1086,6 +1086,13 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.30 - Document Sync Race Condition Fix (Issue #15)
+- **Critical Fix**: Sidecar relay auth used `sessionKey` fallback instead of `null` when per-document key wasn't yet available — computed wrong HMAC tokens that poisoned the server's first-write-wins auth, causing perpetual 4403 rejections and connect/disconnect loops
+- **Critical Fix**: `set-key` handler checked for auth token *absence* (`!token`) instead of *mismatch* (`token !== newToken`) — connections with wrong tokens from the race window were never reconnected with the correct key
+- **Fix**: Relay server now cleans up `roomAuthTokens` entries on doc destroy and stale doc sweep — wrong tokens from race conditions no longer persist for the server lifetime
+- **Fix**: Browser WebSocket provider created with `connect: false` when async auth is needed — eliminates wasted unauthenticated connection attempt before Web Crypto computes the token
+- **Testing**: 58 new tests covering all 4 bugs, cross-platform auth matrix, race condition prevention, and end-to-end flow verification (5042 total tests passing)
+
 ### v1.7.28 - Relay Bridge Protocol Fix (Issue #13)
 - **Critical Fix**: Relay bridge used wrong wire protocol — data NEVER flowed from sidecar to relay server. The y-websocket two-layer message format (outer messageSync/messageAwareness + inner sync types) was confused with inner-only constants, causing every outgoing SyncStep2, update forward, and awareness message to be either misinterpreted or silently dropped by the server
 - **Fix**: Rewrote `_setupSync()` in `sidecar/relay-bridge.js` with correct two-layer encoding: all outgoing sync messages now include the `messageSync=0` outer prefix, updates use `syncProtocol.writeUpdate()`, awareness uses `messageAwareness=1`

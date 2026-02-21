@@ -271,10 +271,10 @@ describe('Sidecar per-document key handling', () => {
   test('set-key handler reconnects relay with auth when key arrives after initial connect', () => {
     // When a key arrives for an already-connected doc, it should reconnect with auth
     expect(sidecarSource).toContain(
-      'Key received for'
+      'Key changed for'
     );
     expect(sidecarSource).toContain(
-      'reconnecting to relay with auth'
+      'reconnecting to relay with updated auth'
     );
   });
 

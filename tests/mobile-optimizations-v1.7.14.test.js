@@ -296,15 +296,15 @@ describe('PWA manifest and icons', () => {
 // ── TODO Tags (Steps 1 & 3) ──
 
 describe('TODO tags for deferred work', () => {
-  test('index.html has TODO for viewport-fit=cover', () => {
+  test('index.html has viewport-fit=cover (completed)', () => {
     const html = fs.readFileSync(path.join(FRONTEND_ROOT, 'index.html'), 'utf-8');
-    expect(html).toContain('TODO: [Mobile Step 1]');
+    // Mobile Step 1 completed — viewport-fit=cover is now implemented
     expect(html).toContain('viewport-fit=cover');
   });
 
-  test('global.css has TODO for overscroll-behavior and dvh', () => {
+  test('global.css has overscroll-behavior and dvh (completed)', () => {
     const css = readCSS('styles/global.css');
-    expect(css).toContain('TODO: [Mobile Step 1]');
+    // Mobile Step 1 completed — overscroll-behavior and 100dvh are now implemented
     expect(css).toContain('overscroll-behavior');
     expect(css).toContain('100dvh');
   });

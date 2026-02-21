@@ -1,4 +1,21 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    TouchSensor,
+    useSensor,
+    useSensors,
+    closestCorners,
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    arrayMove,
+    verticalListSortingStrategy,
+    horizontalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import SortableKanbanCard from './SortableKanbanCard';
+import SortableKanbanColumn from './SortableKanbanColumn';
 import KanbanCardEditor from './KanbanCardEditor';
 import SimpleMarkdown from './SimpleMarkdown';
 import { useConfirmDialog } from './common/ConfirmDialog';
@@ -17,6 +34,8 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
     const [syncError, setSyncError] = useState(null);
     const [draggedCard, setDraggedCard] = useState(null);
     const [draggedColumn, setDraggedColumn] = useState(null);
+    const [activeId, setActiveId] = useState(null);
+    const [activeData, setActiveData] = useState(null);
     const [editingCard, setEditingCard] = useState(null);
     const [editingColumn, setEditingColumn] = useState(null);
     const [newColumnName, setNewColumnName] = useState('');
@@ -389,132 +408,167 @@ const Kanban = ({ ydoc, provider, userColor, userHandle, userPublicKey, readOnly
         if (editingCard === cardId) setEditingCard(null);
     }, [columns, saveToYjs, confirm, editingCard]);
 
-    // Drag and drop for cards
-    const handleDragStart = (e, card, fromColumnId) => {
-        // Stop propagation to prevent column from also being dragged
-        e.stopPropagation();
-        setDraggedCard({ card, fromColumnId });
-        setDraggedColumn(null); // Clear any column drag state
-        e.dataTransfer.effectAllowed = 'move';
-    };
+    // ========== @dnd-kit drag-and-drop ==========
 
-    const handleDragEnd = () => {
-        // Always clear the dragged card state when drag ends
-        setDraggedCard(null);
-    };
+    // Sensors: pointer (mouse) + touch with activation constraints
+    const dndSensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    );
 
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    };
+    // Column IDs for the outer SortableContext
+    const columnIds = useMemo(() => columns.map(c => `col-${c.id}`), [columns]);
 
-    const handleDrop = (e, toColumnId, toIndex = null) => {
-        e.preventDefault();
-        
-        if (!draggedCard) return;
-        
-        const { card, fromColumnId } = draggedCard;
-        
-        if (fromColumnId === toColumnId) {
-            // Same-column reorder: read from Yjs inside transaction
-            if (ykanbanRef.current) {
-                const ykanban = ykanbanRef.current;
-                const doc = ykanban.doc;
-                const doSave = () => {
-                    const existing = ykanban.get('columns');
-                    if (!Array.isArray(existing)) return;
-                    const updated = JSON.parse(JSON.stringify(existing));
-                    const col = updated.find(c => c.id === toColumnId);
-                    if (!col) return;
-                    const fromIdx = col.cards.findIndex(cc => cc.id === card.id);
-                    if (fromIdx === -1) return;
-                    const [movedCard] = col.cards.splice(fromIdx, 1);
-                    const insertIdx = toIndex !== null
-                        ? (toIndex > fromIdx ? toIndex - 1 : toIndex)
-                        : col.cards.length;
-                    col.cards.splice(insertIdx, 0, movedCard);
-                    ykanban.set('columns', updated);
-                };
-                if (doc) doc.transact(doSave);
-                else doSave();
-                const latest = ykanbanRef.current.get('columns');
-                if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
-                logBehavior('document', 'kanban_reorder_card', { columnId: toColumnId, cardId: card.id, toIndex });
-            }
+    // Find which column a card belongs to
+    const findColumnOfCard = useCallback((cardId) => {
+        return columns.find(col => col.cards?.some(c => c.id === cardId));
+    }, [columns]);
+
+    // @dnd-kit onDragStart
+    const handleDndStart = useCallback((event) => {
+        const { active } = event;
+        setActiveId(active.id);
+        setActiveData(active.data.current);
+    }, []);
+
+    // @dnd-kit onDragOver — cross-container card moves (optimistic UI)
+    const handleDndOver = useCallback((event) => {
+        const { active, over } = event;
+        if (!over || active.data.current?.type !== 'card') return;
+
+        const activeCardId = active.id;
+        const activeCol = columns.find(col => col.cards?.some(c => c.id === activeCardId));
+        if (!activeCol) return;
+
+        let overColumnId;
+        if (over.data.current?.type === 'card') {
+            const overCol = columns.find(col => col.cards?.some(c => c.id === over.id));
+            overColumnId = overCol?.id;
+        } else if (over.data.current?.type === 'column') {
+            overColumnId = over.data.current.column.id;
         } else {
-            // Cross-column move — do everything inside a Yjs transaction
+            overColumnId = columns.find(c => `col-${c.id}` === String(over.id))?.id;
+        }
+
+        if (!overColumnId || activeCol.id === overColumnId) return;
+
+        // Move card between columns (optimistic state update)
+        setColumns(prev => {
+            const updated = JSON.parse(JSON.stringify(prev));
+            const fromCol = updated.find(c => c.id === activeCol.id);
+            const toCol = updated.find(c => c.id === overColumnId);
+            if (!fromCol || !toCol) return prev;
+
+            const cardIdx = fromCol.cards.findIndex(c => c.id === activeCardId);
+            if (cardIdx === -1) return prev;
+
+            const [card] = fromCol.cards.splice(cardIdx, 1);
+            if (over.data.current?.type === 'card') {
+                const overIdx = toCol.cards.findIndex(c => c.id === over.id);
+                toCol.cards.splice(overIdx >= 0 ? overIdx : toCol.cards.length, 0, card);
+            } else {
+                toCol.cards.push(card);
+            }
+            return updated;
+        });
+    }, [columns]);
+
+    // @dnd-kit onDragEnd — persist to Yjs
+    const handleDndEnd = useCallback((event) => {
+        const { active, over } = event;
+        const data = active.data.current;
+
+        setActiveId(null);
+        setActiveData(null);
+
+        // Cancelled — restore from Yjs
+        if (!over) {
             if (ykanbanRef.current) {
-                const ykanban = ykanbanRef.current;
-                const doc = ykanban.doc;
-                const doSave = () => {
-                    const existing = ykanban.get('columns');
-                    if (!Array.isArray(existing)) return;
-                    const updated = JSON.parse(JSON.stringify(existing));
-                    const fromCol = updated.find(c => c.id === fromColumnId);
-                    const toCol = updated.find(c => c.id === toColumnId);
-                    // Guard: if source or target column was deleted, abort the move
-                    if (!fromCol || !toCol) return;
-                    // Read current card data from Yjs source column (not stale drag snapshot)
-                    const cardIdx = fromCol.cards.findIndex(cc => cc.id === card.id);
-                    if (cardIdx === -1) return; // card already moved or deleted
-                    const [currentCard] = fromCol.cards.splice(cardIdx, 1);
-                    if (toIndex !== null) {
-                        toCol.cards.splice(toIndex, 0, currentCard);
-                    } else {
-                        toCol.cards.push(currentCard);
-                    }
-                    ykanban.set('columns', updated);
-                };
-                if (doc) doc.transact(doSave);
-                else doSave();
-                // Update React state from Yjs after transaction
                 const latest = ykanbanRef.current.get('columns');
                 if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
-                logBehavior('document', 'kanban_move_card', { cardId: card.id, fromColumnId, toColumnId, toIndex });
             }
-        }
-        setDraggedCard(null);
-    };
-
-    // Drag and drop for columns
-    const handleColumnDragStart = (e, column) => {
-        // Only set column drag if not already dragging a card
-        if (draggedCard) {
-            e.preventDefault();
             return;
         }
-        setDraggedColumn(column);
-        setDraggedCard(null); // Clear any card drag state
-        e.dataTransfer.effectAllowed = 'move';
-    };
 
-    const handleColumnDragEnd = () => {
-        setDraggedColumn(null);
-    };
+        if (data?.type === 'column') {
+            // Column reorder
+            const fromColId = data.column.id;
+            const toColId = over.data.current?.type === 'column'
+                ? over.data.current.column.id
+                : columns.find(c => `col-${c.id}` === String(over.id))?.id;
+            if (!toColId || fromColId === toColId) return;
 
-    const handleColumnDrop = (e, targetColumnId) => {
-        e.preventDefault();
-        
-        if (!draggedColumn || draggedColumn.id === targetColumnId) return;
-        
-        const currentColumns = ykanbanRef.current?.get('columns');
-        const base = currentColumns ? JSON.parse(JSON.stringify(currentColumns)) : columns;
-        
-        const fromIndex = base.findIndex(c => c.id === draggedColumn.id);
-        const toIndex = base.findIndex(c => c.id === targetColumnId);
-        
-        if (fromIndex === -1 || toIndex === -1) return;
-        
-        const currentColumn = base[fromIndex];
-        const newColumns = [...base];
-        newColumns.splice(fromIndex, 1);
-        newColumns.splice(toIndex, 0, currentColumn);
-        
-        setColumns(newColumns);
-        saveToYjs(newColumns);
-        logBehavior('document', 'kanban_reorder_column', { columnId: draggedColumn.id, fromIndex, toIndex });
+            if (ykanbanRef.current) {
+                const ykanban = ykanbanRef.current;
+                const doc = ykanban.doc;
+                const doSave = () => {
+                    const existing = ykanban.get('columns');
+                    if (!Array.isArray(existing)) return;
+                    const base = JSON.parse(JSON.stringify(existing));
+                    const fi = base.findIndex(c => c.id === fromColId);
+                    const ti = base.findIndex(c => c.id === toColId);
+                    if (fi === -1 || ti === -1) return;
+                    ykanban.set('columns', arrayMove(base, fi, ti));
+                };
+                if (doc) doc.transact(doSave);
+                else doSave();
+                const latest = ykanbanRef.current.get('columns');
+                if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
+                logBehavior('document', 'kanban_reorder_column', { columnId: fromColId });
+            }
+        } else if (data?.type === 'card') {
+            const activeCardId = active.id;
+            const originalColumnId = data.columnId;
+
+            if (over.data.current?.type === 'card' || over.data.current?.type === 'column') {
+                // Determine current position after any handleDndOver moves
+                const currentCol = columns.find(col => col.cards?.some(c => c.id === activeCardId));
+                const sameColumn = currentCol?.id === originalColumnId;
+
+                if (sameColumn && over.data.current?.type === 'card' && over.id !== activeCardId) {
+                    // Same-column reorder — read from Yjs inside transaction
+                    if (ykanbanRef.current) {
+                        const ykanban = ykanbanRef.current;
+                        const doc = ykanban.doc;
+                        const overIdx = currentCol.cards.findIndex(c => c.id === over.id);
+                        const doSave = () => {
+                            const existing = ykanban.get('columns');
+                            if (!Array.isArray(existing)) return;
+                            const updated = JSON.parse(JSON.stringify(existing));
+                            const col = updated.find(c => c.id === currentCol.id);
+                            if (!col) return;
+                            const fromIdx = col.cards.findIndex(cc => cc.id === activeCardId);
+                            if (fromIdx === -1) return;
+                            col.cards = arrayMove(col.cards, fromIdx, overIdx >= 0 ? overIdx : col.cards.length);
+                            ykanban.set('columns', updated);
+                        };
+                        if (doc) doc.transact(doSave);
+                        else doSave();
+                        const latest = ykanbanRef.current.get('columns');
+                        if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
+                        logBehavior('document', 'kanban_reorder_card', { columnId: currentCol.id, cardId: activeCardId });
+                    }
+                } else if (!sameColumn) {
+                    // Cross-column move — state already updated by handleDndOver, persist
+                    if (ykanbanRef.current) {
+                        const ykanban = ykanbanRef.current;
+                        const doc = ykanban.doc;
+                        const doSave = () => {
+                            ykanban.set('columns', JSON.parse(JSON.stringify(columns)));
+                        };
+                        if (doc) doc.transact(doSave);
+                        else doSave();
+                        const latest = ykanbanRef.current.get('columns');
+                        if (latest) setColumns(JSON.parse(JSON.stringify(latest)));
+                        logBehavior('document', 'kanban_move_card', { cardId: activeCardId, fromColumnId: originalColumnId, toColumnId: currentCol?.id });
+                    }
+                }
+            }
+        }
+
+        setDraggedCard(null);
         setDraggedColumn(null);
-    };
+    }, [columns, saveToYjs]);
 
     return (
         <div 
