@@ -1086,6 +1086,11 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.7.20 - Web App Share Link Fix (Issue #5)
+- **Critical Fix**: Joining a workspace via share link on a phone browser now correctly syncs all documents — previously showed an empty workspace due to `express.json()` middleware being registered after the key delivery route on the server
+- **Resilience**: Client-side key delivery now retries up to 3 times with exponential backoff (1s → 2s → 4s)
+- **Testing**: 21 new tests for middleware ordering, route structure, CORS headers, client retry logic, and sync integration
+
 ### v1.7.19 - Share Link Host Fix & Deployment Hardening
 - **Critical Fix**: Share links now use `https://night-jar.co/join/...` instead of the non-existent `https://relay.night-jar.co` subdomain — clicking share links previously showed "This site can't be reached"
 - **Enhancement**: New `getShareHost()` auto-detection — web deployments automatically use their own origin for share links; self-hosted instances work without configuration
