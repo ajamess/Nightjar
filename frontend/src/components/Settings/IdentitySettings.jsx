@@ -226,7 +226,7 @@ export default function IdentitySettings({ onClose }) {
                                 </button>
                             ) : (
                                 <div className="qr-transfer">
-                                    <img src={qrData} alt="Transfer QR Code" className="qr-image" />
+                                    <img src={qrData} alt="Transfer QR Code" className="qr-image" loading="lazy" />
                                     <div className="pin-display">
                                         <span className="pin-label">PIN:</span>
                                         <span className="pin-value">{qrPin}</span>

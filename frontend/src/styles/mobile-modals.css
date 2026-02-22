@@ -271,6 +271,7 @@
     background: var(--bg-secondary, #16161e) !important;
     border: none !important;
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4) !important;
+    overscroll-behavior: contain;
   }
 
   .context-menu::before {

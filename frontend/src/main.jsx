@@ -19,11 +19,26 @@ if ('serviceWorker' in navigator && !window.electronAPI) {
         if (r) setInterval(() => r.update(), 60 * 60 * 1000);
       },
       onOfflineReady() {
-        console.log('[SW] Offline ready');
+        // Surface offline-ready status as a toast (picked up by ToastProvider)
+        window.dispatchEvent(new CustomEvent('nightjar:toast', {
+          detail: { message: '\u2705 App ready for offline use', type: 'success' },
+        }));
       },
     });
   }).catch(() => {
     // PWA registration unavailable (e.g. dev mode with devOptions.enabled=false)
+  });
+
+  // Network status listener — notify user when connectivity changes
+  window.addEventListener('online', () => {
+    window.dispatchEvent(new CustomEvent('nightjar:toast', {
+      detail: { message: '\ud83c\udf10 Back online', type: 'success' },
+    }));
+  });
+  window.addEventListener('offline', () => {
+    window.dispatchEvent(new CustomEvent('nightjar:toast', {
+      detail: { message: '\ud83d\udcf4 You are offline — changes will sync when reconnected', type: 'warning' },
+    }));
   });
 }
 

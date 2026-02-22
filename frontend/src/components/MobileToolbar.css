@@ -136,7 +136,7 @@
         border-radius: 6px;
         background: var(--bg-primary, #0f0f1a);
         color: var(--text-primary, #fff);
-        font-size: 14px;
+        font-size: 16px; /* 16px minimum prevents iOS zoom on focus */
         outline: none;
     }
 

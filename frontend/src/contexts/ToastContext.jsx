@@ -50,6 +50,16 @@ export function ToastProvider({ children }) {
     setToast(null);
   }, []);
 
+  // Listen for global nightjar:toast events (from SW registration, online/offline, etc.)
+  useEffect(() => {
+    const handler = (e) => {
+      const { message, type } = e.detail || {};
+      if (message) showToast(message, type);
+    };
+    window.addEventListener('nightjar:toast', handler);
+    return () => window.removeEventListener('nightjar:toast', handler);
+  }, [showToast]);
+
   // Swipe-to-dismiss touch handlers
   const handleTouchStart = useCallback((e) => {
     swipeStartRef.current = e.touches[0].clientX;

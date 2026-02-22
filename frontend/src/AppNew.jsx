@@ -2153,7 +2153,8 @@ function App() {
                         src={getAssetUrl('/assets/nightjar-logo.png')}
                         alt="Nightjar" 
                         className="app-loading__logo"
-                        style={{ width: '120px', height: '120px' }} 
+                        style={{ width: '120px', height: '120px' }}
+                        loading="lazy"
                     />
                     <div className="app-loading__spinner" />
                 </div>
@@ -2493,7 +2494,8 @@ function App() {
                         <div className="welcome-icon">
                             <img 
                                 src={getAssetUrl('/assets/nightjar-logo.png')}
-                                alt="Nightjar" 
+                                alt="Nightjar"
+                                loading="lazy"
                             />
                         </div>
                         <h2>Welcome to Nightjar</h2>

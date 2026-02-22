@@ -320,6 +320,7 @@ export default function SearchPalette({
                         ref={inputRef}
                         className="search-palette__input"
                         type="text"
+                        inputMode="search"
                         placeholder="Search everything…"
                         value={query}
                         onChange={e => setQuery(e.target.value)}

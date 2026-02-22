@@ -266,7 +266,7 @@ export function EntityShareDialog({
           {/* QR Code */}
           {qrCodeDataUrl && (
             <div className="entity-share__qr">
-              <img src={qrCodeDataUrl} alt="QR Code" />
+              <img src={qrCodeDataUrl} alt="QR Code" loading="lazy" />
             </div>
           )}
           

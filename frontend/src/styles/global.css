@@ -182,6 +182,11 @@ html {
     -webkit-tap-highlight-color: transparent;
 }
 
+/* Smooth momentum scrolling on iOS (global) */
+* {
+    -webkit-overflow-scrolling: touch;
+}
+
 /* Prevent iOS zoom on input focus — requires 16px minimum font-size */
 @media (max-width: 768px) {
     input, select, textarea {

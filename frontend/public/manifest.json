@@ -12,6 +12,7 @@
   "theme_color": "#6366f1",
   "orientation": "any",
   "categories": ["productivity", "utilities"],
+  "screenshots": [],
   "icons": [
     {
       "src": "./nightjar-192.png",

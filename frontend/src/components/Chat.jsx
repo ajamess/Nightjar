@@ -1328,6 +1328,8 @@ const Chat = ({ ydoc, provider, username, userColor, workspaceId, targetUser, on
     };
 
     // On mobile, MobileTabBar controls chat visibility entirely
+    // TODO: [Mobile] Add document.body.style.overflow = 'hidden' when chat is
+    // full-screen on mobile to prevent background page scroll.
     if (isMobileChat && !mobileVisible) {
         return null;
     }

@@ -330,6 +330,8 @@ const Comments = ({
     const unresolvedComments = comments.filter(c => !c.resolved);
     const resolvedComments = comments.filter(c => c.resolved);
 
+    // TODO: [Mobile] Add document.body.style.overflow = 'hidden' when this panel
+    // is full-screen on mobile to prevent background page scroll.
     if (!isVisible) return null;
 
     return (

@@ -503,6 +503,20 @@
 }
 
 /* ── Mobile ── */
+@media (pointer: coarse) {
+  .btn-reply,
+  .btn-reply-action,
+  .btn-resolve,
+  .btn-unresolve,
+  .btn-delete-comment,
+  .btn-close-comments,
+  .btn-submit-comment {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+  }
+}
+
 @media (max-width: 768px) {
   .comments-panel {
     width: 100vw;

@@ -192,6 +192,7 @@ function NightjarMascot({
                 src={getAssetUrl('/assets/nightjar-logo.png')}
                 alt="Nightjar"
                 draggable={false}
+                loading="lazy"
             />
             
             {/* Speech bubble - positioned relative to bird */}

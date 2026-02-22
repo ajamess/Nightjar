@@ -382,7 +382,7 @@ function WelcomeState({ onCreateWorkspace, onJoinWorkspace }) {
     return (
         <div className="sidebar-welcome">
             <div className="sidebar-welcome__icon">
-                <img src={getAssetUrl('/assets/nightjar-logo.png')} alt="Nightjar" />
+                <img src={getAssetUrl('/assets/nightjar-logo.png')} alt="Nightjar" loading="lazy" />
             </div>
             <h3 className="sidebar-welcome__title">Welcome to Nightjar</h3>
             <p className="sidebar-welcome__text">

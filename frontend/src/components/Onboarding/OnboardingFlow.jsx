@@ -114,7 +114,8 @@ function WelcomeStep({ hasExistingIdentity, onCreateNew, onRestore }) {
                 <img 
                     src={getAssetUrl('/assets/nightjar-logo.png')}
                     alt="Nightjar" 
-                    style={{ width: '200px', height: '200px' }} 
+                    style={{ width: '200px', height: '200px' }}
+                    loading="lazy"
                 />
             </div>
             <h1>Welcome to Nightjar</h1>

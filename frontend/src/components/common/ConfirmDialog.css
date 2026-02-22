@@ -133,6 +133,14 @@
     background: #4b5563;
 }
 
+/* ── Touch targets ── */
+@media (pointer: coarse) {
+  .confirm-dialog__btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 /* ── Mobile ── */
 @media (max-width: 480px) {
   .confirm-dialog {
