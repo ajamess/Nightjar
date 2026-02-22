@@ -125,29 +125,46 @@ export default function useFileDownload({
           console.log(`[FileDownload] Chunk ${i}/${chunkCount} found locally`);
         }
         
-        // If not available locally, try P2P
+        // If not available locally, try P2P with retry + exponential backoff
         if (!chunkData && requestChunkFromPeer) {
-          try {
-            // Pass holder hints so requestChunkFromPeer can target the right peers
-            const chunkKey = `${fileId}:${i}`;
-            const entry = chunkAvailability?.[chunkKey];
-            const holders = (entry && Array.isArray(entry.holders)) ? entry.holders : (Array.isArray(entry) ? entry : []);
-            console.log(`[FileDownload] Chunk ${i} not local, requesting from peers. Holders:`, holders);
-            chunkData = await requestChunkFromPeer(fileId, i, holders);
-            // Store locally for future seeding
-            if (chunkData) {
-              console.log(`[FileDownload] Chunk ${i} received from peer`);
-              await new Promise((resolve, reject) => {
-                const tx = db.transaction('chunks', 'readwrite');
-                tx.objectStore('chunks').put(chunkData, `${fileId}:${i}`);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-              });
-            } else {
-              console.warn(`[FileDownload] Chunk ${i} peer request returned null`);
+          const MAX_RETRIES = 3;
+          const BASE_DELAY_MS = 2000; // 2s, 4s, 8s
+          
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+              // Pass holder hints so requestChunkFromPeer can target the right peers
+              const chunkKey = `${fileId}:${i}`;
+              const entry = chunkAvailability?.[chunkKey];
+              const holders = (entry && Array.isArray(entry.holders)) ? entry.holders : (Array.isArray(entry) ? entry : []);
+              if (attempt === 0) {
+                console.log(`[FileDownload] Chunk ${i} not local, requesting from peers. Holders:`, holders);
+              } else {
+                console.log(`[FileDownload] Chunk ${i} retry ${attempt}/${MAX_RETRIES} after ${BASE_DELAY_MS * Math.pow(2, attempt - 1)}ms`);
+              }
+              chunkData = await requestChunkFromPeer(fileId, i, holders);
+              // Store locally for future seeding
+              if (chunkData) {
+                console.log(`[FileDownload] Chunk ${i} received from peer${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}`);
+                await new Promise((resolve, reject) => {
+                  const tx = db.transaction('chunks', 'readwrite');
+                  tx.objectStore('chunks').put(chunkData, `${fileId}:${i}`);
+                  tx.oncomplete = () => resolve();
+                  tx.onerror = () => reject(tx.error);
+                });
+                break; // Success — exit retry loop
+              } else {
+                console.warn(`[FileDownload] Chunk ${i} peer request returned null (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+              }
+            } catch (err) {
+              console.warn(`[FileDownload] P2P fetch failed for chunk ${i} (attempt ${attempt + 1}):`, err);
             }
-          } catch (err) {
-            console.warn(`[FileDownload] P2P fetch failed for chunk ${i}:`, err);
+            
+            // If we haven't succeeded and have retries left, wait with backoff
+            if (!chunkData && attempt < MAX_RETRIES) {
+              const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+              console.log(`[FileDownload] Waiting ${delay}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
           }
         } else if (!chunkData) {
           console.warn(`[FileDownload] Chunk ${i} not local and no requestChunkFromPeer function available`);

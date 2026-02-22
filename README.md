@@ -1086,6 +1086,14 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.8.9 - Share Link Race Fix & File Download Retry (Issue #18)
+- **Critical Fix**: Share links silently lost when identity was locked or being selected — `getKeyFromUrl()` now stores pending share link in `sessionStorage` before the session key effect overwrites the URL fragment
+- **Fix**: `handleIdentitySelected` now calls `processPendingShareLink()`, matching the pattern from `handleLockScreenUnlock`
+- **Feature**: Automatic workspace switching via share links — if the workspace already exists locally, auto-switches with UX toast instead of opening the join dialog
+- **Fix**: File download retry with exponential backoff — `useFileDownload` now retries each chunk up to 3 times with 2s → 4s → 8s delays instead of failing immediately on "Connected peers: 0"
+- **Fix**: One-shot re-bootstrap when 0 peers connected — `FileTransferContext.requestChunkFromPeer` triggers a single `peerManager.joinWorkspace()` and waits 3s for peers before giving up
+- **Tests**: 52 new tests covering share link race scenarios, file download retry/backoff, and re-bootstrap logic; 163 suites, 5,244 tests passing
+
 ### v1.8.8 - Automatic Stale-Build Detection
 - **Feature**: Web (PWA) clients now auto-detect outdated cached builds on fresh launch — compares compiled-in version against the server's `/api/version` endpoint and reloads transparently before the user starts editing
 - **Feature**: `sessionStorage` guard prevents infinite reload loops if the service worker fails to update

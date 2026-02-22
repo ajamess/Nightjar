@@ -58,7 +58,7 @@ import { createCollaboratorTracker } from './utils/collaboratorTracking';
 import { useEnvironment, isElectron, isCapacitor, getPlatform } from './hooks/useEnvironment';
 import { getYjsWebSocketUrl, deliverKeyToServer, computeRoomAuthTokenSync, computeRoomAuthToken, getAssetUrl, getSignalingServerUrl } from './utils/websocket';
 import { getStoredKeyChain } from './utils/keyDerivation';
-import { parseShareLink, clearUrlFragment, isJoinUrl, joinUrlToNightjarLink } from './utils/sharing';
+import { parseShareLink, parseShareLinkAsync, isCompressedLink, clearUrlFragment, isJoinUrl, joinUrlToNightjarLink } from './utils/sharing';
 import { META_WS_PORT, CONTENT_DOC_TYPES } from './config/constants';
 import { handleShareLink, isNightjarShareLink } from './utils/linkHandler';
 import { NativeBridge } from './utils/platform';
@@ -86,6 +86,17 @@ function getKeyFromUrl() {
     // SECURITY FIX: Check if this is actually a share link before treating as session key
     if (isShareLinkFragment(fragment)) {
         console.log('[Security] URL fragment contains share link, not treating as session key');
+        // FIX (Issue #18): Store the share link in sessionStorage NOW, before the
+        // session-key effect overwrites the URL fragment via replaceState(). The
+        // share-link useEffect runs after this one and would otherwise read the
+        // overwritten fragment and miss the link entirely.
+        const fullLink = window.location.origin + window.location.pathname + '#' + fragment;
+        sessionStorage.setItem('pendingShareLink', fullLink);
+        const expMatch = fragment.match(/exp:(\d+)/);
+        if (expMatch) {
+            sessionStorage.setItem('pendingShareLinkExpiry', expMatch[1]);
+        }
+        console.log('[Security] Stored pending share link in sessionStorage before fragment overwrite');
         return null; // Don't use share links as session keys
     }
     
@@ -407,6 +418,7 @@ function App() {
 
     // --- Refs ---
     const metaSocketRef = useRef(null);
+    const processPendingShareLinkRef = useRef(null);
 
     // --- Toast (from context, available to all components) ---
     const { showToast } = useToast();
@@ -429,14 +441,86 @@ function App() {
             }
         }
 
-        console.log('[App] Found pending share link after identity setup, opening join dialog');
-        // Use setTimeout to let the current render cycle complete
-        setTimeout(() => {
+        // FIX (Issue #18): Try to parse the link and check if user already has the workspace.
+        // If they do, auto-switch instead of showing the join dialog (with UX toast).
+        // This handles scenarios 3–5 (unlocked + have workspace).
+        const tryAutoSwitch = async () => {
+            try {
+                let parsed;
+                if (isCompressedLink(pendingLink)) {
+                    parsed = await parseShareLinkAsync(pendingLink);
+                } else {
+                    parsed = parseShareLink(pendingLink);
+                }
+
+                if (parsed?.entityId) {
+                    const existing = workspaces.find(w => w.id === parsed.entityId);
+                    if (existing) {
+                        // User already has this workspace — auto-switch with toast
+                        console.log('[App] Pending share link matches existing workspace:', existing.id, existing.name);
+                        sessionStorage.removeItem('pendingShareLink');
+                        sessionStorage.removeItem('pendingShareLinkExpiry');
+
+                        // Still open the join dialog so permission updates / serverUrl
+                        // updates are applied through the standard joinWorkspace() path.
+                        // The joinWorkspace() in WorkspaceContext already handles the
+                        // alreadyMember case (updates serverUrl/permission, switches workspace).
+                        const wsName = existing.name && existing.name !== 'Shared Workspace' ? existing.name : 'this workspace';
+                        showToast(`Switching to ${wsName}...`, 'info');
+                        
+                        // Use joinWorkspace to ensure any permission/serverUrl updates are applied
+                        try {
+                            const result = await joinWorkspace({
+                                entityId: parsed.entityId,
+                                password: parsed.embeddedPassword || null,
+                                encryptionKey: parsed.encryptionKey || null,
+                                permission: parsed.permission || 'editor',
+                                bootstrapPeers: parsed.hyperswarmPeers || parsed.bootstrapPeers || [],
+                                topicHash: parsed.topic || null,
+                                directAddress: parsed.directAddress || null,
+                                serverUrl: parsed.serverUrl || null,
+                            });
+                            
+                            // Show appropriate toast based on result
+                            if (result?.permissionChanged === 'upgraded') {
+                                const perm = result.myPermission || 'editor';
+                                const label = perm.charAt(0).toUpperCase() + perm.slice(1);
+                                showToast(`Permission upgraded to ${label} for ${wsName}`, 'success');
+                            } else if (result?.permissionChanged === 'already-higher') {
+                                const perm = result.myPermission || 'editor';
+                                const label = perm.charAt(0).toUpperCase() + perm.slice(1);
+                                showToast(`You already have ${label} access to ${wsName}`, 'info');
+                            } else {
+                                showToast(`Switched to ${wsName}`, 'success');
+                            }
+                        } catch (err) {
+                            console.error('[App] Auto-switch joinWorkspace failed:', err);
+                            // Fall through to open join dialog as fallback
+                            setCreateWorkspaceMode('join');
+                            setShowCreateWorkspaceDialog(true);
+                            showToast('Share link detected - please review the invitation details', 'info');
+                        }
+                        return;
+                    }
+                }
+            } catch (err) {
+                // Parse failed — not a problem, just fall through to open join dialog
+                console.warn('[App] Failed to parse pending share link for auto-switch:', err.message);
+            }
+
+            // No existing workspace found (or parse failed) — open join dialog as before
+            console.log('[App] Found pending share link after identity setup, opening join dialog');
             setCreateWorkspaceMode('join');
             setShowCreateWorkspaceDialog(true);
             showToast('Share link detected - please review the invitation details', 'info');
-        }, 500);
-    }, [showToast]);
+        };
+
+        // Use setTimeout to let the current render cycle complete, then run async logic
+        setTimeout(() => { tryAutoSwitch(); }, 500);
+    }, [showToast, workspaces, joinWorkspace]);
+
+    // Keep ref in sync so effects can call without dependency
+    processPendingShareLinkRef.current = processPendingShareLink;
 
     // --- Onboarding Handler ---
     const handleOnboardingComplete = useCallback(async (identity, hadLocalData = false) => {
@@ -567,7 +651,14 @@ function App() {
         }
         
         showToast(`Signed in as ${metadata?.handle || 'User'}`, 'success');
-    }, [showToast, setIsLocked, syncFromIdentityManager]);
+
+        // FIX (Issue #18): Check for pending share link that arrived before identity selection.
+        // Previously this was missing, so share links opened via the IdentitySelector path
+        // (multiple identities on device) were silently lost.
+        setShowDeepLinkGate(false);
+        setPendingDeepLink(null);
+        processPendingShareLink();
+    }, [showToast, setIsLocked, syncFromIdentityManager, processPendingShareLink]);
     
     const handleNeedsMigration = useCallback(() => {
         // Legacy identity detected, need to migrate
@@ -1266,6 +1357,26 @@ function App() {
             setShowCreateWorkspaceDialog(true);
             
             showToast('Share link detected - please review the invitation details', 'info');
+        } else {
+            // FIX (Issue #18): The session key effect runs before this one and may have
+            // already stored a share link in sessionStorage (via getKeyFromUrl) and
+            // overwritten the URL fragment with the session key. If a fresh pending link
+            // exists and the fragment is NOT a share link, process it here.
+            // This uses processPendingShareLink which handles auto-switching to existing
+            // workspaces with a UX toast, or opens the join dialog for new workspaces.
+            const storedPending = sessionStorage.getItem('pendingShareLink');
+            if (storedPending) {
+                const storedExpiry = sessionStorage.getItem('pendingShareLinkExpiry');
+                // Consider fresh if: has expiry and it's in the future, OR has no expiry
+                // (no-expiry links were just stored by getKeyFromUrl moments ago)
+                const isFresh = storedExpiry
+                    ? (parseInt(storedExpiry, 10) - Date.now()) > 0
+                    : true; // No expiry = just stored by getKeyFromUrl this render cycle
+                if (isFresh) {
+                    console.log('[ShareLink] Found fresh pending share link stored by getKeyFromUrl, processing...');
+                    processPendingShareLinkRef.current?.();
+                }
+            }
         }
 
         // Cleanup: remove Electron IPC listener on unmount

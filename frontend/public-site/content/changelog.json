@@ -9,6 +9,25 @@
     {
       "type": "tip",
       "text": "This page loads the latest releases automatically from the GitHub API. If releases don't appear, check your internet connection or visit github.com/NiyaNagi/Nightjar/releases directly."
+    },
+    {
+      "type": "heading",
+      "text": "v1.8.9 — Share Link Race Fix & File Download Retry (Issue #18)"
+    },
+    {
+      "type": "paragraph",
+      "text": "Two user-facing bugs persisted after v1.8.7: clicking a share link while an identity was locked or being selected silently lost the link, and file downloads failed immediately with 'Connected peers: 0' instead of retrying. This release fixes both bugs, adds automatic workspace switching when re-joining an existing workspace via share link, and makes file downloads resilient with retry + re-bootstrap."
+    },
+    {
+      "type": "list",
+      "items": [
+        "Fix: Share link race condition — links stored in sessionStorage before URL fragment overwrite",
+        "Fix: Identity selection now processes pending share links (handleIdentitySelected wired to processPendingShareLink)",
+        "Feature: Automatic workspace switching via share links with UX toast",
+        "Fix: File download retry with exponential backoff (2s → 4s → 8s, up to 3 retries per chunk)",
+        "Fix: One-shot re-bootstrap when 0 peers connected in FileTransferContext",
+        "Tests: 52 new tests; 163 suites, 5,244 tests passing"
+      ]
     }
   ]
 }

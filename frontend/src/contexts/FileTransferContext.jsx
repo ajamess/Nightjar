@@ -523,12 +523,50 @@ export function FileTransferProvider({
       return null;
     }
 
-    const connectedPeers = peerManager.getConnectedPeers?.() || [];
+    let connectedPeers = peerManager.getConnectedPeers?.() || [];
     console.log(`[FileTransfer] Requesting chunk ${chunkIndex} for ${fileId}. Connected peers: ${connectedPeers.length}, holders: ${holders.length}`);
     
     if (connectedPeers.length === 0 && holders.length === 0) {
-      console.warn(`[FileTransfer] No peers available to request chunk ${chunkIndex} for ${fileId}`);
-      return null;
+      // FIX (Issue #18): Attempt a one-shot re-bootstrap before giving up.
+      // This handles the case where the initial bootstrap failed (e.g., serverUrl
+      // was not yet available) but is now available.
+      console.warn(`[FileTransfer] No peers available — attempting one-shot re-bootstrap for ${fileId}:${chunkIndex}`);
+      try {
+        const currentServerUrl = serverUrlRef.current;
+        const currentWorkspaceKey = workspaceKeyRef.current;
+        if (currentServerUrl || currentWorkspaceKey) {
+          let authToken = null;
+          if (currentWorkspaceKey && workspaceId) {
+            try {
+              const topic = await generateTopic(workspaceId);
+              authToken = await computeRoomAuthToken(currentWorkspaceKey, topic);
+            } catch (authErr) {
+              console.warn('[FileTransfer] Re-bootstrap auth token failed:', authErr.message);
+            }
+          }
+          await peerManager.joinWorkspace(workspaceId, {
+            serverUrl: currentServerUrl,
+            authToken,
+            workspaceKey: currentWorkspaceKey,
+          });
+          // Wait briefly for connections to establish
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          const newPeers = peerManager.getConnectedPeers?.() || [];
+          console.log(`[FileTransfer] Re-bootstrap complete. Connected peers now: ${newPeers.length}`);
+          if (newPeers.length === 0) {
+            console.warn(`[FileTransfer] Re-bootstrap did not yield peers for chunk ${chunkIndex} of ${fileId}`);
+            return null;
+          }
+          // Peers found — fall through to request logic below with updated peer list
+          connectedPeers = newPeers;
+        } else {
+          console.warn(`[FileTransfer] No serverUrl or workspaceKey for re-bootstrap`);
+          return null;
+        }
+      } catch (rebootstrapErr) {
+        console.warn('[FileTransfer] Re-bootstrap failed:', rebootstrapErr.message);
+        return null;
+      }
     }
 
     // Prefer holders that are connected, then fall back to any connected peer
