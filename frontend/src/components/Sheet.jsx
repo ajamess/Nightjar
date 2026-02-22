@@ -290,8 +290,11 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
             const r = p.selection.r;
             const c = p.selection.c;
             
-            const cellTop = cumulativeRowY[r] ?? (r * defaultRowH);
-            const cellLeft = cumulativeColX[c] ?? (c * defaultColW);
+            // Add +r and +c to account for 1px grid lines between cells.
+            // Fortune Sheet renders 1px borders between each row/column;
+            // getRowHeight/getColumnWidth return content dimensions only.
+            const cellTop = (cumulativeRowY[r] ?? (r * defaultRowH)) + r;
+            const cellLeft = (cumulativeColX[c] ?? (c * defaultColW)) + c;
             const cellHeight = rowHeights[r] ?? defaultRowH;
             const cellWidth = colWidths[c] ?? defaultColW;
             

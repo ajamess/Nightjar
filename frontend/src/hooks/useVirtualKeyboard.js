@@ -29,6 +29,12 @@ export default function useVirtualKeyboard() {
                 cursor.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 return;
             }
+            // Try Fortune Sheet's active cell input
+            const sheetInput = document.querySelector('.luckysheet-input-box textarea, .luckysheet-input-box input');
+            if (sheetInput) {
+                sheetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
             // Fallback: scroll the focused element into view
             const active = document.activeElement;
             if (active && active !== document.body) {

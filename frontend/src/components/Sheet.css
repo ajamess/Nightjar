@@ -11,7 +11,7 @@
 /* Container fills available space and isolates from app theme */
 .sheet-container {
     width: 100%;
-    height: 100%;
+    height: calc(100% - var(--keyboard-height, 0px));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -408,5 +408,13 @@
   }
   .sheet-container .fortune-name-box {
     min-width: 40px !important;
+  }
+  /* Smooth transition when virtual keyboard opens/closes */
+  .sheet-container {
+    transition: height 0.15s ease-out;
+  }
+  /* Ensure Fortune Sheet's input box stays visible above keyboard */
+  .sheet-container .luckysheet-input-box {
+    scroll-margin-bottom: var(--keyboard-height, 0px);
   }
 }

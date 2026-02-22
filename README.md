@@ -1086,6 +1086,11 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.8.5 - Spreadsheet Presence Overlay & Mobile Keyboard Fixes (Issue #16)
+- **Fix**: Cell presence overlay (showing collaborator selections) was misaligned — cumulative position calculation now accounts for 1px grid lines between cells
+- **Fix**: Mobile virtual keyboard overlaying spreadsheet input fields — sheet container now shrinks via `var(--keyboard-height)` when keyboard opens
+- **Fix**: Virtual keyboard hook now scrolls Fortune Sheet's active cell input into view (previously only handled TipTap cursors)
+
 ### v1.8.4 - Critical Spreadsheet Sync Fix (Issue #16)
 - **Critical Fix**: Spreadsheet cells not syncing between devices — Fortune Sheet's `applyOp()` silently swallows Immer errors when sheet IDs mismatch between peers, then the false-positive `opsAppliedThisCycle` flag blocked the full-sheet `setData()` fallback path from running
 - **Fix**: Removed the broken op-based sync path (Y.Array `sheet-ops` + `applyOp`) entirely — full-sheet JSON via Y.Map is now the sole sync mechanism
