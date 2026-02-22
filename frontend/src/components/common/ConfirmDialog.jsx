@@ -69,7 +69,7 @@ export default function ConfirmDialog({
     if (!isOpen) return null;
 
     return (
-        <ResponsiveModal isOpen onClose={onCancel} size="small" className="confirm-dialog">
+        <ResponsiveModal isOpen onClose={onCancel} size="small" className="confirm-dialog" role="alertdialog">
             <div
                 ref={dialogRef}
                 onKeyDown={handleKeyDown}

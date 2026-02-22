@@ -17,7 +17,7 @@ import { generateShareLink, generateShareMessage, compressShareLink, generateSig
 import { getStoredKeyChain } from '../utils/keyDerivation';
 import { signData, uint8ToBase62 } from '../utils/identity';
 import { isElectron } from '../hooks/useEnvironment';
-import { Platform } from '../utils/platform';
+import { Platform, NativeBridge } from '../utils/platform';
 import { getBasePath } from '../utils/websocket';
 import { UnifiedPicker } from './common';
 import { useConfirmDialog } from './common/ConfirmDialog';
@@ -449,7 +449,7 @@ export default function WorkspaceSettings({
     }
     
     try {
-      await Platform.copyToClipboard(textToCopy);
+      await NativeBridge.copyToClipboard(textToCopy);
       setCopiedLink(true);
       setShowShareMenu(false);
       // Clear any previous timer and set new one
@@ -466,7 +466,7 @@ export default function WorkspaceSettings({
   const handleNativeShare = async () => {
     if (!generatedLink) return;
     try {
-      await Platform.share({
+      await NativeBridge.share({
         title: `Join ${workspace.name} on Nightjar`,
         text: `Join my workspace "${workspace.name}" on Nightjar:`,
         url: generatedLink,

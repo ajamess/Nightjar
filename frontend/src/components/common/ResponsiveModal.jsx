@@ -16,7 +16,9 @@ import './ResponsiveModal.css';
  *   className    – extra CSS class applied to the container
  *   snapPoints   – BottomSheet snap points (default [50, 90])
  *   size         – desktop modal width: 'small' | 'medium' | 'large' | 'full'
- *   ariaLabel    – accessible label (falls back to title)
+ *   ariaLabel       – accessible label (falls back to title)
+ *   ariaLabelledBy  – id of element that labels the dialog (takes precedence over ariaLabel)
+ *   role            – dialog role, defaults to 'dialog' (use 'alertdialog' for destructive confirmations)
  */
 export default function ResponsiveModal({
   isOpen,
@@ -27,6 +29,8 @@ export default function ResponsiveModal({
   snapPoints = [50, 90],
   size = 'medium',
   ariaLabel,
+  ariaLabelledBy,
+  role = 'dialog',
 }) {
   const isMobile = useIsMobile(768);
   const modalRef = useRef(null);
@@ -80,9 +84,10 @@ export default function ResponsiveModal({
       <div
         ref={modalRef}
         className={`responsive-modal responsive-modal--${size} ${className}`}
-        role="dialog"
+        role={role}
         aria-modal="true"
-        aria-label={ariaLabel || title || 'Dialog'}
+        aria-labelledby={ariaLabelledBy || undefined}
+        aria-label={ariaLabelledBy ? undefined : (ariaLabel || title || 'Dialog')}
       >
         {children}
       </div>

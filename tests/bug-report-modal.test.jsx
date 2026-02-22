@@ -360,7 +360,7 @@ describe('Interactions', () => {
 
   test('clicking overlay calls onClose', () => {
     const { props } = renderModal();
-    fireEvent.click(document.querySelector('.bug-report-overlay'));
+    fireEvent.click(document.querySelector('.responsive-modal__overlay'));
     expect(props.onClose).toHaveBeenCalled();
   });
 

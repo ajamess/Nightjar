@@ -483,7 +483,7 @@ export default function BugReportModal({ isOpen, onClose, context }) {
   if (!isOpen) return null;
 
   return (
-    <ResponsiveModal isOpen onClose={handleDismiss} size="large" className="bug-report-modal">
+    <ResponsiveModal isOpen onClose={handleDismiss} size="large" className="bug-report-modal" ariaLabelledBy="bug-report-title">
       <div
         ref={modalRef}
       >

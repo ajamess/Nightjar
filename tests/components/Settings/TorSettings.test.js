@@ -93,7 +93,8 @@ describe('TorSettings', () => {
     test('calls onClose when overlay clicked', () => {
       render(<TorSettings isOpen={true} onClose={mockOnClose} />);
       
-      fireEvent.click(document.querySelector('.settings-overlay'));
+      // TorSettings uses ResponsiveModal which renders a responsive-modal__overlay backdrop
+      fireEvent.click(document.querySelector('.responsive-modal__overlay'));
       
       expect(mockOnClose).toHaveBeenCalledTimes(1);
     });

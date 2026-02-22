@@ -211,9 +211,10 @@ describe('Momentum scrolling and toast offset', () => {
     expect(css).toMatch(/table-wrap\s*\{[^}]*-webkit-overflow-scrolling:\s*touch/s);
   });
 
-  test('Toast mobile bottom offset is 80px (clears nav rail)', () => {
+  test('Toast mobile bottom offset clears nav rail (uses CSS custom property)', () => {
     const css = readCSS('styles/global.css');
-    expect(css).toMatch(/\.toast\s*\{[^}]*bottom:\s*calc\(\s*80px/s);
+    // Toast uses dynamic CSS custom property so it works with/without the inventory nav
+    expect(css).toMatch(/\.toast\s*\{[^}]*bottom:\s*calc\(\s*var\(--bottom-nav-height/s);
   });
 });
 
@@ -315,10 +316,11 @@ describe('TODO tags for deferred work', () => {
     expect(css).toContain('Vite boilerplate');
   });
 
-  test('Chat.css has TODO for chat positioning', () => {
+  test('Chat.css has mobile chat positioning (Mobile Step 3 implemented)', () => {
     const css = readCSS('components/Chat.css');
-    expect(css).toContain('TODO: [Mobile Step 3]');
+    // Step 3 is complete: verify the actual mobile chat positioning is in place
     expect(css).toContain('bottom nav');
+    expect(css).toContain('.chat-minimized');
   });
 });
 
