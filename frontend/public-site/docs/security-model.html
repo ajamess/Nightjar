@@ -75,6 +75,8 @@
           return `<ol>${(block.items || []).map(i => `<li>${escapeHTML(i)}</li>`).join('')}</ol>`;
         case 'tip':
           return `<div class="tip-box"><span class="icon">💡</span><p>${escapeHTML(block.text)}</p></div>`;
+        case 'warning':
+          return `<div class="warning-box"><span class="icon">⚠️</span><p>${escapeHTML(block.text)}</p></div>`;
         case 'shortcuts':
           return `<div class="shortcuts-table">${(block.items || []).map(item =>
             `<div class="shortcut-row">

@@ -23,7 +23,7 @@ const DOCS_DIR = path.join(ROOT, 'frontend', 'public-site', 'docs');
 const LANDING_PAGE = path.join(ROOT, 'frontend', 'public-site', 'index.html');
 const HELP_PAGE_JSX = path.join(ROOT, 'frontend', 'src', 'components', 'common', 'HelpPage.jsx');
 
-const VALID_BLOCK_TYPES = ['heading', 'paragraph', 'list', 'steps', 'tip', 'shortcuts', 'screenshot', 'mermaid', 'code'];
+const VALID_BLOCK_TYPES = ['heading', 'paragraph', 'list', 'steps', 'tip', 'warning', 'shortcuts', 'screenshot', 'mermaid', 'code'];
 
 const SECTION_IDS = [
   'getting-started', 'identity', 'workspaces', 'documents', 'editor',

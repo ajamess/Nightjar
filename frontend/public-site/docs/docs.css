@@ -160,6 +160,18 @@ a:hover { color: var(--text-bright); }
 .tip-box .icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 2px; }
 .tip-box p { margin: 0; font-size: 0.92rem; color: var(--text); }
 
+/* ── Warning box ── */
+.warning-box {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: rgba(245, 166, 35, 0.08);
+  border: 1px solid rgba(245, 166, 35, 0.35);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin: 20px 0;
+}
+.warning-box .icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 2px; }
+.warning-box p { margin: 0; font-size: 0.92rem; color: var(--text); }
+
 /* ── Shortcuts table ── */
 .shortcuts-table { width: 100%; margin: 12px 0 20px; }
 .shortcut-row {
@@ -426,5 +438,6 @@ img { max-width: 100%; height: auto; }
   .hub-card { padding: 18px; }
   .hub-card .icon { font-size: 1.5rem; margin-bottom: 8px; }
   .tip-box { padding: 12px 14px; gap: 8px; }
+  .warning-box { padding: 12px 14px; gap: 8px; }
   .docs-footer { padding: 16px; font-size: 0.78rem; }
 }

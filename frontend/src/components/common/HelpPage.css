@@ -198,6 +198,29 @@
   line-height: 1.5;
 }
 
+.help-page__warning {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  margin: 16px 0;
+}
+
+.help-page__warning-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.help-page__warning p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #c4c4cc);
+  line-height: 1.5;
+}
+
 /* Shortcuts table */
 .help-page__shortcuts {
   display: flex;
@@ -337,6 +360,15 @@
 }
 
 :root[data-theme="light"] .help-page__tip p {
+  color: var(--text-secondary, #4b5563);
+}
+
+:root[data-theme="light"] .help-page__warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+:root[data-theme="light"] .help-page__warning p {
   color: var(--text-secondary, #4b5563);
 }
 

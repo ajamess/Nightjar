@@ -81,6 +81,13 @@ function ContentBlock({ block }) {
           <p>{block.text}</p>
         </div>
       );
+    case 'warning':
+      return (
+        <div className="help-page__warning">
+          <span className="help-page__warning-icon">⚠️</span>
+          <p>{block.text}</p>
+        </div>
+      );
     case 'shortcuts':
       return (
         <div className="help-page__shortcuts">

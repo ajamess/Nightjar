@@ -1086,6 +1086,15 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.8.2 - Critical App Launch Crash Fix
+- **Critical Fix**: `ReferenceError: Cannot access 'rt' before initialization` at app launch — `handleDocumentDrop` was referenced in `handleDndDragEnd`'s `useCallback` dependency array before its declaration, causing a Temporal Dead Zone violation that esbuild surfaced as a minified variable name crash
+- **Fix**: Corrected `Platform` default import to `{ NativeBridge }` in four components (`HierarchicalSidebar.jsx`, `FileCard.jsx`, `FolderCard.jsx`, `AppNew.jsx`) — the default export is the bridge object, not the platform detector
+- **Fix**: Fixed `NativeBridge.haptic()` calls (was `Platform.haptics.impact()`) in file/folder card long-press handlers and `NativeBridge.copyToClipboard()` in invite link sharing
+- **Feature**: `warning` block type added to Help page content system — amber styling with warning icon, supported in both dark and light themes
+- **Docs**: `getting-started.json` now includes web-mode storage warning; all 22 public-site HTML pages regenerated
+- **Chore**: All historical `RELEASE_NOTES_v*.md` files moved from repo root to `docs/release-notes/`
+- **Testing**: 5,034 of 5,048 tests passing (4 pre-existing failures unrelated to this release)
+
 ### v1.8.0 - World-Class Mobile UX Overhaul
 - **Feature**: Complete 15-step mobile experience transformation — bottom-sheet modals, touch-first interactions, native share, virtual keyboard handling
 - **Feature**: CSS-first bottom-sheet transform for ALL 30+ modals at ≤768px — no JavaScript required for most modals
