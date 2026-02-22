@@ -40,6 +40,49 @@ if ('serviceWorker' in navigator && !window.electronAPI) {
       detail: { message: '\ud83d\udcf4 You are offline — changes will sync when reconnected', type: 'warning' },
     }));
   });
+
+  // ── Stale-build detection ────────────────────────────────────────────────
+  // On fresh launch, compare the compiled-in version against the server's
+  // current version.  If they differ the user is running a cached build;
+  // force the SW to fetch the new assets and reload the page.
+  //
+  // A sessionStorage guard prevents infinite reload loops if the fetch or
+  // SW update fails to produce a matching version.
+  // ────────────────────────────────────────────────────────────────────────
+  const RELOAD_GUARD_KEY = 'nightjar:version-reload';
+  const alreadyReloaded = sessionStorage.getItem(RELOAD_GUARD_KEY);
+  const clientVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : null;
+
+  if (clientVersion && !alreadyReloaded) {
+    fetch('./api/version', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.version && data.version !== clientVersion) {
+          // Mark that we are about to reload so we don't loop
+          sessionStorage.setItem(RELOAD_GUARD_KEY, data.version);
+
+          window.dispatchEvent(new CustomEvent('nightjar:toast', {
+            detail: { message: '\ud83d\udd04 Updating to latest version\u2026', type: 'info' },
+          }));
+
+          // Ask the SW to fetch the new assets, then reload
+          navigator.serviceWorker.getRegistration()
+            .then(reg => reg?.update())
+            .catch(() => {})
+            .finally(() => {
+              setTimeout(() => window.location.reload(), 1000);
+            });
+        }
+      })
+      .catch(() => {
+        // Fetch failed (offline, dev server, CORS) — silently ignore
+      });
+  } else if (alreadyReloaded && clientVersion && alreadyReloaded === clientVersion) {
+    // Reload succeeded and we're now on the expected version — clear the guard
+    sessionStorage.removeItem(RELOAD_GUARD_KEY);
+  }
+  // If alreadyReloaded is set but doesn't match clientVersion, we leave the
+  // guard in place for this session to prevent further reload attempts.
 }
 
 // Apply saved theme BEFORE first render to prevent flash of wrong theme

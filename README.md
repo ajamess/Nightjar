@@ -1086,6 +1086,13 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.8.8 - Automatic Stale-Build Detection
+- **Feature**: Web (PWA) clients now auto-detect outdated cached builds on fresh launch — compares compiled-in version against the server's `/api/version` endpoint and reloads transparently before the user starts editing
+- **Feature**: `sessionStorage` guard prevents infinite reload loops if the service worker fails to update
+- **Feature**: Info toast ("🔄 Updating to latest version…") shown during the brief reload delay
+- **Server**: New `GET /api/version` endpoint returns `{ version }` from `package.json`
+- **Tests**: 23 new tests covering endpoint source checks, build define, source assertions, and 9 behavioural scenarios (version match, mismatch, guard logic, fetch failure, Electron skip, dev mode, downgrade)
+
 ### v1.8.7 - Web P2P File Transfer Fix (Issue #17)
 - **Critical Fix**: File downloads failed on web clients — `FileTransferContext` never passed `serverUrl`, `authToken`, or `workspaceKey` to PeerManager, leaving web peers with zero connected peers for chunk exchange
 - **Fix**: Added `getSignalingServerUrl()` utility and wired signaling URL + HMAC auth through `AppNew → FileTransferProvider → PeerManager → BootstrapManager → WebSocketTransport`

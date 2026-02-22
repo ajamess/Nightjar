@@ -1598,6 +1598,17 @@ app.get(BASE_PATH + '/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Version endpoint — clients compare this against their compiled-in __APP_VERSION__
+// to detect stale cached builds on fresh launch and trigger a reload.
+app.get(BASE_PATH + '/api/version', (req, res) => {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'));
+    res.json({ version: pkg.version });
+  } catch {
+    res.status(500).json({ error: 'version unavailable' });
+  }
+});
+
 // API: Get mesh network status
 app.get(BASE_PATH + '/api/mesh/status', (req, res) => {
   if (!meshParticipant) {

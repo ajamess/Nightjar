@@ -90,6 +90,7 @@
     { "type": "paragraph", "text": "To update to the latest version of Nightjar:" },
     { "type": "code", "lang": "bash", "text": "# Pull the latest image\ndocker compose pull\n\n# Restart with the new image\ndocker compose up -d\n\n# Verify the update\ndocker compose logs --tail 20" },
     { "type": "tip", "text": "Your workspace data is stored in a Docker volume and persists across updates. You can safely pull and restart without losing any data." },
+    { "type": "tip", "text": "Web clients automatically detect when a new server build is available. On the next fresh page load, the app compares its cached version against the server's /api/version endpoint and reloads transparently — no manual cache-clearing required." },
 
     { "type": "heading", "text": "Backups" },
     { "type": "paragraph", "text": "To back up your Nightjar data, copy the SQLite database from the Docker volume:" },
