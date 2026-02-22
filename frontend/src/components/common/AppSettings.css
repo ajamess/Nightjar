@@ -14,16 +14,20 @@
   padding: 20px;
 }
 
+/* Layout (display, flex, max-height, overflow) is handled by ResponsiveModal.
+   We only keep appearance overrides here. */
 .app-settings-modal {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 800px;
-  max-height: 85dvh;
   background: var(--bg-primary, #1f2937);
   border: 1px solid var(--border-color, #374151);
-  border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Inner wrapper for focus-trap ref */
+.app-settings__inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -33,6 +37,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border-color, #374151);
   flex-shrink: 0;
 }

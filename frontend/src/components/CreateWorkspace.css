@@ -16,16 +16,19 @@
   padding: 20px;
 }
 
+/* Layout (display, flex, max-height, overflow) is handled by ResponsiveModal. */
 .create-workspace {
   background: var(--bg-primary, #ffffff);
-  border-radius: 12px;
-  width: 100%;
-  max-width: 480px;
-  max-height: 90dvh;
-  overflow: hidden;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Inner wrapper for focus-trap ref */
+.create-workspace__inner {
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .create-workspace__header {
@@ -34,6 +37,7 @@
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color, #e5e7eb);
+  flex-shrink: 0;
 }
 
 .create-workspace__tabs {

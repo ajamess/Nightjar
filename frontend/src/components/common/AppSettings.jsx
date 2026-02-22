@@ -527,7 +527,7 @@ export default function AppSettings({ isOpen, onClose }) {
   return (
     <>
     <ResponsiveModal isOpen onClose={onClose} size="large" className="app-settings-modal">
-      <div ref={modalRef} onKeyDown={handleKeyDown}>
+      <div ref={modalRef} className="app-settings__inner" onKeyDown={handleKeyDown}>
         {/* Header */}
         <div className="app-settings__header">
           <h2 id="settings-title" className="app-settings__title">Settings</h2>

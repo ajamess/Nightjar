@@ -14,17 +14,10 @@
   animation: fadeIn 0.2s ease-out;
 }
 
+/* Layout (display, flex, max-height, overflow) is handled by ResponsiveModal. */
 .share-dialog {
   background: var(--bg-tertiary, #1a1a2e);
-  border-radius: 12px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90dvh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  animation: slideUp 0.3s ease-out;
 }
 
 @keyframes fadeIn {
@@ -48,6 +41,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border-color, #2a2a4a);
 }
 

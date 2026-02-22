@@ -60,7 +60,7 @@ export default function EditPropertiesModal({
     
     return (
         <ResponsiveModal isOpen onClose={onClose} size="small" className="edit-properties-modal">
-            <div ref={modalRef} onKeyDown={handleKeyDown}>
+            <div ref={modalRef} className="edit-properties-modal__inner" onKeyDown={handleKeyDown}>
                 <div className="edit-properties-modal__header">
                     <h3 id="edit-properties-title" className="edit-properties-modal__title">
                         Edit {item.type === 'folder' ? 'Folder' : 'Document'} Properties

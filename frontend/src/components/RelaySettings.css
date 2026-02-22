@@ -13,17 +13,20 @@
   backdrop-filter: blur(4px);
 }
 
+/* Layout (display, flex, max-height, overflow) is handled by ResponsiveModal. */
 .relay-settings-modal {
   background: var(--surface-1, #1a1a2e);
   border: 1px solid var(--border-color, #2d2d44);
-  border-radius: 12px;
-  width: 480px;
-  max-width: 90vw;
-  max-height: 85dvh;
-  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* Inner wrapper for focus-trap ref */
+.relay-settings__inner {
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Header */
@@ -34,6 +37,7 @@
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color, #2d2d44);
   background: var(--surface-2, #25253d);
+  flex-shrink: 0;
 }
 
 .relay-settings-header h2 {

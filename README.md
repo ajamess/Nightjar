@@ -1086,6 +1086,14 @@ npm run test:e2e:smoke      # Quick smoke tests
 
 ## Changelog
 
+### v1.8.4 - Critical Spreadsheet Sync Fix (Issue #16)
+- **Critical Fix**: Spreadsheet cells not syncing between devices — Fortune Sheet's `applyOp()` silently swallows Immer errors when sheet IDs mismatch between peers, then the false-positive `opsAppliedThisCycle` flag blocked the full-sheet `setData()` fallback path from running
+- **Fix**: Removed the broken op-based sync path (Y.Array `sheet-ops` + `applyOp`) entirely — full-sheet JSON via Y.Map is now the sole sync mechanism
+- **Fix**: Made sheet IDs deterministic (`sheet_1`, `sheet_2`, ...) instead of `Date.now()` + random — ensures all peers produce identical default sheets
+- **Fix**: Cleaned up legacy Y.Array ops and Y.Map `pendingOps` on initialization
+- **Testing**: 40 new sync tests covering bidirectional sync, three-way sync, offline reconnection, large sheets (1000 cells), complex cell values, multi-sheet documents; 158 suites, 5,063 tests passing
+- **Docs**: Updated SPREADSHEET_IMPLEMENTATION_PLAN.md sync strategy to reflect architectural change
+
 ### v1.8.3 - Copy Link Fix, ARIA Roles, Test Selector Cleanup
 - **Fix**: Copy Link and Share buttons on the workspace sharing screen were silently doing nothing — `Platform.copyToClipboard/share` don't exist; corrected to `NativeBridge.copyToClipboard/share`
 - **Fix**: `ResponsiveModal` now accepts `role` and `ariaLabelledBy` props; `ConfirmDialog` passes `role="alertdialog"` and `BugReportModal` passes `ariaLabelledBy="bug-report-title"` for proper screen reader semantics

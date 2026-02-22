@@ -99,8 +99,11 @@ const DEFAULT_SHEET = {
     status: 1,     // Active sheet
 };
 
-// Generate unique ID for sheets
-const generateSheetId = () => 'sheet-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+// Generate deterministic sheet ID so all peers produce the same default.
+// Non-deterministic IDs caused Immer patch-path mismatches between peers
+// which broke Fortune Sheet's applyOp (Immer error 15).  Accepts an
+// optional 1-based index for multi-sheet support (defaults to 1).
+const generateSheetId = (index = 1) => `sheet_${index}`;
 
 /**
  * Sheet Component
@@ -122,7 +125,6 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
     const workbookRef = useRef(null);
     const containerRef = useRef(null);
     const ysheetRef = useRef(null);
-    const isApplyingRemoteOps = useRef(false);
     const hasSyncedRef = useRef(false);
     const debouncedSaveRef = useRef(null);
     const lastSavedVersion = useRef(null);      // Version we last saved - to detect our own echoes
@@ -501,79 +503,29 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         const ysheet = ydoc.getMap('sheet-data');
         ysheetRef.current = ysheet;
 
-        // Use Y.Array for ops — CRDT-safe append/delete replaces the old
-        // Y.Map.set('pendingOps', [...]) which was last-writer-wins.
-        const yOps = ydoc.getArray('sheet-ops');
-
-        // Clean up legacy pendingOps key from old Y.Map-based approach
+        // Clean up legacy Y.Array ops and Y.Map pendingOps from older versions.
+        // The op-based sync path (Y.Array 'sheet-ops') has been removed because
+        // Fortune Sheet's applyOp swallows Immer errors internally, causing
+        // opsAppliedThisCycle to be a false positive which blocked the reliable
+        // full-sheet setData fallback path.  See GitHub issue #16.
         if (ysheet.has('pendingOps')) {
             ydoc.transact(() => { ysheet.delete('pendingOps'); });
             console.log('[Sheet] Cleaned up legacy pendingOps key from Y.Map');
         }
-
-        // Track whether ops were successfully applied this cycle
-        let opsAppliedThisCycle = false;
-
-        // Observe Y.Array for real-time op-based sync
-        const handleOpsChange = (event) => {
-            if (isApplyingRemoteOps.current) return;
-            // Collect all newly inserted items from the Y.Array event
-            const newItems = [];
-            if (event.changes && event.changes.added) {
-                event.changes.added.forEach(item => {
-                    let content = item.content;
-                    if (content && content.getContent) {
-                        newItems.push(...content.getContent());
-                    }
-                });
-            }
-            if (newItems.length === 0) return;
-            // Filter to only remote ops
-            const remoteOps = newItems.filter(op => op && op.clientId !== ydoc.clientID);
-            if (remoteOps.length > 0 && workbookRef.current) {
-                isApplyingRemoteOps.current = true;
-                try {
-                    const opsToApply = remoteOps.flatMap(entry => entry.ops || (Array.isArray(entry) ? entry : [entry]));
-                    workbookRef.current.applyOp(opsToApply);
-                    opsAppliedThisCycle = true;
-                    console.log('[Sheet] Applied', opsToApply.length, 'remote ops via Y.Array');
-                } catch (e) {
-                    console.error('[Sheet] Failed to apply remote ops:', e);
-                } finally {
-                    isApplyingRemoteOps.current = false;
-                }
-            }
-            // Clean up processed ops in a transaction to avoid growing unboundedly
-            if (yOps.length > 0) {
-                ydoc.transact(() => {
-                    yOps.delete(0, yOps.length);
-                });
-            }
-        };
-        yOps.observe(handleOpsChange);
+        const yOps = ydoc.getArray('sheet-ops');
+        if (yOps.length > 0) {
+            ydoc.transact(() => { yOps.delete(0, yOps.length); });
+            console.log('[Sheet] Cleaned up', yOps.length, 'stale ops from legacy Y.Array');
+        }
 
         // Handler for remote changes (full-sheet data path)
+        // This is the SOLE sync mechanism for spreadsheets.  The old op-based
+        // path (Y.Array 'sheet-ops') was removed because Fortune Sheet's
+        // applyOp swallows Immer errors, causing a false-positive that blocked
+        // this reliable setData path.  See GitHub issue #16.
         const updateFromYjs = () => {
-            // Don't update if we're applying local changes
-            if (isApplyingRemoteOps.current) {
-                console.log('[Sheet] updateFromYjs skipped - applying remote ops');
-                return;
-            }
-
             const storedData = ysheet.get('sheets');
             const storedVersion = ysheet.get('version') || null;
-
-            // If ops were already applied this cycle via Y.Array observer,
-            // skip the full-sheet setData to avoid double-applying and flicker.
-            if (opsAppliedThisCycle) {
-                opsAppliedThisCycle = false;
-                // Still update version tracking
-                if (storedVersion) {
-                    lastLoadedVersion.current = storedVersion;
-                }
-                console.log('[Sheet] Skipping full-sheet setData - ops already applied via Y.Array');
-                return;
-            }
             
             console.log('[Sheet] updateFromYjs - version:', storedVersion, 'lastSaved:', lastSavedVersion.current, 'lastLoaded:', lastLoadedVersion.current, 'sheetCount:', storedData?.length);
             
@@ -675,9 +627,8 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         updateFromYjs();
 
         return () => {
-            console.log('[Sheet] Cleanup - unobserving ysheet and yOps');
+            console.log('[Sheet] Cleanup - unobserving ysheet');
             ysheet.unobserveDeep(updateFromYjs);
-            yOps.unobserve(handleOpsChange);
             // Clear any pending timeout
             if (pendingRemoteUpdateTimeout.current) {
                 clearTimeout(pendingRemoteUpdateTimeout.current);
@@ -970,25 +921,6 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
         debouncedSaveToYjs(newData);
     }, [debouncedSaveToYjs, debouncedReportStats]);
 
-    // Handle operations for real-time sync (immediate, not debounced)
-    // Uses Y.Array ('sheet-ops') for CRDT-safe append — concurrent pushes
-    // from different clients are all preserved (unlike Y.Map.set which was
-    // last-writer-wins and silently lost ops).
-    const handleOp = useCallback((ops) => {
-        // Don't sync our own application of remote ops
-        if (isApplyingRemoteOps.current) return;
-        if (!ydoc) return;
-
-        try {
-            const yOps = ydoc.getArray('sheet-ops');
-            ydoc.transact(() => {
-                yOps.push([{ ops, clientId: ydoc.clientID }]);
-            });
-        } catch (e) {
-            console.error('[Sheet] Failed to send ops to Yjs:', e);
-        }
-    }, [ydoc]);
-
     // Handle selection change - send to awareness for other users to see and show toolbar
     const handleSelectionChange = useCallback((sheetId, selection) => {
         console.log('[Sheet] Selection changed:', sheetId, selection);
@@ -1209,7 +1141,6 @@ export default function Sheet({ ydoc, provider, userColor, userHandle, userPubli
                     ref={workbookRef}
                     data={data}
                     onChange={readOnly ? undefined : handleChange}
-                    onOp={readOnly ? undefined : handleOp}
                     hooks={hooks}
                     {...settings}
                 />

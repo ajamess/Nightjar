@@ -23,15 +23,19 @@
   }
 }
 
+/* Layout (display, flex, max-height, overflow) is handled by ResponsiveModal. */
 .edit-properties-modal {
   background: var(--bg-primary, #ffffff);
-  border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  width: 90%;
-  max-width: 800px;
-  max-height: 85dvh;
+}
+
+/* Inner wrapper for focus-trap ref */
+.edit-properties-modal__inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  animation: slideUp 0.2s ease;
 }
 
 @keyframes slideUp {
@@ -52,6 +56,7 @@
   justify-content: space-between;
   padding: 20px 24px;
   border-bottom: 1px solid var(--border-color, #e5e7eb);
+  flex-shrink: 0;
 }
 
 .edit-properties-modal__title {

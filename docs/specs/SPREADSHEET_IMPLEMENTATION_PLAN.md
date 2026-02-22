@@ -79,12 +79,23 @@ App.jsx
 
 ### Sync Strategy
 
-Fortune Sheet provides `onOp` callback with JSON patches. We'll:
+~~Fortune Sheet provides `onOp` callback with JSON patches. We'll:~~
 
-1. **Debounce** operations (300ms) before syncing
-2. **Store** operations in Yjs `Y.Array` for CRDT merging
-3. **Apply** remote operations in order via Fortune Sheet API
-4. **Conflict resolution**: Last-write-wins at cell level (Yjs handles this)
+~~1. **Debounce** operations (300ms) before syncing~~
+~~2. **Store** operations in Yjs `Y.Array` for CRDT merging~~
+~~3. **Apply** remote operations in order via Fortune Sheet API~~
+~~4. **Conflict resolution**: Last-write-wins at cell level (Yjs handles this)~~
+
+> **v1.8.4 update (Issue #16):** The op-based sync path (Y.Array + `applyOp`)
+> was removed because Fortune Sheet's internal Immer state management silently
+> swallows errors when sheet IDs mismatch between peers.  The sole sync mechanism
+> is now **full-sheet JSON** via `Y.Map('sheet-data')`:
+>
+> 1. **Debounce** onChange (300ms) then serialize via `getAllSheets()` → `convertDataToCelldata()`
+> 2. **Store** full sheet JSON in `Y.Map.set('sheets', ...)` with composite version stamp
+> 3. **Receive** via `observeDeep` → `convertCelldataToData()` → `setData()`
+> 4. **Conflict resolution**: Last-writer-wins at the full-sheet level; 350ms protection window prevents echo loops
+> 5. **Sheet IDs**: Deterministic (`sheet_1`, `sheet_2`, ...) so all peers produce identical defaults
 
 ---
 

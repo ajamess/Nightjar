@@ -12,7 +12,7 @@ import * as Y from 'yjs';
 
 // Mock Fortune Sheet since it's complex
 jest.mock('@fortune-sheet/react', () => ({
-  Workbook: jest.fn(({ data, onChange, onOp }) => (
+  Workbook: jest.fn(({ data, onChange }) => (
     <div data-testid="fortune-sheet-mock">
       <span data-testid="sheet-data">{JSON.stringify(data)}</span>
       <button 
@@ -20,12 +20,6 @@ jest.mock('@fortune-sheet/react', () => ({
         onClick={() => onChange && onChange([{ name: 'Sheet1', celldata: [{ r: 0, c: 0, v: 'test' }] }])}
       >
         Trigger Change
-      </button>
-      <button
-        data-testid="trigger-op"
-        onClick={() => onOp && onOp([{ op: 'replace', path: ['data', 0, 0], value: 'test' }])}
-      >
-        Trigger Op
       </button>
     </div>
   )),
@@ -195,21 +189,26 @@ describe('Sheet Component', () => {
       });
     });
 
-    test('handles onOp from Fortune Sheet', async () => {
+    test('syncs via full-sheet path only (op-based path removed)', async () => {
       render(<Sheet ydoc={ydoc} provider={mockProvider} />);
       
       await waitFor(() => {
         expect(screen.getByTestId('fortune-sheet-mock')).toBeInTheDocument();
       });
 
-      // Trigger an operation
-      fireEvent.click(screen.getByTestId('trigger-op'));
-
-      // Verify ops are stored in Y.Array ('sheet-ops'), not Y.Map('pendingOps')
+      // The op-based Y.Array path has been removed (Issue #16).
+      // Sync now relies solely on full-sheet setData via Y.Map.
+      // Verify that Y.Array 'sheet-ops' is empty (cleaned up on init).
       const yOps = ydoc.getArray('sheet-ops');
-      // Ops may have been processed and cleared, but Y.Array should exist
-      expect(yOps).toBeDefined();
-      expect(screen.getByTestId('fortune-sheet-mock')).toBeInTheDocument();
+      expect(yOps.length).toBe(0);
+      
+      // Verify Workbook no longer receives onOp prop
+      const { Workbook } = require('@fortune-sheet/react');
+      const lastCall = Workbook.mock.calls[Workbook.mock.calls.length - 1];
+      if (lastCall) {
+        const props = lastCall[0];
+        expect(props.onOp).toBeUndefined();
+      }
     });
   });
 

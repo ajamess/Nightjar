@@ -486,6 +486,7 @@ export default function BugReportModal({ isOpen, onClose, context }) {
     <ResponsiveModal isOpen onClose={handleDismiss} size="large" className="bug-report-modal" ariaLabelledBy="bug-report-title">
       <div
         ref={modalRef}
+        className="bug-report-modal__inner"
       >
         <div className="bug-report-modal__header">
           <h2 id="bug-report-title">🐛 Report a Bug</h2>

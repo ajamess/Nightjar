@@ -18,17 +18,20 @@
   to { opacity: 1; }
 }
 
+/* Layout (display, flex, max-height, overflow) is handled by ResponsiveModal. */
 .bug-report-modal {
   background: var(--bg-secondary, #1e1e2e);
   border: 1px solid var(--border-color, #2d2d44);
-  border-radius: 12px;
-  width: 560px;
-  max-width: 90vw;
-  max-height: 85dvh;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+/* Inner wrapper for focus-trap ref */
+.bug-report-modal__inner {
   display: flex;
   flex-direction: column;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
-  animation: bug-report-slide-in 0.2s ease-out;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @keyframes bug-report-slide-in {
@@ -43,6 +46,7 @@
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color, #2d2d44);
+  flex-shrink: 0;
 }
 
 .bug-report-modal__header h2 {

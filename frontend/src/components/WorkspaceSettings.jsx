@@ -574,7 +574,7 @@ export default function WorkspaceSettings({
   return (
     <>
     <ResponsiveModal isOpen onClose={handleDismiss} size="large" className="workspace-settings">
-      <div ref={modalRef}>
+      <div ref={modalRef} className="workspace-settings__body">
         <div className="workspace-settings__header">
           <h2 id="workspace-settings-title" className="workspace-settings__title">Workspace Settings</h2>
           <button className="workspace-settings__close" onClick={async () => {

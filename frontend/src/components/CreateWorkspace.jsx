@@ -437,7 +437,7 @@ export default function CreateWorkspaceDialog({ mode = 'create', onClose, onSucc
   
   return (
     <ResponsiveModal isOpen onClose={onClose} size="medium" className="create-workspace">
-      <div ref={modalRef}>
+      <div ref={modalRef} className="create-workspace__inner">
         <div className="create-workspace__header">
           <h2 id="create-workspace-title" className="visually-hidden">
             {activeTab === 'create' ? 'Create Workspace' : 'Join Workspace'}

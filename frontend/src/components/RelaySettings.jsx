@@ -203,7 +203,7 @@ export default function RelaySettings({ isOpen, onClose }) {
   if (!isElectron()) {
     return (
       <ResponsiveModal isOpen onClose={onClose} size="medium" className="relay-settings-modal">
-        <div ref={modalRef}>
+        <div ref={modalRef} className="relay-settings__inner">
           <div className="relay-settings-header">
             <h2 id="relay-settings-title">Relay Settings</h2>
             <button 
@@ -232,7 +232,7 @@ export default function RelaySettings({ isOpen, onClose }) {
   
   return (
     <ResponsiveModal isOpen onClose={onClose} size="medium" className="relay-settings-modal">
-      <div ref={modalRef}>
+      <div ref={modalRef} className="relay-settings__inner">
         <div className="relay-settings-header">
           <h2 id="relay-settings-title">🌐 Relay Settings</h2>
           <button 
