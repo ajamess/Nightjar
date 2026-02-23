@@ -98,11 +98,26 @@ jest.mock('../../frontend/src/hooks/useEnvironment', () => ({
 // Mock websocket utilities
 jest.mock('../../frontend/src/utils/websocket', () => ({
   getYjsWebSocketUrl: jest.fn().mockReturnValue('ws://localhost:4000'),
+  deliverKeyToServer: jest.fn().mockResolvedValue(undefined),
+  computeRoomAuthTokenSync: jest.fn().mockReturnValue(null),
+  computeRoomAuthToken: jest.fn().mockResolvedValue(null),
 }));
 
 // Mock keyDerivation
 jest.mock('../../frontend/src/utils/keyDerivation', () => ({
-  getStoredKeyChain: jest.fn().mockResolvedValue(null),
+  getStoredKeyChain: jest.fn().mockReturnValue(null),
+}));
+
+// Mock EncryptedIndexeddbPersistence (workspace metadata persistence)
+const mockIndexeddbDestroy = jest.fn();
+const mockIndexeddbOn = jest.fn();
+jest.mock('../../frontend/src/utils/EncryptedIndexeddbPersistence', () => ({
+  EncryptedIndexeddbPersistence: jest.fn().mockImplementation(() => ({
+    on: mockIndexeddbOn,
+    off: jest.fn(),
+    destroy: mockIndexeddbDestroy,
+    whenSynced: Promise.resolve(),
+  })),
 }));
 
 // Mock uint8arrays
@@ -371,6 +386,94 @@ describe('useWorkspaceSync', () => {
       
       // Should initialize without error
       expect(result.current.syncPhase).toBe('connecting');
+    });
+  });
+
+  describe('IndexedDB Workspace Metadata Persistence', () => {
+    const { EncryptedIndexeddbPersistence } = require('../../frontend/src/utils/EncryptedIndexeddbPersistence');
+    const { isElectron } = require('../../frontend/src/hooks/useEnvironment');
+
+    beforeEach(() => {
+      EncryptedIndexeddbPersistence.mockClear();
+      mockIndexeddbDestroy.mockClear();
+      mockIndexeddbOn.mockClear();
+    });
+
+    test('creates IndexedDB provider on web/mobile (non-Electron)', () => {
+      isElectron.mockReturnValue(false);
+
+      renderHook(() => useWorkspaceSync('workspace-456'));
+
+      // Should have been called with the workspace db name + ydoc + key
+      expect(EncryptedIndexeddbPersistence).toHaveBeenCalledWith(
+        'nightjar-ws-meta-workspace-456',
+        expect.any(Object), // ydoc
+        null                // wsKey is null when no keychain
+      );
+    });
+
+    test('does NOT create IndexedDB provider on Electron', () => {
+      isElectron.mockReturnValue(true);
+
+      renderHook(() => useWorkspaceSync('workspace-456'));
+
+      expect(EncryptedIndexeddbPersistence).not.toHaveBeenCalled();
+    });
+
+    test('registers synced event handler on IndexedDB provider', () => {
+      isElectron.mockReturnValue(false);
+
+      renderHook(() => useWorkspaceSync('workspace-456'));
+
+      expect(mockIndexeddbOn).toHaveBeenCalledWith('synced', expect.any(Function));
+    });
+
+    test('destroys IndexedDB provider on cleanup', () => {
+      isElectron.mockReturnValue(false);
+
+      const { unmount } = renderHook(() => useWorkspaceSync('workspace-789'));
+
+      // Advance timers so the effect runs
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
+
+      unmount();
+
+      expect(mockIndexeddbDestroy).toHaveBeenCalled();
+    });
+
+    test('passes workspace key for encrypted persistence', () => {
+      isElectron.mockReturnValue(false);
+      const { getStoredKeyChain } = require('../../frontend/src/utils/keyDerivation');
+      getStoredKeyChain.mockReturnValue({
+        workspaceKey: 'test-workspace-key-base64',
+      });
+
+      renderHook(() => useWorkspaceSync('workspace-encrypted'));
+
+      expect(EncryptedIndexeddbPersistence).toHaveBeenCalledWith(
+        'nightjar-ws-meta-workspace-encrypted',
+        expect.anything(),
+        'test-workspace-key-base64'
+      );
+
+      // Restore default
+      getStoredKeyChain.mockReturnValue(null);
+    });
+
+    test('passes null key when no keychain available', () => {
+      isElectron.mockReturnValue(false);
+      const { getStoredKeyChain } = require('../../frontend/src/utils/keyDerivation');
+      getStoredKeyChain.mockReturnValue(null);
+
+      renderHook(() => useWorkspaceSync('workspace-nokey'));
+
+      expect(EncryptedIndexeddbPersistence).toHaveBeenCalledWith(
+        'nightjar-ws-meta-workspace-nokey',
+        expect.anything(),
+        null
+      );
     });
   });
 });

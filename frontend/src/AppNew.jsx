@@ -749,6 +749,15 @@ function App() {
         };
     }, []);
 
+    // --- Request persistent storage so iOS/Android don't evict IndexedDB data ---
+    useEffect(() => {
+        if (!isElectron() && navigator.storage?.persist) {
+            navigator.storage.persist().then(granted => {
+                console.log(`[App] Persistent storage ${granted ? 'granted' : 'denied'}`);
+            }).catch(() => {});
+        }
+    }, []);
+
     // --- Update workspace awareness with currently open documents (for tab presence indicators) ---
     useEffect(() => {
         if (setOpenDocumentId) {

@@ -12,6 +12,22 @@
     },
     {
       "type": "heading",
+      "text": "v1.8.11 — Workspace Data Persistence on Mobile"
+    },
+    {
+      "type": "paragraph",
+      "text": "Critical fix for workspace data disappearing on mobile after the app is backgrounded or reopened. Workspace metadata (document list, folders, members, settings) was only synced over the network — when WebSocket hadn't reconnected yet, users saw an empty workspace. Now persisted to encrypted IndexedDB so data is available immediately on app reopen."
+    },
+    {
+      "type": "list",
+      "items": [
+        "Fix: Workspace metadata Y.Doc now persisted to encrypted IndexedDB on web/mobile (was network-only)",
+        "Fix: Request navigator.storage.persist() on startup to prevent iOS/Android storage eviction",
+        "Tests: 6 new tests; 164 suites, 5,270 tests passing"
+      ]
+    },
+    {
+      "type": "heading",
       "text": "v1.8.10 — Fix File Sharing Auth & Mobile Reconnect Loop (Issues #18, #19)"
     },
     {

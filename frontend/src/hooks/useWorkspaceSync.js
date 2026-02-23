@@ -18,6 +18,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { isElectron } from '../hooks/useEnvironment';
 import { getYjsWebSocketUrl, deliverKeyToServer, computeRoomAuthTokenSync, computeRoomAuthToken } from '../utils/websocket';
 import { getStoredKeyChain } from '../utils/keyDerivation';
+import { EncryptedIndexeddbPersistence } from '../utils/EncryptedIndexeddbPersistence';
 import { toString as uint8ArrayToString } from 'uint8arrays';
 import { META_WS_PORT, WS_RECONNECT_MAX_DELAY, TIMEOUT_LONG, AWARENESS_HEARTBEAT_MS } from '../config/constants';
 
@@ -261,6 +262,19 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
     console.log(`[WorkspaceSync] Creating Yjs doc and WebSocketProvider...`);
     console.log(`[WorkspaceSync] Connecting to: ${wsUrl} with room: ${roomName}`);
     const ydoc = new Y.Doc();
+    
+    // Persist workspace metadata to IndexedDB on web/mobile so the workspace
+    // is available immediately when the app reopens (before network sync).
+    // Electron uses sidecar LevelDB which handles persistence automatically.
+    let indexeddbProvider = null;
+    if (!isElectron()) {
+      const dbName = `nightjar-ws-meta-${workspaceId}`;
+      const wsKey = authKeyChain?.workspaceKey || null;
+      indexeddbProvider = new EncryptedIndexeddbPersistence(dbName, ydoc, wsKey);
+      indexeddbProvider.on('synced', () => {
+        console.log(`[WorkspaceSync] Workspace metadata loaded from IndexedDB for ${workspaceId}`);
+      });
+    }
     
     // For remote workspaces (serverUrl provided), limit reconnection attempts
     // For local sidecar, allow more retries as it should always be available
@@ -1015,6 +1029,11 @@ export function useWorkspaceSync(workspaceId, initialWorkspaceInfo = null, userP
         clearInterval(provider._heartbeatInterval);
       }
       provider.destroy();
+      // Destroy IndexedDB persistence provider (web/mobile only)
+      if (indexeddbProvider) {
+        indexeddbProvider.destroy();
+        indexeddbProvider = null;
+      }
       ydoc.destroy();
       ydocRef.current = null;
       providerRef.current = null;
