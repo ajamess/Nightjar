@@ -280,7 +280,7 @@ jobs:
 
             echo "=== Pulling latest code (for compose file + static assets) ==="
             cd "$REPO"
-            git fetch --all --tags
+            git fetch --all --tags --force
             git checkout "${{ github.ref_name }}"
 
             echo "=== Logging in to GHCR ==="

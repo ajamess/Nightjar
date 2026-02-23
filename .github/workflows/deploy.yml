@@ -64,7 +64,7 @@ jobs:
 
             echo "=== Pulling latest code ==="
             cd "$REPO"
-            git fetch --all
+            git fetch --all --tags --force
             git checkout origin/main
 
             echo "=== Logging in to GHCR ==="
